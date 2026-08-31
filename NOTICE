@@ -1,0 +1,52 @@
+NotAnotherWiki Engine
+Codename: NotAnOtherVTUBERwiki
+
+Copyright (C) 2026 Vadim Khristenko (VAI_PROG)
+
+This file is part of the distribution and must be preserved in every copy,
+modified or not.
+
+---
+
+Authorship
+
+  Original author and project owner: Vadim Khristenko (VAI_PROG)
+  Contact: vadim@vai-rice.space
+  Origin: the project began inside the Snackers community, the fan
+  community around the VTuber Filian. The first wiki deployed on this
+  engine is SnackersWIKI at snackers.vai-rice.space.
+
+---
+
+Licensing summary (not a substitute for the license text)
+
+  Engine source ......... GNU Affero General Public License v3.0 or later
+                          See LICENSE.
+
+  Skins, templates,
+  modules, plugins ...... May be distributed under terms of your own
+                          choosing, including commercial terms, under the
+                          NotAnotherWiki Skin, Template and Plugin
+                          Exception. See LICENSE-EXCEPTION.
+
+  Documentation ......... Creative Commons Attribution-ShareAlike 4.0
+                          International. See LICENSE-DOCS.
+
+  Name and logos ........ Not licensed. See TRADEMARK.md.
+
+You may not remove this file, the copyright notices in the source, or the
+attribution rendered in the user interface of a running installation.
+
+---
+
+Third-party notices
+
+  This product includes software developed by the Rust project
+  contributors, the Tokio project, the Axum project, the SQLx project, the
+  MiniJinja project, the Apache DataFusion project (object_store), the
+  rolldown project, the Vue.js project, the Vite project, Bun (MIT licensed,
+  Copyright (C) Bun Technologies, Inc.), PostgreSQL, Valkey, and others.
+
+  A complete, generated list of runtime and build dependencies with their
+  licenses is produced by `cargo deny list` and by `bun pm ls` and is
+  published with every release.

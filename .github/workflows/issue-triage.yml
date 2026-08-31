@@ -1,0 +1,183 @@
+name: Issue triage
+
+# Conservative triage. This workflow labels and asks questions.
+#
+# It deliberately does NOT try to judge whether an issue is worthwhile. Nothing here
+# closes an issue for being low quality, off topic, or "obviously nonsense". Automatic
+# quality judgement produces false positives, and a false positive here means telling a
+# human who volunteered their time that their report was garbage. That costs more
+# goodwill than the automation saves.
+#
+# The only automatic closing is in the second job, and it closes issues we asked a
+# question about and got no answer to for 14 days. Even then the message says how to
+# reopen, and reopening is always honoured.
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  label:
+    name: Label by content
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply area labels
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const text = ((issue.title || '') + '\n' + (issue.body || '')).toLowerCase();
+
+            const rules = [
+              [/\b(worker|bun|rolldown|ssr|bundl)/,            'area/worker'],
+              [/\b(vue|vite|tiptap|editor|admin panel)/,       'area/ui'],
+              [/\b(sqlx|migration|postgres|schema|index)/,     'area/db'],
+              [/\b(axum|route|middleware|endpoint|handler)/,   'area/web'],
+              [/\b(markdown|transclud|template:|module:|render pipeline|infobox)/, 'area/markdown'],
+              [/\b(api|rest|graphql|webhook|token|oauth)/,     'area/api'],
+              [/\b(skin|theme|css|tailwind)/,                  'area/skins'],
+              [/\b(docker|caddy|frp|compose|deploy|ci)/,       'area/infra'],
+              [/\b(i18n|translat|locale|russian|ru\.)/,        'area/i18n'],
+              [/\b(snacker|filian)/,                            'snackers'],
+              [/assisted-by:|ai[- ]assist/,                     'ai-assisted'],
+            ];
+
+            const labels = rules.filter(([re]) => re.test(text)).map(([, l]) => l);
+
+            if (labels.length === 0) return;
+
+            const existing = new Set(issue.labels.map(l => l.name));
+            const toAdd = labels.filter(l => !existing.has(l));
+            if (toAdd.length === 0) return;
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: toAdd,
+            });
+
+      - name: Flag incomplete reports
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = (issue.body || '').trim();
+
+            // Only bug reports have a reproduction requirement.
+            const isBug = issue.labels.some(l => l.name === 'bug');
+            if (!isBug) return;
+
+            const tooShort = body.length < 120;
+            const noRepro = !/reproduc/i.test(body);
+
+            if (!tooShort && !noRepro) return;
+            if (issue.labels.some(l => l.name === 'needs-info')) return;
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: ['needs-info'],
+            });
+
+            const why = tooShort
+              ? 'it is very short'
+              : 'it does not describe how to reproduce the problem';
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: [
+                'Thanks for the report. We have marked this `needs-info` because ' + why + '.',
+                '',
+                'To move it along, please add:',
+                '',
+                '- What happened, and what you expected to happen.',
+                '- Numbered steps to reproduce, or an explicit "I could not reproduce it".',
+                '- Your version or commit, and your environment.',
+                '- Relevant logs, with any secrets removed.',
+                '',
+                'If an AI assistant helped you find this, please verify it yourself before',
+                'replying. Unverified reports cost maintainers hours. See AI-POLICY.md.',
+                '',
+                'If nothing arrives in 14 days this issue will be closed automatically to keep',
+                'the tracker readable. Reopening it, or just commenting, brings it straight back.',
+              ].join('\n'),
+            });
+
+  close-unanswered:
+    name: Close issues with no answer
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close needs-info issues after 14 days
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const days = 14;
+            const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'needs-info',
+              per_page: 100,
+            });
+
+            let closed = 0;
+
+            for (const issue of issues) {
+              if (issue.pull_request) continue;
+
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                per_page: 100,
+              });
+
+              const lastHuman = comments
+                .filter(c => c.user.type === 'User')
+                .map(c => new Date(c.updated_at).getTime())
+                .sort((a, b) => b - a)[0];
+
+              const lastActivity = Math.max(
+                new Date(issue.updated_at).getTime(),
+                lastHuman || 0
+              );
+
+              if (lastActivity > cutoff) continue;
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: [
+                  'Closing this because we asked for more information and nothing arrived in',
+                  days + ' days. This is housekeeping, not a judgement on the report.',
+                  '',
+                  'Comment here and it reopens. We would still like the details if you have them.',
+                ].join('\n'),
+              });
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+              });
+
+              closed += 1;
+            }
+
+            core.info('Closed ' + closed + ' unanswered issues.');

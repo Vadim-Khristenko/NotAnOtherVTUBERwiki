@@ -1,0 +1,166 @@
+# Canonical label set for NotAnotherWiki
+#
+# Synced to GitHub by .github/workflows/labels-sync.yml (micnncim/action-label-syncer).
+# Synced to Forgejo by scripts/sync-labels-forgejo.ts, because Forgejo does not read this file.
+#
+# Colours are six hex digits, no leading #.
+# Colour families: red = broken, green = progress, blue = area,
+#                  purple = thinking, yellow = needs something, pink = Snackers.
+
+# --- type -------------------------------------------------------------------
+- name: "bug"
+  color: "d73a4a"
+  description: "Something is broken or behaves wrongly"
+
+- name: "feature"
+  color: "0e8a16"
+  description: "New capability"
+
+- name: "enhancement"
+  color: "1d76db"
+  description: "Improvement to something that already works"
+
+- name: "design"
+  color: "5319e7"
+  description: "Architecture or design discussion, the most valuable kind right now"
+
+- name: "question"
+  color: "d876e3"
+  description: "Someone needs an answer, not a change"
+
+- name: "docs"
+  color: "0075ca"
+  description: "Documentation and translation"
+
+- name: "security"
+  color: "b60205"
+  description: "Security relevant. Private reports go through SECURITY.md, not here"
+
+- name: "art"
+  color: "fbca04"
+  description: "Artwork and media. See AI-ASSETS.md"
+
+- name: "chore"
+  color: "ededed"
+  description: "Maintenance, dependencies, housekeeping"
+
+# --- area -------------------------------------------------------------------
+- name: "area/core"
+  color: "c5def5"
+  description: "Domain, services, database layer"
+
+- name: "area/web"
+  color: "bfdadc"
+  description: "Axum, routes, middleware, SSR serving"
+
+- name: "area/markdown"
+  color: "c5def5"
+  description: "Render pipeline, transclusion, components"
+
+- name: "area/api"
+  color: "bfdfbf"
+  description: "REST, GraphQL, webhooks, tokens, MediaWiki compatibility"
+
+- name: "area/worker"
+  color: "f9d0c4"
+  description: "Bun worker, bundling, diagrams, images, cron"
+
+- name: "area/ui"
+  color: "d4c5f9"
+  description: "Vue editor and admin panel"
+
+- name: "area/skins"
+  color: "fef2c0"
+  description: "Skins, themes, layout overrides"
+
+- name: "area/db"
+  color: "c2e0c6"
+  description: "Schema, migrations, queries"
+
+- name: "area/infra"
+  color: "dbeafe"
+  description: "Docker, Caddy, frp, CI, deployment"
+
+- name: "area/i18n"
+  color: "ffd1dc"
+  description: "Translations and locale handling"
+
+# --- status -----------------------------------------------------------------
+- name: "needs-triage"
+  color: "e99695"
+  description: "Nobody has looked at this yet"
+
+- name: "needs-info"
+  color: "fbca04"
+  description: "Waiting on the reporter. Closed after 14 days if nothing arrives"
+
+- name: "needs-repro"
+  color: "f9d0c4"
+  description: "Bug report without a reproduction. Verify before reporting"
+
+- name: "decided"
+  color: "0e8a16"
+  description: "Design question resolved, see the linked comment"
+
+- name: "blocked"
+  color: "000000"
+  description: "Waiting on something else"
+
+- name: "duplicate"
+  color: "cfd3d7"
+  description: "Already tracked elsewhere"
+
+- name: "wontfix"
+  color: "ffffff"
+  description: "Deliberately not doing this, reason in the thread"
+
+- name: "invalid"
+  color: "e4e669"
+  description: "Not a valid report, or not about this project"
+
+# --- effort -----------------------------------------------------------------
+- name: "good first issue"
+  color: "7057ff"
+  description: "Self contained, well specified, start here"
+
+- name: "help wanted"
+  color: "008672"
+  description: "We would like outside help on this"
+
+- name: "epic"
+  color: "3e4b9e"
+  description: "Too big for one pull request"
+
+- name: "hard"
+  color: "5319e7"
+  description: "Genuinely difficult, expect a design conversation first"
+
+# --- priority ---------------------------------------------------------------
+- name: "P0"
+  color: "b60205"
+  description: "Data loss, security, or the site is down"
+
+- name: "P1"
+  color: "d93f0b"
+  description: "Blocks a phase"
+
+- name: "P2"
+  color: "fbca04"
+  description: "Should be fixed, not urgent"
+
+- name: "P3"
+  color: "0e8a16"
+  description: "Nice to have"
+
+# --- community --------------------------------------------------------------
+- name: "snackers"
+  color: "ff9ecd"
+  description: "Relates to SnackersWIKI or the Snackers community"
+
+- name: "easter-egg"
+  color: "ffb3d9"
+  description: "A Filian reference that is harmless and not load bearing"
+
+- name: "ai-assisted"
+  color: "d4c5f9"
+  description: "Disclosed AI assistance. Allowed and welcome, see AI-POLICY.md"

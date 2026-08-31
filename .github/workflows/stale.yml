@@ -1,0 +1,44 @@
+name: Stale
+
+# Marks and eventually closes stale issues and pull requests.
+# Exempt labels are the important part: anything with a decision, a plan, or a milestone
+# attached is never touched.
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v11
+        with:
+          days-before-stale: 60
+          days-before-close: 21
+          stale-issue-label: stale
+          stale-pr-label: stale
+          exempt-issue-labels: >-
+            P0,P1,epic,blocked,decided,needs-info,security,good first issue,help wanted
+          exempt-pr-labels: >-
+            P0,P1,epic,blocked,security
+          stale-issue-message: >
+            This issue has had no activity for 60 days, so it is marked stale. It will
+            close in 21 days unless something happens. If it is still relevant, comment
+            and it comes back. If you would like to pick it up, say so and we will help
+            you get started.
+          stale-pr-message: >
+            This pull request has had no activity for 60 days. It will close in 21 days
+            unless there is movement. If you are still working on it, say so and we will
+            wait. If you are stuck, ask in the thread, we would rather help than close it.
+          close-issue-message: >
+            Closing for inactivity. This is not a statement about the idea. Comment to
+            reopen, or open a fresh issue with the current context.
+          close-pr-message: >
+            Closing for inactivity. Reopen it if you want to pick it back up, the branch
+            is still there.

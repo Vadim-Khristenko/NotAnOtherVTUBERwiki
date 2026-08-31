@@ -1,0 +1,89 @@
+name: Feature or design proposal
+description: Propose something new, or argue that we are building the wrong thing
+title: "feat: "
+labels: ["feature", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We are pre-alpha, so design arguments are the most valuable thing you can bring us
+        right now. Please read the [roadmap](../blob/dev/docs/ROADMAP.md) and the
+        [stack notes](../blob/dev/docs/STACK.md) first. If you are proposing a different
+        technology, the stack document already lists what we rejected and why, so tell us
+        why that reasoning is wrong rather than starting from scratch.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What is painful, for whom, and how often. Start here, not with the solution.
+      placeholder: A wiki with 500 pages cannot change an infobox without asking an operator.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including doing nothing. This is the part most proposals skip and the part we read first.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - core (domain, services, database)
+        - web (Axum, routes, middleware)
+        - markdown (render pipeline)
+        - api (REST, GraphQL, webhooks)
+        - worker (Bun, components, diagrams)
+        - ui (Vue editor and admin)
+        - skins
+        - database and migrations
+        - infrastructure (Docker, Caddy, frp)
+        - documentation
+        - licensing or governance
+        - not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: roadmap-fit
+    attributes:
+      label: Does this already appear in the roadmap
+      options:
+        - "No, it is not there"
+        - "Yes, in a later phase"
+        - "I think so, but I am not sure"
+        - "I have not read the roadmap"
+    validations:
+      required: true
+
+  - type: textarea
+    id: breaking
+    attributes:
+      label: Does this break anything
+      description: Schema changes, API changes, migration concerns, or anything that affects existing installs.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: I read the roadmap and the stack notes
+          required: false
+        - label: I am willing to work on this, or I said so below
+          required: false

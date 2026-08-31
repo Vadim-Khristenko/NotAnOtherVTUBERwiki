@@ -1,0 +1,119 @@
+name: Bug report
+description: Something in the engine is broken or behaves wrongly
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this.
+
+        Before you continue, two things that save everyone time:
+
+        - Check the [roadmap](../blob/dev/docs/ROADMAP.md). We are pre-alpha, so a lot of
+          things are simply not built yet. That is not a bug.
+        - If an AI assistant helped you find this, please reproduce it yourself first.
+          Unverified reports cost us hours. See [AI-POLICY.md](../blob/dev/.github/AI-POLICY.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Describe the actual behaviour, not what you expected.
+      placeholder: Saving a page in the Template namespace returns a 500.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. If you cannot reproduce it, say so honestly rather than guessing.
+      placeholder: |
+        1. Create a page called Template:Infobox VTuber
+        2. Include it on Main:Test with {{Infobox VTuber|name=Filian}}
+        3. Save Main:Test
+        4. See the error
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reproduced
+    attributes:
+      label: Did you actually reproduce this
+      description: Be honest. We will not judge you for "no", we will just ask for more detail.
+      options:
+        - "Yes, reliably"
+        - "Yes, but only sometimes"
+        - "No, I could not reproduce it"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - core (domain, services, database)
+        - web (Axum, routes, middleware)
+        - markdown (render pipeline)
+        - api (REST, GraphQL, webhooks)
+        - worker (Bun, components, diagrams)
+        - ui (Vue editor and admin)
+        - skins
+        - database and migrations
+        - infrastructure (Docker, Caddy, frp)
+        - documentation
+        - not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Commit hash, branch, or release. Use "dev" if you are on the main branch.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Rust version, PostgreSQL version, Valkey version, Bun version if relevant.
+      placeholder: |
+        OS: Windows 11
+        rustc: 1.98.0
+        PostgreSQL: 18
+        Valkey: 9.1.1
+        Bun: 1.4.0
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Paste relevant output. Remove any secrets first.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: I am running the current dev branch, or I stated my version above
+          required: true
+        - label: I removed any secrets, tokens and personal data from this report
+          required: true

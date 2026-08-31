@@ -1,0 +1,112 @@
+NotAnotherWiki Skin, Template and Plugin Exception
+Version 1.0, 2026-08-30
+
+Copyright (C) 2026 Vadim Khristenko (VAI_PROG)
+
+This document is an additional permission under section 7 of the GNU
+Affero General Public License, version 3 ("the AGPL"), which applies to
+the NotAnotherWiki Engine ("the Engine"). You may use it in addition to
+the terms of the AGPL.
+
+PURPOSE
+
+The Engine is, and always will be, free and open source. Nobody may take
+it, modify it, and sell a closed version of it. At the same time, the
+people who build presentation assets for a wiki should be able to earn
+money from their work. This Exception draws that line.
+
+1. DEFINITIONS
+
+   "Engine" means the NotAnotherWiki Engine source code, including all of
+   its Rust crates, its templates, its migrations, and its build scripts,
+   as distributed by the project.
+
+   "Extension Interface" means the documented, runtime mechanisms by which
+   the Engine loads external assets: the skin loader, the template and
+   module resolvers, the component host bindings, the plugin host, and any
+   other interface explicitly designated as an extension point by the
+   project documentation.
+
+   "Covered Asset" means any of the following that you create:
+
+     a. a skin or theme, including its layouts, stylesheets, fonts, and
+        image assets;
+     b. a page in the Template namespace, or an equivalent markup
+        template;
+     c. a page in the Module namespace, or an equivalent component;
+     d. a plugin loaded through the plugin host;
+
+   provided in every case that the asset:
+
+     i.   is loaded by the Engine at runtime through an Extension
+          Interface;
+     ii.  does not modify, patch, replace, subclass at the source level,
+          or statically link against any part of the Engine; and
+     iii. does not alter the behaviour of the Engine by changing its
+          source code, its configuration schema, or its database schema.
+
+   "Derivative Work of the Engine" means any work based on the Engine or
+   on any modification of the Engine's source, other than a Covered Asset.
+
+2. GRANT OF ADDITIONAL PERMISSION
+
+   Notwithstanding section 5 of the AGPL, you may convey a Covered Asset
+   under terms of your own choosing, including proprietary and commercial
+   terms, without being required to license the Covered Asset under the
+   AGPL and without being required to provide its Corresponding Source to
+   recipients.
+
+   You may charge money for Covered Assets. You are not required to
+   disclose their source. You may distribute them in binary or obfuscated
+   form.
+
+3. LIMITS OF THIS PERMISSION
+
+   This Exception grants no permission whatsoever with respect to the
+   Engine itself. In particular:
+
+     a. Every Derivative Work of the Engine remains fully subject to the
+        AGPL, including the obligation in section 13 to offer the
+        Corresponding Source to users who interact with it remotely
+        through a computer network.
+     b. If you modify the Engine's source, even for the purpose of making
+        a Covered Asset work, that modification is a Derivative Work of
+        the Engine and must be published in full under the AGPL.
+     c. You may not use this Exception to circumvent the copyleft of the
+        Engine by moving Engine functionality into an asset and then
+        closing that asset. An asset that reimplements, replaces, or
+        substantially substitutes for functionality of the Engine is not
+        a Covered Asset.
+     d. Nothing in this document permits the removal of copyright notices,
+        this Exception, the NOTICE file, or the attribution shown in the
+        Engine's user interface.
+
+4. ATTRIBUTION
+
+   Any distribution of the Engine, modified or not, must retain:
+
+     a. the copyright notices present in the source;
+     b. this Exception, unmodified, when it is relied upon;
+     c. the NOTICE file distributed with the Engine; and
+     d. the visible attribution in the rendered user interface, unless the
+        interface is being substantially redesigned by a skin, in which
+        case attribution must remain present in a reasonably prominent
+        location such as the footer or an about page.
+
+5. TRADEMARK
+
+   This Exception grants no rights to the name "NotAnotherWiki", to the
+   name "SnackersWIKI", or to any logo, wordmark, or visual identity of
+   the project. Those are governed by the project trademark policy.
+
+6. TERM AND COMPATIBILITY
+
+   This Exception is permanent for version 1.0 and applies to every copy
+   of the Engine distributed by the project. If the project later issues a
+   new version of this Exception, you may continue to rely on version 1.0
+   under the same terms.
+
+   If any provision of this Exception is held unenforceable, the remainder
+   continues to apply, and the affected provision is to be read as narrowly
+   as needed to make it enforceable while preserving the intent stated in
+   the PURPOSE section above.

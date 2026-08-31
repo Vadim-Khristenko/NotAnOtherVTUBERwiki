@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  check:
+    name: fmt, clippy and tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: naw
+          POSTGRES_PASSWORD: naw
+          POSTGRES_DB: naw_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      valkey:
+        image: valkey/valkey:9
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://naw:naw@localhost:5432/naw_test
+      VALKEY_URL: redis://localhost:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Stop early if the workspace is not scaffolded yet
+        id: scaffolded
+        run: |
+          if [ -f Cargo.toml ]; then
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+            echo "Rust workspace present, running the full check."
+          else
+            echo "yes=false" >> "$GITHUB_OUTPUT"
+            echo "No Cargo.toml yet. Skipping Rust jobs until the scaffold lands."
+          fi
+
+      - name: Install sqlx-cli
+        if: steps.scaffolded.outputs.yes == 'true'
+        run: cargo install sqlx-cli --no-default-features --features postgres,rustls
+
+      - name: cargo fmt
+        if: steps.scaffolded.outputs.yes == 'true'
+        run: cargo fmt --all -- --check
+
+      - name: Run migrations
+        if: steps.scaffolded.outputs.yes == 'true'
+        run: cargo sqlx migrate run
+
+      - name: cargo clippy
+        if: steps.scaffolded.outputs.yes == 'true'
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: cargo test
+        if: steps.scaffolded.outputs.yes == 'true'
+        run: cargo test --all-features
+
+      - name: Verify .sqlx is current
+        if: steps.scaffolded.outputs.yes == 'true'
+        run: |
+          cargo sqlx prepare --check || {
+            echo "::error::.sqlx is out of date. Run 'cargo sqlx prepare' and commit the change."
+            exit 1
+          }
+
+      - name: Build offline, the way CI and Docker build it
+        if: steps.scaffolded.outputs.yes == 'true'
+        env:
+          SQLX_OFFLINE: "true"
+        run: cargo check --all-targets --all-features
+
+  docs:
+    name: Documentation checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every English document has a Russian translation
+        run: |
+          missing=0
+          check_pair() {
+            english="$1"
+            russian="$2"
+            if [ ! -f "$english" ]; then
+              echo "::error::missing English source $english"
+              missing=1
+            fi
+            if [ ! -f "$russian" ]; then
+              echo "::error::missing Russian translation $russian"
+              missing=1
+            fi
+          }
+          check_pair README.md docs/ru/README.md
+          check_pair .github/CONTRIBUTING.md docs/ru/CONTRIBUTING.md
+          check_pair .github/CODE_OF_CONDUCT.md docs/ru/CODE_OF_CONDUCT.md
+          check_pair .github/SECURITY.md docs/ru/SECURITY.md
+          check_pair .github/AI-POLICY.md docs/ru/AI-POLICY.md
+          check_pair AI-ASSETS.md docs/ru/AI-ASSETS.md
+          check_pair docs/STACK.md docs/ru/STACK.md
+          check_pair docs/ROADMAP.md docs/ru/ROADMAP.md
+          exit "$missing"
+
+      - name: No em-dashes in code, comments or documentation
+        run: |
+          # The pattern is written as an escape so this file does not contain the very
+          # character it is banning, which would make the job fail on itself.
+          if grep -rlIP '\x{2014}' --include='*.md' --include='*.rs' --include='*.toml' --include='*.yml' --include='*.vue' --include='*.ts' . ; then
+            echo "::error::em-dashes found in the files above. House style forbids them."
+            exit 1
+          fi
+          echo "clean"
+
+      - name: No secrets committed
+        run: |
+          if git grep -nIE '(BEGIN (RSA|OPENSSH|EC|PGP) PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,})' -- . ; then
+            echo "::error::possible secret in the diff"
+            exit 1
+          fi
+          echo "clean"

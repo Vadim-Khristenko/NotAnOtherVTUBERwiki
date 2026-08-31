@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki/security/advisories/new
+    about: Report security issues privately. Do not open a public issue. See SECURITY.md.
+  - name: Roadmap
+    url: https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki/blob/dev/docs/ROADMAP.md
+    about: What we are building, in what order, and whether your idea is already planned.
+  - name: Stack and technology choices
+    url: https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki/blob/dev/docs/STACK.md
+    about: Why every technology was chosen. Read this before proposing a different one.
+  - name: AI policy
+    url: https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki/blob/dev/.github/AI-POLICY.md
+    about: AI assistance is allowed and welcome. Read this before sending AI-assisted work.
+  - name: Question or discussion
+    url: https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki/discussions
+    about: Ask a question, float an idea, or discuss the design before opening an issue.
