@@ -1,0 +1,17 @@
+# Example configuration for the NotAnotherWiki Engine.
+#
+# Copy this file to config.toml and adjust. config.toml is gitignored, only
+# this example is tracked. Every value can be overridden by an environment
+# variable prefixed with NAW_, for example NAW_DATABASE_URL or NAW_HTTP_PORT.
+#
+# Never put real credentials in this tracked example.
+
+database_url = "postgres://naw:naw@localhost:5433/naw_dev"
+valkey_url = "redis://localhost:6380"
+
+http_bind = "127.0.0.1"
+http_port = 8080
+
+# Root directory for the local storage driver. Relative paths resolve from
+# the process working directory.
+storage_root = "./uploads"
