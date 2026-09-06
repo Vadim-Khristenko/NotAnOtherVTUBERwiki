@@ -1,0 +1,22 @@
+[package]
+name = "naw-core"
+description = "NotAnotherWiki Engine core: configuration, errors, state, pools and backend traits (codename: NotAnOtherVTUBERwiki)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+axum.workspace = true
+tokio.workspace = true
+sqlx.workspace = true
+deadpool-redis.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+object_store.workspace = true
+async-trait.workspace = true
