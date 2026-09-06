@@ -1,0 +1,12 @@
+[package]
+name = "naw-markdown"
+description = "NotAnotherWiki Engine Markdown render pipeline (codename: NotAnOtherVTUBERwiki)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+naw-core.workspace = true
+pulldown-cmark.workspace = true
+ammonia.workspace = true

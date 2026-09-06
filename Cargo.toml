@@ -1,0 +1,83 @@
+# ============================================================================
+#  NotAnotherWiki Engine - Cargo workspace
+#
+#  Product name: NotAnotherWiki. Crates carry the `naw-` prefix, the binary is
+#  `naw`. The codename NotAnOtherVTUBERwiki appears only in descriptions.
+#
+#  Every dependency is pinned here so the whole workspace moves as one. A crate
+#  opts in with `foo.workspace = true`.
+# ============================================================================
+
+[workspace]
+resolver = "3"
+members = [
+    "crates/naw-core",
+    "crates/naw-markdown",
+    "crates/naw-web",
+    "crates/naw-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.0"
+authors = ["Vadim Khristenko <vadim@vai-rice.space>"]
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki"
+homepage = "https://snackers.vai-rice.space"
+
+[workspace.dependencies]
+# --- async runtime
+tokio = { version = "1.53.1", features = ["full"] }
+
+# --- http
+axum = "0.8.9"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace"] }
+
+# --- database (PostgreSQL 18, compile checked SQL)
+sqlx = { version = "0.9.0", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "macros",
+    "migrate",
+    "uuid",
+    "chrono",
+] }
+
+# --- cache and queues (Valkey 9 speaking the Redis protocol)
+deadpool-redis = { version = "0.23.1", features = ["rt_tokio_1"] }
+
+# --- errors and serialization
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+
+# --- observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# --- misc
+async-trait = "0.1"
+chrono = { version = "0.4", default-features = false, features = [
+    "clock",
+    "serde",
+] }
+dotenvy = "0.15"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# --- reader engine
+# minijinja is deferred to Phase 2, the version is pinned here so it is not
+# forgotten: minijinja = "2.24.0"
+object_store = { version = "0.14.1", features = ["fs"] }
+pulldown-cmark = { version = "0.13.4", default-features = false, features = [
+    "html",
+] }
+ammonia = "4.1.4"
+
+# --- internal crates
+naw-core = { path = "crates/naw-core" }
+naw-markdown = { path = "crates/naw-markdown" }
+naw-web = { path = "crates/naw-web" }
