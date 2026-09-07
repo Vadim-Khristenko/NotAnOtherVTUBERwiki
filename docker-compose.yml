@@ -1,0 +1,101 @@
+# ---------------------------------------------------------------------------
+#  Local development stack for the NotAnotherWiki Engine
+#
+#  Host ports are deliberately NOT the defaults so they never collide with the
+#  rimu-* containers that already run Valkey 9 on this machine.
+#
+#    postgres -> host 5433 / container 5432
+#    valkey   -> host 6380 / container 6379
+#
+#  Only the core services run by default. Meilisearch and the Bun worker sit
+#  behind compose profiles:
+#
+#    docker compose --profile search up -d
+#    docker compose --profile worker up -d
+#
+#  Never stop or remove the rimu-* containers.
+# ---------------------------------------------------------------------------
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: nawwk-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: naw
+      POSTGRES_PASSWORD: naw
+      POSTGRES_DB: naw_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U naw -d naw_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - nawwk
+
+  valkey:
+    image: valkey/valkey:9-alpine
+    container_name: nawwk-valkey
+    restart: unless-stopped
+    command: ["valkey-server", "--save", "60", "1"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - valkeydata:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - nawwk
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.53.1
+    container_name: nawwk-meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: localDevMasterKey
+      MEILI_ENV: development
+    ports:
+      - "7700:7700"
+    volumes:
+      - meilidata:/meili_data
+    profiles:
+      - search
+    networks:
+      - nawwk
+
+  # Requires worker/Dockerfile, which is created in Task 8. The profile keeps
+  # this service out of every command unless the profile is enabled.
+  worker:
+    build: ./worker
+    container_name: nawwk-worker
+    restart: unless-stopped
+    environment:
+      PORT: "8081"
+      VALKEY_URL: redis://valkey:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      valkey:
+        condition: service_healthy
+    profiles:
+      - worker
+    networks:
+      - nawwk
+
+volumes:
+  pgdata: {}
+  valkeydata: {}
+  meilidata: {}
+
+networks:
+  nawwk:
+    name: nawwk-local

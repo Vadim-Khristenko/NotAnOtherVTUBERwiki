@@ -1,0 +1,20 @@
+[package]
+name = "naw-cli"
+description = "NotAnotherWiki Engine command line entry point (codename: NotAnOtherVTUBERwiki)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "naw"
+path = "src/main.rs"
+
+[dependencies]
+naw-core.workspace = true
+naw-web.workspace = true
+axum.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+dotenvy.workspace = true

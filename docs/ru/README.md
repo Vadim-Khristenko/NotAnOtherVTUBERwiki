@@ -169,23 +169,32 @@ Markdown вместо вики-разметки, настоящие скины, 
 
 ## Быстрый старт
 
-Пока ничего не запускается. Так выглядит целевой флоу разработчика:
+Требования: Rust 1.98 (edition 2024), Docker с compose, Bun 1.4.2 или новее, sqlx-cli.
 
-git clone https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki.git
 ```bash
+git clone https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki.git
 cd NotAnOtherVTUBERwiki
 
-# поднять PostgreSQL 18 и Valkey 9
-docker compose up -d
+# 1. Запустить PostgreSQL 18 и Valkey 9 на портах 5433 и 6380
+docker compose up -d postgres valkey
 
-# миграции и запуск
-cargo run --bin naw -- migrate
-cargo run --bin naw -- serve
+# 2. Настроить окружение
+cp .env.example .env
 
-# опционально: Bun-воркер включает компоненты, схемы и обработку картинок
-cd worker && bun install && bun run dev
+# 3. Накатить схему
+cargo install sqlx-cli --version 0.9.0 --no-default-features --features postgres,rustls
+cargo sqlx migrate run
 
+# 4. Запустить движок
+cargo run -p naw-cli -- serve
+# состояние системы: http://127.0.0.1:8080/health, готовность: /ready
+
+# 5. При желании собрать UI редактора
+cd ui && bun install && bun run build
 ```
+
+Веб-слой отдает читателям кешированный HTML; рендер происходит при записи.
+Воркер в `worker/` опционален и никогда не находится на пути запроса на чтение.
 ---
 
 ## Структура репозитория
