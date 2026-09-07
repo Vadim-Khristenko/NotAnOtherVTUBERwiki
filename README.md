@@ -173,22 +173,32 @@ Full reasoning, including why Bun is not on the request path, is in
 
 ## Quickstart
 
-Nothing runs yet. This is the target developer flow:
+Prerequisites: Rust 1.98 (edition 2024), Docker with compose, Bun 1.4.2 or newer, sqlx-cli.
 
 ```bash
 git clone https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki.git
 cd NotAnOtherVTUBERwiki
 
-# start PostgreSQL 18 and Valkey 9
-docker compose up -d
+# 1. Start PostgreSQL 18 and Valkey 9 on ports 5433 and 6380
+docker compose up -d postgres valkey
 
-# run migrations, then boot
-cargo run --bin naw -- migrate
-cargo run --bin naw -- serve
+# 2. Configure the environment
+cp .env.example .env
 
-# optional: the Bun worker enables components, diagrams and image processing
-cd worker && bun install && bun run dev
+# 3. Apply the schema
+cargo install sqlx-cli --version 0.9.0 --no-default-features --features postgres,rustls
+cargo sqlx migrate run
+
+# 4. Run the engine
+cargo run -p naw-cli -- serve
+# health: http://127.0.0.1:8080/health, readiness: /ready
+
+# 5. Optionally build the authoring UI
+cd ui && bun install && bun run build
 ```
+
+The web tier serves cached HTML on the reader path; rendering happens on write.
+The worker in `worker/` is optional and never on the request path.
 
 ---
 
