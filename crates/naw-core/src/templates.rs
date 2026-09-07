@@ -4,7 +4,13 @@ use minijinja::Environment;
 
 use crate::error::AppError;
 
-const TEMPLATES: &[&str] = &["layout.html", "page.html", "404.html"];
+const TEMPLATES: &[&str] = &[
+    "layout.html",
+    "_header.html",
+    "_footer.html",
+    "page.html",
+    "404.html",
+];
 
 pub fn load_templates(dir: &str) -> Result<Environment<'static>, AppError> {
     let mut env = Environment::new();

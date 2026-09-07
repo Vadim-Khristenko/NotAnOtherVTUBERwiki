@@ -1148,6 +1148,7 @@ dependencies = [
  "minijinja",
  "naw-core",
  "naw-markdown",
+ "serde",
  "serde_json",
  "sqlx",
  "tokio",

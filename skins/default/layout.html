@@ -1,20 +1,82 @@
 <!doctype html>
-<html lang="{{ lang }}">
+<html lang="{{ lang }}" data-theme="auto">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>{{ title }} | {{ wiki_name }}</title>
 <style>
-body { font-family: system-ui, sans-serif; margin: 0; color: #1c1c1e; background: #fff; }
-header { border-bottom: 1px solid #e5e5ea; padding: 0.8rem 1.2rem; font-weight: 700; }
-header a { color: inherit; text-decoration: none; }
-main { max-width: 42rem; margin: 0 auto; padding: 1.5rem 1.2rem 3rem; line-height: 1.6; }
-footer { border-top: 1px solid #e5e5ea; padding: 1rem 1.2rem; color: #8e8e93; font-size: 0.85rem; }
+:root {
+  --bg: #ffffff;
+  --ink: #1c1c1e;
+  --muted: #6e6e73;
+  --line: #e5e5ea;
+  --card: #f5f5f7;
+  --accent: #b3123f;
+}
+html[data-theme="dark"] {
+  --bg: #141118;
+  --ink: #f2ecf4;
+  --muted: #a89bb3;
+  --line: #2c2333;
+  --card: #1e1725;
+  --accent: #ff5c8a;
+}
+@media (prefers-color-scheme: dark) {
+  html[data-theme="auto"] {
+    --bg: #141118;
+    --ink: #f2ecf4;
+    --muted: #a89bb3;
+    --line: #2c2333;
+    --card: #1e1725;
+    --accent: #ff5c8a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.6; }
+.site-header { border-bottom: 1px solid var(--line); background: var(--card); }
+.site-header-inner { max-width: 44rem; margin: 0 auto; padding: 0.7rem 1.2rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.site-brand { font-weight: 800; font-size: 1.05rem; color: var(--ink); text-decoration: none; }
+.site-nav { display: flex; align-items: center; gap: 0.6rem; }
+.nav-link { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
+.nav-link:hover { color: var(--accent); }
+.theme-toggle { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 999px; padding: 0.3rem 0.7rem; cursor: pointer; font-size: 0.85rem; }
+.content { max-width: 44rem; margin: 0 auto; padding: 1.5rem 1.2rem 3rem; }
+.content h1, .content h2 { line-height: 1.25; }
+.content a { color: var(--accent); }
+.content pre { background: var(--card); padding: 1rem; overflow-x: auto; border-radius: 0.5rem; }
+.content code { font-size: 0.9em; }
+.content table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
+.content th, .content td { border: 1px solid var(--line); padding: 0.4rem 0.7rem; text-align: left; }
+.site-footer { border-top: 1px solid var(--line); }
+.footer-inner { max-width: 44rem; margin: 0 auto; padding: 1.2rem; display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; align-items: baseline; justify-content: space-between; }
+.footer-nav { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; }
+.footer-nav a { color: var(--muted); font-size: 0.88rem; text-decoration: none; }
+.footer-nav a:hover { color: var(--accent); }
+.engine-note { color: var(--muted); font-size: 0.82rem; margin: 0; }
+@media (max-width: 36rem) {
+  .site-header-inner { padding: 0.6rem 1rem; }
+  .content { padding: 1rem 1rem 2.5rem; }
+}
 </style>
+<script>
+(function () {
+  try {
+    var params = new URLSearchParams(location.search);
+    var forced = params.get("theme");
+    if (forced === "light" || forced === "dark") {
+      document.documentElement.dataset.theme = forced;
+      localStorage.setItem("naw-theme", forced);
+      return;
+    }
+    var saved = localStorage.getItem("naw-theme");
+    if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+  } catch (e) {}
+})();
+</script>
 </head>
 <body>
-<header><a href="/">{{ wiki_name }}</a></header>
-<main>{% block body %}{% endblock %}</main>
-<footer>Powered by NotAnotherWiki</footer>
+{% include "_header.html" %}
+<main class="content">{% block body %}{% endblock %}</main>
+{% include "_footer.html" %}
 </body>
 </html>

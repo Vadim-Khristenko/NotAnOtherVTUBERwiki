@@ -2,7 +2,7 @@
 //! a cache miss renders once, stores, and serves.
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use tracing::instrument;
@@ -63,13 +63,13 @@ fn cached_response(html: String, etag: &str, headers: &HeaderMap) -> Response {
     response
 }
 
-async fn not_found(state: &AppState, lang: &str) -> Result<Response, AppError> {
+async fn not_found(state: &AppState, lang: &str, wiki_name: &str) -> Result<Response, AppError> {
     let template = state
         .templates
         .get_template("404.html")
         .map_err(template_error)?;
     let html = template
-        .render(minijinja::context! { lang => lang })
+        .render(minijinja::context! { lang => lang, wiki_name => wiki_name })
         .map_err(template_error)?;
     Ok((
         StatusCode::NOT_FOUND,
@@ -115,8 +115,29 @@ async fn render_or_cached(
     Ok(cached_response(rendered.html, &rendered_etag, headers))
 }
 
+/// Display flags readers can append to any page URL. `?jump_to=` scrolls
+/// to a heading anchor through a temporary redirect. Needs no JavaScript.
+fn jump_target(slug: &str, query: &PageQuery) -> Option<String> {
+    let frag = query.jump_to.as_deref()?;
+    if frag.is_empty()
+        || frag.len() > 100
+        || !frag
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    Some(format!("/{slug}#{frag}"))
+}
+
 fn request_host(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::HOST)?.to_str().ok()
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct PageQuery {
+    #[serde(default)]
+    jump_to: Option<String>,
 }
 
 /// Redirects `/` to the wiki home page.
@@ -124,7 +145,7 @@ fn request_host(headers: &HeaderMap) -> Option<&str> {
 pub async fn home(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, AppError> {
     let wikis = load_wikis(&state.db).await?;
     let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
-        return not_found(&state, "en").await;
+        return not_found(&state, "en", "NotAnotherWiki").await;
     };
     let slug = wiki
         .settings
@@ -139,15 +160,16 @@ pub async fn home(State(state): State<AppState>, headers: HeaderMap) -> Result<R
 pub async fn page(
     State(state): State<AppState>,
     Path(slug): Path<String>,
+    Query(query): Query<PageQuery>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let slug = slug.trim().to_lowercase();
     if slug.is_empty() || slug.len() > 200 {
-        return not_found(&state, "en").await;
+        return not_found(&state, "en", "NotAnotherWiki").await;
     }
     let wikis = load_wikis(&state.db).await?;
     let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
-        return not_found(&state, "en").await;
+        return not_found(&state, "en", "NotAnotherWiki").await;
     };
     let locale = wiki.default_locale.clone();
     let page_row = sqlx::query!(
@@ -159,16 +181,19 @@ pub async fn page(
     .fetch_optional(&state.db)
     .await?;
     let Some(prow) = page_row else {
-        return not_found(&state, &locale).await;
+        return not_found(&state, &locale, &wiki.name).await;
     };
     let Some(revision_id) = prow.current_revision_id else {
-        return not_found(&state, &locale).await;
+        return not_found(&state, &locale, &wiki.name).await;
     };
     let revision = sqlx::query!("SELECT body_md FROM revisions WHERE id = $1", revision_id)
         .fetch_optional(&state.db)
         .await?;
     let Some(rev) = revision else {
-        return not_found(&state, &locale).await;
+        return not_found(&state, &locale, &wiki.name).await;
     };
+    if let Some(target) = jump_target(&slug, &query) {
+        return Ok(Redirect::to(&target).into_response());
+    }
     render_or_cached(&state, wiki, &prow.title, &locale, rev.body_md, &headers).await
 }
