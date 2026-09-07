@@ -48,7 +48,7 @@ async fn migrate() -> ExitCode {
         }
         Err(err) => {
             eprintln!("migration error: {err}");
-            return ExitCode::FAILURE;
+            ExitCode::FAILURE
         }
     }
 }
@@ -82,7 +82,7 @@ async fn serve() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("server error: {err}");
-            return ExitCode::FAILURE;
+            ExitCode::FAILURE
         }
     }
 }
