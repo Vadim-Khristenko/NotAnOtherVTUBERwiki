@@ -1094,11 +1094,16 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "dotenvy",
+ "minijinja",
  "naw-core",
+ "naw-markdown",
  "naw-web",
+ "serde_json",
+ "sqlx",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

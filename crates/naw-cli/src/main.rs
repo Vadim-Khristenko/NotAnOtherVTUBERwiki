@@ -1,5 +1,7 @@
 //! NotAnotherWiki Engine command line entry point.
 
+mod seed;
+
 use std::process::ExitCode;
 
 #[tokio::main]
@@ -14,8 +16,9 @@ async fn main() -> ExitCode {
     match std::env::args().nth(1).as_deref() {
         Some("serve") => serve().await,
         Some("migrate") => migrate().await,
+        Some("seed") => seed().await,
         _ => {
-            eprintln!("usage: naw <serve|migrate>");
+            eprintln!("usage: naw <serve|migrate|seed>");
             ExitCode::FAILURE
         }
     }
@@ -48,6 +51,34 @@ async fn migrate() -> ExitCode {
         }
         Err(err) => {
             eprintln!("migration error: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn seed() -> ExitCode {
+    dotenvy::dotenv().ok();
+    let config = match load_config() {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("config error: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let pool = match naw_core::db::connect(&config.database_url).await {
+        Ok(pool) => pool,
+        Err(err) => {
+            eprintln!("database error: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match seed::run(&pool, &config.skin_dir).await {
+        Ok(()) => {
+            tracing::info!("seed applied");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("seed error: {err}");
             ExitCode::FAILURE
         }
     }
