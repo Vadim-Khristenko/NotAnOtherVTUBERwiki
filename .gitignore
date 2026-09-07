@@ -279,9 +279,6 @@ auto-save-list/
 # Helix
 .helix/
 
-# Other Tools
-.work*/
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  OS ARTIFACTS
@@ -340,3 +337,25 @@ $RECYCLE.BIN/
 # Local things
 PLAN.md
 .local/
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  DOT-DIRECTORIES: ignore all, keep only what the project needs
+# ─────────────────────────────────────────────────────────────────────────────
+# Tools (agents, editors, CI runners) keep dropping hidden utility folders.
+# Ignore every dot-directory by default; each exception below is deliberate
+# and must stay below this rule (last matching pattern wins).
+.*/
+
+# CI and forge hosting configs (tracked, required for automation)
+!.github/
+!.forgejo/
+!.gitlab/
+
+# SQLx offline query cache (tracked, CI builds with SQLX_OFFLINE=true)
+!.sqlx/
+
+# Editor dirs whose files are allow-listed above (dir itself must be
+# re-included, otherwise file-level ! rules stop working)
+!.vscode/
+!.devcontainer/
