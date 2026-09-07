@@ -44,7 +44,10 @@ fn add_heading_ids(html: &str) -> String {
     let mut seen: HashMap<String, usize> = HashMap::new();
     while let Some(open) = rest.find("<h") {
         let level = rest[open + 2..].chars().next();
-        let Some(n) = level.and_then(|c| c.to_digit(10)).filter(|n| (1..=6).contains(n)) else {
+        let Some(n) = level
+            .and_then(|c| c.to_digit(10))
+            .filter(|n| (1..=6).contains(n))
+        else {
             out.push_str(&rest[..open + 2]);
             rest = &rest[open + 2..];
             continue;
