@@ -54,7 +54,7 @@ by a person**. Any of these are useful:
 - A logo or mascot for the engine
 - A banner for the repository
 - A favicon and small icon set
-- Skins and themes for SnackersWIKI
+- Skins and themes for FilianWIKI
 - Loading and error page illustrations
 - Pixel art, because VTuber communities are extremely good at pixel art
 - Better ASCII art than the block above

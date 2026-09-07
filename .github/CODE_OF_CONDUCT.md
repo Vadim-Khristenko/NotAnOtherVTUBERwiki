@@ -90,7 +90,7 @@ this project and takes precedence where the two differ.
 ### Where this applies
 
 Everywhere the project exists: this repository, issues and pull requests, discussions,
-the SnackersWIKI deployment, and any space where someone is acting as a representative
+the FilianWIKI deployment, and any space where someone is acting as a representative
 of the project.
 
 ### How to report

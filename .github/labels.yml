@@ -155,7 +155,7 @@
 # --- community --------------------------------------------------------------
 - name: "snackers"
   color: "ff9ecd"
-  description: "Relates to SnackersWIKI or the Snackers community"
+  description: "Relates to FilianWIKI or the Snackers community"
 
 - name: "easter-egg"
   color: "ffb3d9"
