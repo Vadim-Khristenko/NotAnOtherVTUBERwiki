@@ -195,12 +195,11 @@ async fn seed_content(
     .execute(pool)
     .await?;
     sqlx::query!(
-        "INSERT INTO revisions (id, page_id, body_md, content_hash, summary) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO revisions (id, page_id, body_md, content_hash, summary) VALUES ($1, $2, $3, $4, NULL)",
         revision_id,
         page_id,
         body_md,
-        naw_markdown::content_hash(body_md),
-        "seed"
+        naw_markdown::content_hash(body_md)
     )
     .execute(pool)
     .await?;
@@ -225,7 +224,7 @@ async fn ensure_cache(
     title: &str,
     body_md: &str,
 ) -> Result<(), AppError> {
-    let key = naw_markdown::page_hash(title, locale, body_md);
+    let key = naw_markdown::page_hash(title, locale, body_md, "");
     if sqlx::query!(
         "SELECT html FROM render_cache WHERE wiki_id = $1 AND content_hash = $2 AND renderer_version = $3",
         wiki_id,
@@ -240,12 +239,15 @@ async fn ensure_cache(
     }
     let rendered = naw_markdown::render_page(
         env,
-        title,
-        body_md,
-        wiki_name,
-        locale,
-        ENGINE_VERSION,
-        false,
+        &naw_markdown::PageInput {
+            title,
+            body_md,
+            wiki_name,
+            lang: locale,
+            version: ENGINE_VERSION,
+            served_from_cache: false,
+            summary: "",
+        },
     )?;
     sqlx::query!(
         "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",

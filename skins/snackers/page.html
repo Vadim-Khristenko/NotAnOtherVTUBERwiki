@@ -1,2 +1,2 @@
 {% extends "layout.html" %}
-{% block body %}{{ body | safe }}{% endblock %}
+{% block body %}{% if summary %}<p class="page-summary">{{ summary }}</p>{% endif %}{{ body | safe }}{% endblock %}

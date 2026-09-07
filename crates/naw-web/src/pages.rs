@@ -89,9 +89,10 @@ async fn render_or_cached(
     title: &str,
     locale: &str,
     body_md: String,
+    summary: &str,
     headers: &HeaderMap,
 ) -> Result<Response, AppError> {
-    let key = naw_markdown::page_hash(title, locale, &body_md);
+    let key = naw_markdown::page_hash(title, locale, &body_md, summary);
     let etag = etag_for(&key);
     if let Some(row) = sqlx::query!(
         "SELECT html FROM render_cache WHERE wiki_id = $1 AND content_hash = $2 AND renderer_version = $3",
@@ -106,12 +107,15 @@ async fn render_or_cached(
     }
     let rendered = naw_markdown::render_page(
         &state.templates,
-        title,
-        &body_md,
-        &wiki.name,
-        locale,
-        ENGINE_VERSION,
-        false,
+        &naw_markdown::PageInput {
+            title,
+            body_md: &body_md,
+            wiki_name: &wiki.name,
+            lang: locale,
+            version: ENGINE_VERSION,
+            served_from_cache: false,
+            summary,
+        },
     )?;
     let rendered_etag = etag_for(&rendered.content_hash);
     sqlx::query!(
@@ -226,6 +230,7 @@ struct FoundPage {
     title: String,
     locked: bool,
     body_md: String,
+    summary: Option<String>,
 }
 
 async fn find_page(
@@ -248,14 +253,18 @@ async fn find_page(
     let Some(revision_id) = prow.current_revision_id else {
         return Ok(None);
     };
-    let revision = sqlx::query!("SELECT body_md FROM revisions WHERE id = $1", revision_id)
-        .fetch_optional(db)
-        .await?;
+    let revision = sqlx::query!(
+        "SELECT body_md, summary FROM revisions WHERE id = $1",
+        revision_id
+    )
+    .fetch_optional(db)
+    .await?;
     Ok(revision.map(|rev| FoundPage {
         id: prow.id,
         title: prow.title,
         locked: prow.is_locked,
         body_md: rev.body_md,
+        summary: rev.summary,
     }))
 }
 
@@ -298,7 +307,16 @@ pub async fn page(
     if let Some(target) = jump_target(&slug, &query) {
         return Ok(Redirect::to(&target).into_response());
     }
-    render_or_cached(&state, wiki, &found.title, &locale, found.body_md, &headers).await
+    render_or_cached(
+        &state,
+        wiki,
+        &found.title,
+        &locale,
+        found.body_md,
+        found.summary.as_deref().unwrap_or(""),
+        &headers,
+    )
+    .await
 }
 
 /// Blank creation form.
@@ -397,12 +415,15 @@ pub async fn create_page(
     .await?;
     let rendered = naw_markdown::render_page(
         &state.templates,
-        &title,
-        &form.body_md,
-        &wiki.name,
-        &locale,
-        ENGINE_VERSION,
-        false,
+        &naw_markdown::PageInput {
+            title: &title,
+            body_md: &form.body_md,
+            wiki_name: &wiki.name,
+            lang: &locale,
+            version: ENGINE_VERSION,
+            served_from_cache: false,
+            summary: summary.as_deref().unwrap_or(""),
+        },
     )?;
     sqlx::query!(
         "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
@@ -501,12 +522,15 @@ pub async fn save_page(
     .await?;
     let rendered = naw_markdown::render_page(
         &state.templates,
-        &title,
-        &form.body_md,
-        &wiki.name,
-        &locale,
-        ENGINE_VERSION,
-        false,
+        &naw_markdown::PageInput {
+            title: &title,
+            body_md: &form.body_md,
+            wiki_name: &wiki.name,
+            lang: &locale,
+            version: ENGINE_VERSION,
+            served_from_cache: false,
+            summary: summary.as_deref().unwrap_or(""),
+        },
     )?;
     sqlx::query!(
         "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
@@ -518,6 +542,47 @@ pub async fn save_page(
     .execute(&state.db)
     .await?;
     Ok(Redirect::to(&format!("/{slug}")).into_response())
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct PreviewForm {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    body_md: String,
+}
+
+/// Renders the posted Markdown without saving anything. The editor opens
+/// it in a new tab, so authors see the real pipeline output.
+#[instrument(skip(state))]
+pub async fn preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<PreviewForm>,
+) -> Result<Response, AppError> {
+    let wikis = load_wikis(&state.db).await?;
+    let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
+        return not_found(&state, "en", "NotAnotherWiki").await;
+    };
+    let title = form.title.trim();
+    let title = if title.is_empty() { "Preview" } else { title };
+    let rendered = naw_markdown::render_page(
+        &state.templates,
+        &naw_markdown::PageInput {
+            title,
+            body_md: &form.body_md,
+            wiki_name: &wiki.name,
+            lang: &wiki.default_locale,
+            version: ENGINE_VERSION,
+            served_from_cache: false,
+            summary: "",
+        },
+    )?;
+    Ok((
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        rendered.html,
+    )
+        .into_response())
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ mod pages;
 mod resolve;
 
 use axum::extract::State;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use naw_core::error::AppError;
 use naw_core::state::AppState;
@@ -18,6 +18,7 @@ pub fn router(state: AppState) -> Router {
         .route("/ready", get(ready))
         .route("/", get(pages::home))
         .route("/new", get(pages::new_page).post(pages::create_page))
+        .route("/preview", post(pages::preview))
         .route("/{slug}", get(pages::page))
         .route("/{slug}/edit", get(pages::edit_page).post(pages::save_page))
         .layer(tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()))

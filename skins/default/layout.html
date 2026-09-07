@@ -72,6 +72,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .theme-toggle { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 999px; padding: 0.3rem 0.7rem; cursor: pointer; font-size: 0.85rem; }
 .content { max-width: var(--content-width); margin: 0 auto; padding: 1.5rem 1.2rem 3rem; }
 .content h1, .content h2 { line-height: 1.25; }
+.page-summary { font-size: 1.1rem; color: var(--muted); border-left: 3px solid var(--accent); padding-left: 0.8rem; }
 .content a { color: var(--accent); }
 .content pre { background: var(--surface-sunken); padding: 1rem; overflow-x: auto; border-radius: var(--radius); }
 .content code { font-family: var(--font-mono); font-size: 0.9em; }
@@ -87,6 +88,17 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .field-input, .field-body { display: block; width: 100%; margin-top: 0.3rem; padding: 0.6rem; font: inherit; font-weight: 400; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); }
 .field-body { font-family: var(--font-mono); line-height: 1.5; }
 .button-save { background: var(--accent); color: var(--accent-ink); border: none; border-radius: var(--radius); padding: 0.7rem 1.6rem; font: inherit; font-weight: 700; cursor: pointer; }
+.form-actions { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+.button-preview { background: transparent; color: var(--ink); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0.7rem 1.4rem; font: inherit; cursor: pointer; }
+.toolbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 0.35rem; background: var(--bg); padding: 0.5rem 0; }
+.toolbar button { background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 0.4rem; padding: 0.35rem 0.65rem; cursor: pointer; font-size: 0.88rem; }
+.toolbar button:hover { border-color: var(--accent); }
+.selbar { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 10; display: flex; gap: 0.35rem; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px; padding: 0.4rem 0.6rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); }
+.selbar[hidden] { display: none; }
+.selbar button { background: transparent; border: none; color: var(--ink); padding: 0.3rem 0.6rem; cursor: pointer; font-size: 0.9rem; }
+.syntax-help { margin-top: 1.6rem; color: var(--muted); font-size: 0.88rem; }
+.syntax-help summary { cursor: pointer; font-weight: 600; }
+.syntax-help code { font-family: var(--font-mono); background: var(--surface-sunken); padding: 0.1rem 0.35rem; border-radius: 0.3rem; }
 @media (max-width: 36rem) {
   .site-header-inner { padding: 0.6rem 1rem; }
   .content { padding: 1rem 1rem 2.5rem; }
