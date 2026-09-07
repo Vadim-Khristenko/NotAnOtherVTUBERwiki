@@ -6,6 +6,6 @@
       <a href="/terms">Terms</a>
       <a href="/license">License</a>
     </nav>
-    <p class="engine-note">NotAnotherWiki engine v{{ version }} · {% if served_from_cache %}served from cache{% else %}rendered in {{ render_ms }} ms{% endif %}</p>
+    <p class="engine-note">NotAnotherWiki engine v{{ version }}{% if footer_note is defined and footer_note %} · {{ footer_note }}{% endif %}</p>
   </div>
 </footer>

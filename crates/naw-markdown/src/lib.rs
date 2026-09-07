@@ -154,6 +154,11 @@ pub fn render_page(
     let started = std::time::Instant::now();
     let body_html = render_html(body_md);
     let render_ms = started.elapsed().as_millis() as u64;
+    let footer_note = if served_from_cache {
+        "served from cache".to_string()
+    } else {
+        format!("rendered in {render_ms} ms")
+    };
     let template = env.get_template("page.html").map_err(template_error)?;
     let html = template
         .render(minijinja::context! {
@@ -162,8 +167,7 @@ pub fn render_page(
             lang => lang,
             body => body_html,
             version => version,
-            served_from_cache => served_from_cache,
-            render_ms => render_ms,
+            footer_note => footer_note,
         })
         .map_err(template_error)?;
     Ok(RenderedPage { content_hash, html })

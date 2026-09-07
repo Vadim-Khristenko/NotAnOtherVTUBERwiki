@@ -17,7 +17,9 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/ready", get(ready))
         .route("/", get(pages::home))
+        .route("/new", get(pages::new_page).post(pages::create_page))
         .route("/{slug}", get(pages::page))
+        .route("/{slug}/edit", get(pages::edit_page).post(pages::save_page))
         .layer(tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()))
         .with_state(state)
 }

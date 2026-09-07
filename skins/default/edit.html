@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+{% block body %}
+<h1>{{ form_title }}</h1>
+<form method="post" action="{{ form_action }}">
+{% if show_slug %}
+<label class="field">Slug
+<input class="field-input" name="slug" value="{{ slug }}" maxlength="100" required />
+</label>
+{% endif %}
+<label class="field">Title
+<input class="field-input" name="title" value="{{ title_value }}" maxlength="200" required />
+</label>
+<label class="field">Summary (optional)
+<input class="field-input" name="summary" value="" maxlength="200" />
+</label>
+<label class="field">Body (Markdown)
+<textarea class="field-body" name="body_md" rows="20" required>{{ body_md }}</textarea>
+</label>
+<button class="button-save" type="submit">Save</button>
+</form>
+{% endblock %}
