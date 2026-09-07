@@ -16,17 +16,20 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub search: Arc<dyn SearchBackend>,
     pub storage: Arc<dyn StorageBackend>,
+    pub templates: Arc<minijinja::Environment<'static>>,
 }
 
 pub async fn build(config: Config) -> Result<AppState, AppError> {
     let db = db::connect(&config.database_url).await?;
     let valkey = db::connect_valkey(&config.valkey_url).await?;
     let storage: Arc<dyn StorageBackend> = Arc::new(LocalStorage::new(&config.storage_root)?);
+    let templates = Arc::new(crate::templates::load_templates(&config.skin_dir)?);
     Ok(AppState {
         db,
         valkey,
         config: Arc::new(config),
         search: Arc::new(NoopSearch),
         storage,
+        templates,
     })
 }
