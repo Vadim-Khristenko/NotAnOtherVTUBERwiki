@@ -1,5 +1,7 @@
 //! NotAnotherWiki Engine HTTP layer: router, middleware, handlers.
 
+mod resolve;
+
 use axum::extract::State;
 use axum::routing::get;
 use axum::{Json, Router};
