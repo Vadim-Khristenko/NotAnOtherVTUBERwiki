@@ -1,57 +1,161 @@
-//! Seeds the first wiki and its first pages. Idempotent: when the snackers
-//! wiki exists, this exits quietly with success and changes nothing.
+//! Seeds a wiki from Markdown files. Content lives in `seeds/<flavor>/` as
+//! one file per page, so humans edit files instead of code. Flavors:
+//! `default` fits any topic, `classic` is the bare minimum, `vtuber`
+//! frames a streamer community, `filian` is baked FilianWIKI copy that
+//! needs written permission to reuse as is.
+//!
+//! Placeholders in the files come from the command line or the environment:
+//! `{wiki_name}`, `{domain}`, `{vtuber}`, `{community}`. Re-running tops up
+//! whatever is missing, so a flavor change heals itself on the next seed.
 
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use naw_core::error::AppError;
 
-const HOME_MD: &str = "# Welcome to SnackersWIKI\n\nThe fan wiki of the Snackers, the community around Filian. This wiki runs on the NotAnotherWiki engine: Markdown first, readable with JavaScript off, exportable in an open format.\n\nStart with [About](/about).\n";
-const ABOUT_MD: &str = "# About SnackersWIKI\n\nSnackersWIKI documents Filian's streams, lore, community projects and inside jokes. Anyone in the community can propose an edit. Be kind, cite VODs, credit artists.\n";
-const PRIVACY_MD: &str = "# Privacy\n\nNo trackers. No ads. No analytics. This wiki runs no third-party scripts on reading pages.\n\nWhat we store: your account identifier from the login provider you chose, the email address that provider shares, and the public history of your edits with timestamps. Page views are not logged per user.\n\nQuestions about your data: contact the wiki administrators.\n";
-const TERMS_MD: &str = "# Terms\n\nBe kind. No spam, no hate, no doxxing. Cite VODs and sources where you can. Credit artists when you post or link fan art.\n\nYour words stay yours. By publishing here you let the wiki display and archive them with your authorship attached. Administrators may edit, revert or remove pages that break these terms. Reserved usernames are granted by administrators only.\n";
-const LICENSE_MD: &str = "# License\n\nThe NotAnotherWiki engine is free software under the GNU Affero General Public License v3 or later, with an exception that lets skins, templates and plugins stay closed and commercial. Nobody can turn the engine itself into a closed product.\n\nWiki text and media belong to their authors and stay exportable in an open format.\n";
+/// Engine version baked into seeded footers. Tracks the workspace release.
+const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub async fn run(pool: &PgPool, skin_dir: &str) -> Result<(), AppError> {
+/// Everything `naw seed` needs beyond pools and directories.
+pub struct SeedOptions {
+    pub flavor: String,
+    pub slug: String,
+    pub name: String,
+    pub domain: Option<String>,
+    pub locale: String,
+    pub vtuber: String,
+    pub community: String,
+    pub aliases: Vec<String>,
+}
+
+pub async fn run(
+    pool: &PgPool,
+    skin_dir: &str,
+    seed_dir: &str,
+    opts: &SeedOptions,
+) -> Result<(), AppError> {
     let templates = naw_core::templates::load_templates(skin_dir)?;
-    let wiki_id = match sqlx::query!("SELECT id FROM wikis WHERE slug = 'snackers'")
+    let flavor_dir = format!("{seed_dir}/{}", opts.flavor);
+    let wiki_id = match sqlx::query!("SELECT id FROM wikis WHERE slug = $1", opts.slug)
         .fetch_optional(pool)
         .await?
     {
         Some(row) => row.id,
-        None => {
-            let id = Uuid::new_v4();
-            sqlx::query!(
-                "INSERT INTO wikis (id, slug, domain, name, settings) VALUES ($1, $2, $3, $4, $5)",
-                id,
-                "snackers",
-                "snackers.vai-rice.space",
-                "SnackersWIKI",
-                serde_json::json!({"default": true, "home_slug": "home", "aliases": []})
-            )
-            .execute(pool)
-            .await?;
-            id
-        }
+        None => seed_wiki(pool, opts).await?,
     };
-    for (slug, title, body) in [
-        ("home", "Home", HOME_MD),
-        ("about", "About", ABOUT_MD),
-        ("privacy", "Privacy", PRIVACY_MD),
-        ("terms", "Terms", TERMS_MD),
-        ("license", "License", LICENSE_MD),
-    ] {
-        ensure_page(pool, &templates, wiki_id, "SnackersWIKI", slug, title, body).await?;
+    sqlx::query!(
+        "DELETE FROM render_cache WHERE wiki_id = $1 AND renderer_version <> $2",
+        wiki_id,
+        naw_markdown::RENDERER_VERSION
+    )
+    .execute(pool)
+    .await?;
+    let mut entries: Vec<_> = std::fs::read_dir(&flavor_dir)
+        .map_err(|err| AppError::Config(format!("seed dir {flavor_dir}: {err}")))?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .map(|ext| ext == "md")
+                .unwrap_or(false)
+        })
+        .collect();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let slug = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_default()
+            .to_string();
+        if slug.is_empty() {
+            continue;
+        }
+        let raw = std::fs::read_to_string(&path)
+            .map_err(|err| AppError::Config(format!("seed file {}: {err}", path.display())))?;
+        let body_md = apply_placeholders(&raw, opts);
+        if let Some(token) = leftover_placeholder(&body_md) {
+            tracing::warn!(
+                file = %path.display(),
+                token,
+                "seed file has an unfilled placeholder"
+            );
+        }
+        let title = first_heading(&body_md).unwrap_or_else(|| slug.clone());
+        ensure_page(
+            pool,
+            &templates,
+            wiki_id,
+            &opts.name,
+            &opts.locale,
+            &slug,
+            &title,
+            &body_md,
+        )
+        .await?;
     }
-    tracing::info!("seed: snackers wiki pages ready");
+    tracing::info!(slug = %opts.slug, flavor = %opts.flavor, "seed: wiki pages ready");
     Ok(())
 }
 
+fn apply_placeholders(text: &str, opts: &SeedOptions) -> String {
+    text.replace("{wiki_name}", &opts.name)
+        .replace("{domain}", opts.domain.as_deref().unwrap_or(""))
+        .replace("{vtuber}", &opts.vtuber)
+        .replace("{community}", &opts.community)
+}
+
+/// Finds the first `{lowercase}` token left after substitution, so typos
+/// in placeholder names surface as a warning instead of published text.
+fn leftover_placeholder(text: &str) -> Option<String> {
+    let mut rest = text;
+    while let Some(open) = rest.find('{') {
+        let after = &rest[open + 1..];
+        let end = after.find('}')?;
+        let token = &after[..end];
+        if !token.is_empty() && token.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+            return Some(token.to_string());
+        }
+        rest = &after[end + 1..];
+    }
+    None
+}
+
+fn first_heading(body_md: &str) -> Option<String> {
+    body_md
+        .lines()
+        .find_map(|line| line.strip_prefix("# "))
+        .map(|title| title.trim().to_string())
+        .filter(|title| !title.is_empty())
+}
+
+async fn seed_wiki(pool: &PgPool, opts: &SeedOptions) -> Result<Uuid, AppError> {
+    let id = Uuid::new_v4();
+    let aliases =
+        serde_json::to_value(&opts.aliases).map_err(|err| AppError::Config(err.to_string()))?;
+    sqlx::query!(
+        "INSERT INTO wikis (id, slug, domain, name, settings) VALUES ($1, $2, $3, $4, $5)",
+        id,
+        opts.slug,
+        opts.domain,
+        opts.name,
+        serde_json::json!({"default": true, "home_slug": "home", "aliases": aliases})
+    )
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+// Eight coherent page coordinates; splitting them into a struct would hide
+// what ensure/seed/cache each need. Allowed until page writes grow further.
+#[allow(clippy::too_many_arguments)]
 async fn ensure_page(
     pool: &PgPool,
     env: &minijinja::Environment<'_>,
     wiki_id: Uuid,
     wiki_name: &str,
+    locale: &str,
     slug: &str,
     title: &str,
     body_md: &str,
@@ -63,31 +167,30 @@ async fn ensure_page(
     )
     .fetch_optional(pool)
     .await?
-    .is_some()
+    .is_none()
     {
-        return Ok(());
+        seed_content(pool, wiki_id, locale, slug, title, body_md).await?;
     }
-    seed_page(pool, env, wiki_id, wiki_name, slug, title, body_md).await
+    ensure_cache(pool, env, wiki_id, wiki_name, locale, title, body_md).await
 }
 
-async fn seed_page(
+async fn seed_content(
     pool: &PgPool,
-    env: &minijinja::Environment<'_>,
     wiki_id: Uuid,
-    wiki_name: &str,
+    locale: &str,
     slug: &str,
     title: &str,
     body_md: &str,
 ) -> Result<(), AppError> {
-    let rendered = naw_markdown::render_page(env, title, body_md, wiki_name, "en")?;
     let page_id = Uuid::new_v4();
     let revision_id = Uuid::new_v4();
     sqlx::query!(
-        "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale) VALUES ($1, $2, 'main', $3, $4, 'en')",
+        "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale) VALUES ($1, $2, 'main', $3, $4, $5)",
         page_id,
         wiki_id,
         slug,
-        title
+        title,
+        locale
     )
     .execute(pool)
     .await?;
@@ -108,8 +211,44 @@ async fn seed_page(
     )
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+/// Renders the page into the cache when the current renderer version has
+/// no row yet. This heals stale skins: bump the version, reseed, done.
+async fn ensure_cache(
+    pool: &PgPool,
+    env: &minijinja::Environment<'_>,
+    wiki_id: Uuid,
+    wiki_name: &str,
+    locale: &str,
+    title: &str,
+    body_md: &str,
+) -> Result<(), AppError> {
+    let key = naw_markdown::page_hash(title, locale, body_md);
+    if sqlx::query!(
+        "SELECT html FROM render_cache WHERE wiki_id = $1 AND content_hash = $2 AND renderer_version = $3",
+        wiki_id,
+        key,
+        naw_markdown::RENDERER_VERSION
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some()
+    {
+        return Ok(());
+    }
+    let rendered = naw_markdown::render_page(
+        env,
+        title,
+        body_md,
+        wiki_name,
+        locale,
+        ENGINE_VERSION,
+        false,
+    )?;
     sqlx::query!(
-        "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
         wiki_id,
         rendered.content_hash,
         naw_markdown::RENDERER_VERSION,
@@ -118,4 +257,42 @@ async fn seed_page(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_opts() -> SeedOptions {
+        SeedOptions {
+            flavor: "default".to_string(),
+            slug: "wiki".to_string(),
+            name: "W".to_string(),
+            domain: Some("d.test".to_string()),
+            locale: "en".to_string(),
+            vtuber: "V".to_string(),
+            community: "fans".to_string(),
+            aliases: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn placeholders_fill_and_title_parses() {
+        let opts = test_opts();
+        let body = apply_placeholders(
+            "# Welcome to {wiki_name} on {domain} with {vtuber} and {community}\n",
+            &opts,
+        );
+        assert_eq!(body, "# Welcome to W on d.test with V and fans\n");
+        assert_eq!(
+            first_heading(&body).as_deref(),
+            Some("Welcome to W on d.test with V and fans")
+        );
+        assert_eq!(first_heading("no heading here\n"), None);
+        assert_eq!(leftover_placeholder("clean {Wiki} and {a b} text\n"), None);
+        assert_eq!(
+            leftover_placeholder("typo {wiki_nmae} here\n").as_deref(),
+            Some("wiki_nmae")
+        );
+    }
 }

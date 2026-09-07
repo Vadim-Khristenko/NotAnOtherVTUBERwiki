@@ -21,6 +21,8 @@ pub struct Config {
     pub storage_root: String,
     #[serde(default = "default_skin_dir")]
     pub skin_dir: String,
+    #[serde(default = "default_seed_dir")]
+    pub seed_dir: String,
 }
 
 impl fmt::Debug for Config {
@@ -33,6 +35,7 @@ impl fmt::Debug for Config {
             .field("http_port", &self.http_port)
             .field("storage_root", &self.storage_root)
             .field("skin_dir", &self.skin_dir)
+            .field("seed_dir", &self.seed_dir)
             .finish()
     }
 }
@@ -46,6 +49,7 @@ impl Default for Config {
             http_port: default_http_port(),
             storage_root: default_storage_root(),
             skin_dir: default_skin_dir(),
+            seed_dir: default_seed_dir(),
         }
     }
 }
@@ -72,6 +76,10 @@ fn default_storage_root() -> String {
 
 fn default_skin_dir() -> String {
     "skins/default".to_string()
+}
+
+fn default_seed_dir() -> String {
+    "seeds".to_string()
 }
 
 impl Config {

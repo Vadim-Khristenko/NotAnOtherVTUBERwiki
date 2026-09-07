@@ -12,6 +12,12 @@ valkey_url = "redis://127.0.0.1:6380"
 http_bind = "127.0.0.1"
 http_port = 4242
 
+# Directory with the default skin templates.
+skin_dir = "skins/default"
+
+# Root directory with seed content flavors (default, classic, vtuber, filian).
+seed_dir = "seeds"
+
 # Root directory for the local storage driver. Relative paths resolve from
 # the process working directory.
 storage_root = "./uploads"
