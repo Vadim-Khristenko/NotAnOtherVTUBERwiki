@@ -47,11 +47,11 @@ impl Default for Config {
 }
 
 fn default_database_url() -> String {
-    "postgres://naw:naw@localhost:5433/naw_dev".to_string()
+    "postgres://naw:naw@127.0.0.1:5433/naw_dev".to_string()
 }
 
 fn default_valkey_url() -> String {
-    "redis://localhost:6380".to_string()
+    "redis://127.0.0.1:6380".to_string()
 }
 
 fn default_http_bind() -> String {

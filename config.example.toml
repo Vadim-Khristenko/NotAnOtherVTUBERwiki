@@ -6,8 +6,8 @@
 #
 # Never put real credentials in this tracked example.
 
-database_url = "postgres://naw:naw@localhost:5433/naw_dev"
-valkey_url = "redis://localhost:6380"
+database_url = "postgres://naw:naw@127.0.0.1:5433/naw_dev"
+valkey_url = "redis://127.0.0.1:6380"
 
 http_bind = "127.0.0.1"
 http_port = 8080
