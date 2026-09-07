@@ -10,3 +10,5 @@ license.workspace = true
 naw-core.workspace = true
 pulldown-cmark.workspace = true
 ammonia.workspace = true
+minijinja.workspace = true
+sha2.workspace = true
