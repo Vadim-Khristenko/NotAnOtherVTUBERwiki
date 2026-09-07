@@ -38,6 +38,10 @@ pub struct LocalStorage {
 
 impl LocalStorage {
     pub fn new(root: &str) -> Result<Self, AppError> {
+        // The server owns its data directory: create it on boot so a fresh
+        // checkout serves without manual setup. Only the path is reported.
+        std::fs::create_dir_all(root)
+            .map_err(|err| AppError::Config(format!("storage root {root}: {err}")))?;
         let store = object_store::local::LocalFileSystem::new_with_prefix(root)
             .map_err(|err| AppError::Config(err.to_string()))?;
         Ok(Self { store })

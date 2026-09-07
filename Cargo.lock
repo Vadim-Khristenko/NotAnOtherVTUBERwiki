@@ -1118,8 +1118,10 @@ name = "naw-web"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "deadpool-redis",
  "naw-core",
  "serde_json",
+ "sqlx",
  "tokio",
  "tower",
  "tower-http",
