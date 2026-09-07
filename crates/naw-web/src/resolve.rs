@@ -9,6 +9,8 @@ use uuid::Uuid;
 /// The wiki fields the resolver needs. Built from one `wikis` row.
 pub struct WikiRef {
     pub id: Uuid,
+    // Read by the edit slice (page CRUD addresses wikis by slug). Allowed until then.
+    #[allow(dead_code)]
     pub slug: String,
     pub domain: Option<String>,
     pub name: String,

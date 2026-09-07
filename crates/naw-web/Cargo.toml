@@ -8,6 +8,9 @@ license.workspace = true
 
 [dependencies]
 naw-core.workspace = true
+naw-markdown.workspace = true
+minijinja.workspace = true
+hex.workspace = true
 axum.workspace = true
 tokio.workspace = true
 serde_json.workspace = true

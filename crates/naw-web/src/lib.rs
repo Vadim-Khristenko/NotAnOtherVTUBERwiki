@@ -1,5 +1,6 @@
 //! NotAnotherWiki Engine HTTP layer: router, middleware, handlers.
 
+mod pages;
 mod resolve;
 
 use axum::extract::State;
@@ -10,12 +11,13 @@ use naw_core::state::AppState;
 use serde_json::json;
 use tracing::instrument;
 
-/// Builds the application router. The reader path never renders: it will
-/// serve cached HTML only. In this scaffold it carries health endpoints.
+/// Builds the application router.
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
+        .route("/", get(pages::home))
+        .route("/{slug}", get(pages::page))
         .layer(tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()))
         .with_state(state)
 }

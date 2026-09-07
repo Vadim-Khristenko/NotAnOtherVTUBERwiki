@@ -1130,6 +1130,7 @@ dependencies = [
  "naw-core",
  "pulldown-cmark",
  "sha2 0.10.9",
+ "tracing",
 ]
 
 [[package]]
@@ -1138,7 +1139,10 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "deadpool-redis",
+ "hex",
+ "minijinja",
  "naw-core",
+ "naw-markdown",
  "serde_json",
  "sqlx",
  "tokio",
