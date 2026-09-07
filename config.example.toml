@@ -10,7 +10,7 @@ database_url = "postgres://naw:naw@127.0.0.1:5433/naw_dev"
 valkey_url = "redis://127.0.0.1:6380"
 
 http_bind = "127.0.0.1"
-http_port = 8080
+http_port = 4242
 
 # Root directory for the local storage driver. Relative paths resolve from
 # the process working directory.

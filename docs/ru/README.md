@@ -187,7 +187,7 @@ cargo sqlx migrate run
 
 # 4. Запустить движок
 cargo run -p naw-cli -- serve
-# состояние системы: http://127.0.0.1:8080/health, готовность: /ready
+# состояние системы: http://127.0.0.1:4242/health, готовность: /ready
 
 # 5. При желании собрать UI редактора
 cd ui && bun install && bun run build

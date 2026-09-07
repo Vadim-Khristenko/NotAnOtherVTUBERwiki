@@ -63,7 +63,7 @@ fn default_http_bind() -> String {
 }
 
 fn default_http_port() -> u16 {
-    8080
+    4242
 }
 
 fn default_storage_root() -> String {

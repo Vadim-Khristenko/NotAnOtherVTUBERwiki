@@ -191,7 +191,7 @@ cargo sqlx migrate run
 
 # 4. Run the engine
 cargo run -p naw-cli -- serve
-# health: http://127.0.0.1:8080/health, readiness: /ready
+# health: http://127.0.0.1:4242/health, readiness: /ready
 
 # 5. Optionally build the authoring UI
 cd ui && bun install && bun run build
