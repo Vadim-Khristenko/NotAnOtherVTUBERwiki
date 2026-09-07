@@ -68,6 +68,10 @@ yarn.lock
 .pnp.*
 .yarn/
 
+# Vite and worker build output
+ui/dist/
+worker/dist/
+
 # npm debug
 npm-debug.log*
 yarn-debug.log*
