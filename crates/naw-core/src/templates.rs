@@ -10,6 +10,7 @@ const TEMPLATES: &[&str] = &[
     "_footer.html",
     "page.html",
     "404.html",
+    "edit.html",
 ];
 
 pub fn load_templates(dir: &str) -> Result<Environment<'static>, AppError> {
