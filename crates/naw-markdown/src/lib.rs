@@ -24,7 +24,84 @@ pub fn render_html(markdown: &str) -> String {
 
     let mut dirty = String::with_capacity(markdown.len());
     pulldown_cmark::html::push_html(&mut dirty, parser);
-    ammonia::Builder::default().clean(&dirty).to_string()
+    let anchored = add_heading_ids(&dirty);
+    // `id` joins the generic whitelist so heading anchors survive. An id
+    // cannot execute anything; the worst it does is collide with a style.
+    ammonia::Builder::default()
+        .add_generic_attributes(["id"])
+        .clean(&anchored)
+        .to_string()
+}
+
+/// Gives every `#`-heading a stable `id` so pages support `#fragment`
+/// links and a future table of contents. Duplicate titles get `-2`, `-3`.
+fn add_heading_ids(html: &str) -> String {
+    use std::collections::HashMap;
+    use std::fmt::Write;
+
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    while let Some(open) = rest.find("<h") {
+        let level = rest[open + 2..].chars().next();
+        let Some(n) = level.and_then(|c| c.to_digit(10)).filter(|n| (1..=6).contains(n)) else {
+            out.push_str(&rest[..open + 2]);
+            rest = &rest[open + 2..];
+            continue;
+        };
+        let tag_start = open + 3;
+        let Some(tag_end) = rest[tag_start..].find('>') else {
+            break;
+        };
+        let content_start = tag_start + tag_end + 1;
+        let close = format!("</h{n}>");
+        let Some(content_end) = rest[content_start..].find(&close) else {
+            break;
+        };
+        let inner = &rest[content_start..content_start + content_end];
+        let text: String = strip_inline_tags(inner);
+        let base = slugify(&text);
+        let count = seen.entry(base.clone()).or_insert(0);
+        *count += 1;
+        let id = if *count == 1 {
+            base
+        } else {
+            format!("{}-{}", base, count)
+        };
+        let _ = write!(out, "{}<h{n} id=\"{id}\">{inner}{close}", &rest[..open],);
+        rest = &rest[content_start + content_end + close.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn strip_inline_tags(html: &str) -> String {
+    let mut text = String::with_capacity(html.len());
+    let mut inside = false;
+    for c in html.chars() {
+        match c {
+            '<' => inside = true,
+            '>' => inside = false,
+            _ if !inside => text.push(c),
+            _ => {}
+        }
+    }
+    text
+}
+
+fn slugify(text: &str) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = true;
+    for c in text.to_lowercase().chars() {
+        if c.is_alphanumeric() {
+            slug.push(c);
+            prev_dash = false;
+        } else if !prev_dash {
+            slug.push('-');
+            prev_dash = true;
+        }
+    }
+    slug.trim_matches('-').to_string()
 }
 
 /// Version of the render pipeline. Part of the `render_cache` key: bump it
@@ -90,7 +167,7 @@ mod tests {
     #[test]
     fn renders_headings_and_paragraphs() {
         let html = render_html("# Title\n\nHello.");
-        assert!(html.contains("<h1>Title</h1>"));
+        assert!(html.contains("<h1 id=\"title\">Title</h1>"));
         assert!(html.contains("<p>Hello.</p>"));
     }
 
@@ -123,6 +200,13 @@ mod tests {
         assert!(html.contains("<strong>fast</strong>"));
     }
 
+    #[test]
+    fn headings_keep_ids_after_sanitize() {
+        let html = render_html("# Hello World\n\n## Hello World\n");
+        assert!(html.contains("<h1 id=\"hello-world\">"));
+        assert!(html.contains("<h2 id=\"hello-world-2\">"));
+    }
+
     fn test_env() -> minijinja::Environment<'static> {
         naw_core::templates::load_templates(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -137,7 +221,7 @@ mod tests {
             .expect("render")
             .html;
         assert!(html.contains("<title>Home"));
-        assert!(html.contains("<h1>Hi</h1>"));
+        assert!(html.contains("<h1 id=\"hi\">Hi</h1>"));
         assert!(html.contains("SnackersWIKI"));
     }
 
