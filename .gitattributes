@@ -1,0 +1,16 @@
+# Normalize line endings on commit and check out LF everywhere, so byte
+# sensitive files (SQL migrations with sqlx checksums) stay identical on
+# every machine regardless of core.autocrlf.
+* text=auto
+*.rs text eol=lf
+*.sql text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.ts text eol=lf
+*.vue text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css text eol=lf
