@@ -108,8 +108,9 @@ fn slugify(text: &str) -> String {
 }
 
 /// Version of the render pipeline. Part of the `render_cache` key: bump it
-/// whenever `render_page` output changes for identical input.
-pub const RENDERER_VERSION: i32 = 1;
+/// whenever `render_page` output changes for identical input. Skin and
+/// chrome changes count: a new footer is a new rendering.
+pub const RENDERER_VERSION: i32 = 2;
 
 /// A fully rendered page plus the key it is cached under.
 pub struct RenderedPage {
@@ -136,16 +137,23 @@ pub fn page_hash(title: &str, lang: &str, body_md: &str) -> Vec<u8> {
     hasher.finalize().to_vec()
 }
 
-/// Renders a full page through the `page.html` template.
+/// Renders a full page through the `page.html` template. `version` and the
+/// cache flag land in the footer; on a hit the caller passes
+/// `served_from_cache` instead of re-rendering. The displayed duration
+/// covers the Markdown stage, the template adds microseconds on top.
 pub fn render_page(
     env: &minijinja::Environment,
     title: &str,
     body_md: &str,
     wiki_name: &str,
     lang: &str,
+    version: &str,
+    served_from_cache: bool,
 ) -> Result<RenderedPage, naw_core::error::AppError> {
     let content_hash = page_hash(title, lang, body_md);
+    let started = std::time::Instant::now();
     let body_html = render_html(body_md);
+    let render_ms = started.elapsed().as_millis() as u64;
     let template = env.get_template("page.html").map_err(template_error)?;
     let html = template
         .render(minijinja::context! {
@@ -153,6 +161,9 @@ pub fn render_page(
             wiki_name => wiki_name,
             lang => lang,
             body => body_html,
+            version => version,
+            served_from_cache => served_from_cache,
+            render_ms => render_ms,
         })
         .map_err(template_error)?;
     Ok(RenderedPage { content_hash, html })
@@ -220,12 +231,39 @@ mod tests {
 
     #[test]
     fn page_renders_title_and_body() {
-        let html = render_page(&test_env(), "Home", "# Hi", "SnackersWIKI", "en")
-            .expect("render")
-            .html;
+        let html = render_page(
+            &test_env(),
+            "Home",
+            "# Hi",
+            "FilianWIKI",
+            "en",
+            "0.1.0",
+            false,
+        )
+        .expect("render")
+        .html;
         assert!(html.contains("<title>Home"));
         assert!(html.contains("<h1 id=\"hi\">Hi</h1>"));
-        assert!(html.contains("SnackersWIKI"));
+        assert!(html.contains("FilianWIKI"));
+        assert!(html.contains("0.1.0"));
+        assert!(html.contains("rendered in "));
+    }
+
+    #[test]
+    fn cached_footer_has_no_timing() {
+        let html = render_page(
+            &test_env(),
+            "Home",
+            "# Hi",
+            "FilianWIKI",
+            "en",
+            "0.1.0",
+            true,
+        )
+        .expect("render")
+        .html;
+        assert!(html.contains("served from cache"));
+        assert!(!html.contains("rendered in"));
     }
 
     #[test]
@@ -239,6 +277,6 @@ mod tests {
     #[test]
     fn missing_template_is_an_error() {
         let env = minijinja::Environment::new();
-        assert!(render_page(&env, "T", "x", "W", "en").is_err());
+        assert!(render_page(&env, "T", "x", "W", "en", "0.1.0", false).is_err());
     }
 }

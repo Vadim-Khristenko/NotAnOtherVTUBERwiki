@@ -17,6 +17,9 @@ fn template_error(err: minijinja::Error) -> AppError {
     AppError::Internal
 }
 
+/// Engine version shown in the footer. Tracks the workspace release.
+const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 async fn load_wikis(db: &sqlx::PgPool) -> Result<Vec<WikiRef>, AppError> {
     let rows =
         sqlx::query!(r#"SELECT id, slug, domain, name, default_locale, settings FROM wikis"#)
@@ -100,8 +103,15 @@ async fn render_or_cached(
     {
         return Ok(cached_response(row.html, &etag, headers));
     }
-    let rendered =
-        naw_markdown::render_page(&state.templates, title, &body_md, &wiki.name, locale)?;
+    let rendered = naw_markdown::render_page(
+        &state.templates,
+        title,
+        &body_md,
+        &wiki.name,
+        locale,
+        ENGINE_VERSION,
+        false,
+    )?;
     let rendered_etag = etag_for(&rendered.content_hash);
     sqlx::query!(
         "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
