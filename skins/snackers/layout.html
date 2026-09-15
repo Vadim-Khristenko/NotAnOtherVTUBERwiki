@@ -102,6 +102,32 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .syntax-help { margin-top: 1.6rem; color: var(--muted); font-size: 0.88rem; }
 .syntax-help summary { cursor: pointer; font-weight: 600; }
 .syntax-help code { font-family: var(--font-mono); background: var(--surface-sunken); padding: 0.1rem 0.35rem; border-radius: 0.3rem; }
+/* Rich formatting v4, snackers palette on the default structure. */
+.content blockquote { margin: 1rem 0; padding: 0.6rem 1rem; border-left: 3px solid var(--border-strong); color: var(--ink-soft); background: var(--bg-elevated); border-radius: 0 var(--radius) var(--radius) 0; }
+.content mark { background: #ffe08a; color: inherit; padding: 0 0.2em; border-radius: 0.2em; }
+html[data-theme="dark"] .content mark { background: #6b3fa0; color: #ffe9f4; }
+.spoiler { background: var(--surface-sunken); color: transparent; border-radius: 0.3rem; padding: 0 0.35rem; cursor: pointer; transition: color 0.15s; }
+.spoiler:hover, .spoiler:focus { color: var(--ink); }
+.content blockquote.markdown-alert-note, .content blockquote.markdown-alert-tip, .content blockquote.markdown-alert-important, .content blockquote.markdown-alert-warning, .content blockquote.markdown-alert-caution { border-left-width: 4px; }
+.content blockquote.markdown-alert-note { border-color: var(--accent); }
+.content blockquote.markdown-alert-tip { border-color: #22a06b; }
+.content blockquote.markdown-alert-important { border-color: var(--accent-2); }
+.content blockquote.markdown-alert-warning { border-color: #c98a00; }
+.content blockquote.markdown-alert-caution { border-color: #ff3860; }
+details.details, details.quote { margin: 1rem 0; border: 1px solid var(--line); border-radius: var(--radius); padding: 0.6rem 0.9rem; background: var(--bg-elevated); }
+details.details summary, details.quote summary { cursor: pointer; font-weight: 700; }
+details.details blockquote, details.quote blockquote { margin: 0.6rem 0 0.2rem; }
+figure.pullquote { margin: 1.4rem 0; padding: 0; text-align: center; }
+figure.pullquote blockquote { display: inline-block; font-size: 1.25rem; font-weight: 700; border: none; background: none; color: var(--ink); padding: 0 1rem; }
+pre.mermaid, pre.diagram { border: 1px dashed var(--border-strong); }
+pre.math { border-left: 3px solid var(--accent); }
+span.math { font-family: var(--font-mono); background: var(--surface-sunken); padding: 0.1rem 0.35rem; border-radius: 0.3rem; }
+.content dl { margin: 1rem 0; }
+.content dt { font-weight: 700; }
+.content dd { margin: 0 0 0.6rem 1.2rem; color: var(--ink-soft); }
+.live-preview { margin-top: 1.6rem; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; background: var(--bg-elevated); }
+.live-preview h2 { margin-top: 0; font-size: 1rem; color: var(--muted); }
+.preview-body { background: var(--surface); border-radius: var(--radius); padding: 1rem; min-height: 4rem; }
 @media (max-width: 36rem) {
   .site-header-inner { padding: 0.6rem 1rem; }
   .content { padding: 1rem 1rem 2.5rem; }

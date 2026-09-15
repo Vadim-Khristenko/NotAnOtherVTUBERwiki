@@ -552,12 +552,22 @@ pub(crate) struct PreviewForm {
     body_md: String,
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct PreviewQuery {
+    #[serde(default)]
+    fragment: Option<u8>,
+}
+
 /// Renders the posted Markdown without saving anything. The editor opens
-/// it in a new tab, so authors see the real pipeline output.
+/// it in a new tab, so authors see the real pipeline output. With
+/// `?fragment=1` only the sanitized body fragment is returned, so the live
+/// preview can inject it without parsing a full page. Same `render_html` in
+/// both cases: preview and save never disagree.
 #[instrument(skip(state))]
 pub async fn preview(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<PreviewQuery>,
     Form(form): Form<PreviewForm>,
 ) -> Result<Response, AppError> {
     let wikis = load_wikis(&state.db).await?;
@@ -566,6 +576,14 @@ pub async fn preview(
     };
     let title = form.title.trim();
     let title = if title.is_empty() { "Preview" } else { title };
+    if query.fragment.unwrap_or(0) == 1 {
+        let body_html = naw_markdown::render_html(&form.body_md);
+        return Ok((
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            body_html,
+        )
+            .into_response());
+    }
     let rendered = naw_markdown::render_page(
         &state.templates,
         &naw_markdown::PageInput {

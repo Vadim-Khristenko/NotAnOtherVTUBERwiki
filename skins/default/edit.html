@@ -16,9 +16,18 @@
 <div class="toolbar" role="toolbar" aria-label="Formatting">
 <button type="button" data-wrap="**" title="Bold"><b>B</b></button>
 <button type="button" data-wrap="*" title="Italic"><i>I</i></button>
+<button type="button" data-wrap="__" title="Italic (__)"><i>__</i></button>
+<button type="button" data-wrap="~~" title="Strikethrough"><s>S</s></button>
+<button type="button" data-wrap="++" title="Underline"><u>U</u></button>
+<button type="button" data-wrap="==" title="Highlight">H</button>
+<button type="button" data-wrap="||" title="Spoiler">&#9618;</button>
 <button type="button" data-prefix="## " title="Heading">H</button>
 <button type="button" data-link title="Link">link</button>
 <button type="button" data-prefix="&gt; " title="Quote">&rdquo;</button>
+<button type="button" data-block=">! Summary&#10;> " title="Collapsible quote">?! </button>
+<button type="button" data-block=":::details Title&#10;&#10;:::" title="Details block">+</button>
+<button type="button" data-block="```mermaid&#10;graph TD;&#10;```" title="Mermaid diagram">M</button>
+<button type="button" data-wrap="$" title="Inline math">$</button>
 <button type="button" data-prefix="- " title="List">&bull;</button>
 <button type="button" data-footnote title="Footnote">[^]</button>
 </div>
@@ -33,16 +42,26 @@
 <div class="selbar" id="selbar" hidden>
 <button type="button" data-wrap="**" title="Bold"><b>B</b></button>
 <button type="button" data-wrap="*" title="Italic"><i>I</i></button>
+<button type="button" data-wrap="||" title="Spoiler">&#9618;</button>
 <button type="button" data-link title="Link">link</button>
+</div>
+<div class="live-preview">
+<h2>Live preview</h2>
+<div id="live-preview" class="preview-body"><p>Start typing to see the real render.</p></div>
 </div>
 <details class="syntax-help">
 <summary>Markdown cheatsheet</summary>
 <ul>
 <li><code># H1</code> … <code>###### H6</code>, optional attrs at the end: <code>## Title {id="x" class="y"}</code></li>
-<li><code>**bold**</code>, <code>*italic*</code>, <code>`code`</code></li>
-<li><code>[text](https://…)</code> for links</li>
-<li><code>&gt; quote</code>, <code>- list</code>, <code>1. numbered</code></li>
+<li><code>**bold**</code>, <code>*italic*</code>, <code>__italic__</code>, <code>~~strike~~</code>, <code>++underline++</code>, <code>==mark==</code>, <code>||spoiler||</code>, <code>`code`</code></li>
+<li><code>H ~2~ O</code> sub, <code>E=mc ^2^</code> sup (spaces around markers)</li>
+<li><code>[text](https://…)</code> or <code>[[slug|text]]</code> for links</li>
+<li><code>&gt; quote</code>, collapsible: <code>&gt;! Summary</code> then <code>&gt; body</code>; block: <code>:::details Title</code> … <code>:::</code>, pullquote: <code>:::pullquote</code> … <code>:::</code></li>
+<li>Alerts: <code>&gt; [!NOTE]</code> / <code>TIP</code> / <code>IMPORTANT</code> / <code>WARNING</code> / <code>CAUTION</code></li>
+<li><code>- list</code>, <code>1. numbered</code>, task <code>- [ ] todo</code>, definition: <code>Term</code> then <code>&nbsp;&nbsp;: def</code></li>
 <li>Footnote <code>[^1]</code> in text plus <code>[^1]: note</code> at the bottom</li>
+<li>Math: <code>$E=mc^2$</code> inline, <code>$$x+y$$</code> display, <code>```math</code> block</li>
+<li>Diagrams: <code>```mermaid</code> / <code>dot</code> / <code>plantuml</code> … <code>```</code> (code text kept, SVG render comes with the worker)</li>
 <li>Line break: two trailing spaces or <code>&lt;br&gt;</code></li>
 <li>Link to a heading: <code>/page?jump_to=heading-id</code>; force theme: <code>?theme=light</code></li>
 </ul>
@@ -96,13 +115,22 @@
     }
     area.focus();
   }
+  function insertBlock(template) {
+    var s = area.selectionStart, e = area.selectionEnd, v = area.value;
+    var sel = v.slice(s, e);
+    var ins = sel ? template.replace("\n\n", "\n" + sel + "\n") : template;
+    area.value = v.slice(0, s) + "\n" + ins + "\n" + v.slice(e);
+    area.focus();
+    area.dispatchEvent(new Event("input"));
+  }
   document.addEventListener("click", function (ev) {
-    var btn = ev.target.closest("button[data-wrap],button[data-prefix],button[data-link],button[data-footnote]");
+    var btn = ev.target.closest("button[data-wrap],button[data-prefix],button[data-link],button[data-footnote],button[data-block]");
     if (!btn) return;
     if (btn.hasAttribute("data-wrap")) surround(btn.getAttribute("data-wrap"));
     else if (btn.hasAttribute("data-prefix")) prefixLines(btn.getAttribute("data-prefix"));
     else if (btn.hasAttribute("data-link")) insertLink();
     else if (btn.hasAttribute("data-footnote")) insertFootnote();
+    else if (btn.hasAttribute("data-block")) insertBlock(btn.getAttribute("data-block"));
   });
   document.addEventListener("selectionchange", function () {
     if (!selbar) return;
@@ -111,6 +139,28 @@
     if (sel) selbar.removeAttribute("hidden");
     else selbar.setAttribute("hidden", "");
   });
+  var preview = document.getElementById("live-preview");
+  var timer = null;
+  function livePreview() {
+    if (!preview) return;
+    var body = new URLSearchParams();
+    body.set("title", "Preview");
+    body.set("body_md", area.value);
+    fetch("/preview?fragment=1", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString()
+    }).then(function (res) {
+      return res.text();
+    }).then(function (html) {
+      preview.innerHTML = html;
+    }).catch(function () {});
+  }
+  area.addEventListener("input", function () {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(livePreview, 400);
+  });
+  livePreview();
 })();
 </script>
 {% endblock %}
