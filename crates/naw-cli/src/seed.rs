@@ -43,6 +43,13 @@ pub async fn run(
         Some(row) => row.id,
         None => seed_wiki(pool, opts).await?,
     };
+    // Chrome renders under the wiki's stored name, never under the CLI
+    // flag default (which is the slug). Seeding an existing wiki with a bare
+    // --slug once poisoned every cache row with that slug as the brand.
+    let wiki_name: String = sqlx::query!("SELECT name FROM wikis WHERE id = $1", wiki_id)
+        .fetch_one(pool)
+        .await?
+        .name;
     sqlx::query!(
         "DELETE FROM render_cache WHERE wiki_id = $1 AND renderer_version <> $2",
         wiki_id,
@@ -87,7 +94,7 @@ pub async fn run(
             pool,
             &templates,
             wiki_id,
-            &opts.name,
+            &wiki_name,
             &opts.locale,
             &slug,
             &title,
