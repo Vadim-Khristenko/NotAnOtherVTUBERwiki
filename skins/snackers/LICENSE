@@ -1,0 +1,17 @@
+Snackers skin license
+
+Copyright (c) Vadim Khristenko. All rights reserved.
+
+The files in this directory (the Snackers skin: templates, styles and
+assets shipped with it) are NOT covered by the AGPL-3.0-or-later license
+of the engine, the Skin, Template and Plugin Exception, or the trademark
+policy's allowances for community skins.
+
+You may not copy, redistribute, or deploy this skin as is, in whole or in
+part, without written permission from Vadim Khristenko
+(vadim@vai-rice.space). This includes running a site that looks like the
+Snackers skin with only colors or names swapped.
+
+You MAY create your own original skin inspired by it. The exception in
+docs/LICENSE-EXCEPTION expressly allows original skins, templates and
+plugins, including closed commercial ones.

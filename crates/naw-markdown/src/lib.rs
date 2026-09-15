@@ -5,26 +5,821 @@
 
 /// Renders Markdown to sanitized HTML.
 ///
-/// Tables, footnotes and task lists are enabled. Raw HTML is disabled at the
-/// parser level (decision D12), and the result is sanitized with ammonia
-/// regardless, so every byte of output passed the whitelist.
+/// Chat-native set (v4): CommonMark plus tables, footnotes, task lists,
+/// strikethrough (`~~`), superscript (`^`), subscript (`~`), math (`$`/`$$`),
+/// GFM alerts (`> [!NOTE]`), definition lists, `[[wikilinks]]`, plus the
+/// NotAnotherWiki sugar below. Raw HTML is disabled at the parser level
+/// (decision D12), and the result is sanitized with ammonia regardless, so
+/// every byte of output passed the whitelist.
+///
+/// Sugar, all server side in Rust so preview and save never disagree:
+/// - `__italic__` renders as `<em>`, same as `*italic*` (per project order;
+///   `**bold**` stays `<strong>`, underline uses `++` to avoid the
+///   CommonMark/Discord `__` collision).
+/// - `||spoiler||` becomes `<span class="spoiler">`, `==mark==` becomes
+///   `<mark>`, `++underline++` becomes `<u>`.
+/// - `> quote` is a blockquote, `>! Summary` plus `> body` lines is a
+///   collapsible quote (`<details class="quote">`).
+/// - `:::details Title ... :::` and `:::pullquote ... :::` blocks.
+/// - Fenced `mermaid`/`dot`/`graphviz`/`plantuml`/`math` keep their code text
+///   and gain a class hook (`<pre class="mermaid">` etc) for the future
+///   worker that renders them to SVG. No execution happens in Rust.
 pub fn render_html(markdown: &str) -> String {
+    render_html_with_depth(markdown, 0)
+}
+
+/// Recursion guard for nested custom blocks (`:::details` inside a
+/// collapsible quote and the like). Depth 8 is far past sane authoring and
+/// stops a malicious nesting chain from recursing on input size.
+fn render_html_with_depth(markdown: &str, depth: usize) -> String {
     use pulldown_cmark::{Event, Options, Parser};
+
+    if depth > 8 {
+        return String::new();
+    }
 
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_FOOTNOTES);
     options.insert(Options::ENABLE_TASKLISTS);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_MATH);
+    options.insert(Options::ENABLE_GFM);
+    options.insert(Options::ENABLE_SUPERSCRIPT);
+    options.insert(Options::ENABLE_SUBSCRIPT);
+    options.insert(Options::ENABLE_DEFINITION_LIST);
+    options.insert(Options::ENABLE_WIKILINKS);
+
+    // Block sugar first: `:::details`, `:::pullquote`, `>!` collapsible
+    // quotes become placeholders that survive the parser as plain paragraphs.
+    let (without_blocks, blocks) = extract_custom_blocks(markdown);
+    // `__italic__` must reach pulldown-cmark as `*italic*`: the parser maps
+    // `__` to `<strong>` and there is no flag to change that.
+    let mapped = map_double_underscore_to_italic(&without_blocks);
 
     // Raw HTML is dropped here (decision D12). pulldown-cmark has no option
-    // that refuses raw HTML, so the HTML events never reach the writer.
+    // that refuses raw HTML, so the HTML events never reach the writer,
+    // except a bare line break: `<br>` cannot execute anything.
     // ammonia is the second line of defence, not the first.
-    let parser = Parser::new_ext(markdown, options)
-        .filter(|event| !matches!(event, Event::Html(_) | Event::InlineHtml(_)));
+    let parser = Parser::new_ext(&mapped, options).filter(|event| match event {
+        Event::Html(html) | Event::InlineHtml(html) => is_allowed_raw_html(html),
+        _ => true,
+    });
 
-    let mut dirty = String::with_capacity(markdown.len());
+    let mut dirty = String::with_capacity(mapped.len());
     pulldown_cmark::html::push_html(&mut dirty, parser);
-    ammonia::Builder::default().clean(&dirty).to_string()
+    // Block placeholders back to HTML. Inner bodies render through the same
+    // pipeline (depth + 1), so nesting works and preview matches save.
+    let dirty = restore_custom_blocks(&dirty, &blocks, depth);
+    // Fenced diagrams keep text, gain a class hook for the worker.
+    let dirty = postprocess_diagrams(&dirty);
+    // Inline sugar on HTML text (inner formatting already rendered, so
+    // `||**bold**||` keeps its `<strong>` inside the spoiler span). Code
+    // and math sections are skipped.
+    let dirty = postprocess_inline_spans(&dirty);
+    let anchored = add_heading_ids(&dirty);
+    // `id` and `class` join the generic whitelist so heading anchors and
+    // author styling survive. Neither executes anything; the worst a class
+    // does is collide with site styles, which is the author's own choice.
+    // `open` on `<details>` keeps collapsible quotes working; `<ol start>`
+    // is already allowed by ammonia's defaults.
+    ammonia::Builder::default()
+        .add_generic_attributes(["id", "class"])
+        .add_tag_attributes("details", ["open"])
+        .clean(&anchored)
+        .to_string()
+}
+
+/// The only raw HTML tag the parser lets through. Everything else stays
+/// dropped per decision D12.
+fn is_allowed_raw_html(html: &str) -> bool {
+    matches!(
+        html.trim().to_ascii_lowercase().as_str(),
+        "<br>" | "<br/>" | "<br />"
+    )
+}
+
+/// One extracted block: `:::details`, `:::pullquote`, or a `>!` collapsible
+/// quote. The placeholder `NAWBLOCK{n}NAW` stands in for it while Markdown
+/// runs, then renders back to fixed safe HTML.
+struct CustomBlock {
+    kind: BlockKind,
+    title: String,
+    body: String,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BlockKind {
+    Details,
+    Pullquote,
+    CollapsibleQuote,
+}
+
+fn block_placeholder(idx: usize) -> String {
+    format!("NAWBLOCK{idx}NAW")
+}
+
+/// Pulls `:::details` / `:::pullquote` fences and `>!` quote groups out of
+/// the Markdown so the parser never sees their markers. Unclosed fences are
+/// left literal so authors always see what they wrote.
+fn extract_custom_blocks(markdown: &str) -> (String, Vec<CustomBlock>) {
+    let lines: Vec<&str> = markdown.split('\n').collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut blocks: Vec<CustomBlock> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let trimmed = lines[i].trim_start();
+        if let Some(rest) = trimmed
+            .strip_prefix(":::details")
+            .filter(|_| trimmed == ":::details" || trimmed.starts_with(":::details "))
+        {
+            let title = rest.trim().to_string();
+            let mut body: Vec<&str> = Vec::new();
+            let mut j = i + 1;
+            while j < lines.len() && lines[j].trim() != ":::" {
+                body.push(lines[j]);
+                j += 1;
+            }
+            if j >= lines.len() {
+                out.push(lines[i].to_string());
+                i += 1;
+                continue;
+            }
+            let idx = blocks.len();
+            blocks.push(CustomBlock {
+                kind: BlockKind::Details,
+                title,
+                body: body.join("\n"),
+            });
+            out.push(String::new());
+            out.push(block_placeholder(idx));
+            out.push(String::new());
+            i = j + 1;
+            continue;
+        }
+        if trimmed == ":::pullquote" || trimmed.starts_with(":::pullquote ") {
+            let mut body: Vec<&str> = Vec::new();
+            let mut j = i + 1;
+            while j < lines.len() && lines[j].trim() != ":::" {
+                body.push(lines[j]);
+                j += 1;
+            }
+            if j >= lines.len() {
+                out.push(lines[i].to_string());
+                i += 1;
+                continue;
+            }
+            let idx = blocks.len();
+            blocks.push(CustomBlock {
+                kind: BlockKind::Pullquote,
+                title: String::new(),
+                body: body.join("\n"),
+            });
+            out.push(String::new());
+            out.push(block_placeholder(idx));
+            out.push(String::new());
+            i = j + 1;
+            continue;
+        }
+        if let Some(summary) = parse_collapsible_opener(lines[i]) {
+            let mut body: Vec<String> = Vec::new();
+            let mut j = i + 1;
+            while j < lines.len() {
+                if parse_collapsible_opener(lines[j]).is_some() {
+                    break;
+                }
+                match strip_quote_prefix(lines[j]) {
+                    Some(content) => body.push(content.to_string()),
+                    None => break,
+                }
+                j += 1;
+            }
+            let idx = blocks.len();
+            blocks.push(CustomBlock {
+                kind: BlockKind::CollapsibleQuote,
+                title: summary,
+                body: body.join("\n"),
+            });
+            out.push(String::new());
+            out.push(block_placeholder(idx));
+            out.push(String::new());
+            i = j;
+            continue;
+        }
+        out.push(lines[i].to_string());
+        i += 1;
+    }
+    (out.join("\n"), blocks)
+}
+
+/// `>! Summary` opens a collapsible quote. Up to three leading spaces match
+/// CommonMark's blockquote rule; anything else is a normal paragraph.
+fn parse_collapsible_opener(line: &str) -> Option<String> {
+    let stripped = line.strip_prefix("   ").unwrap_or(line);
+    let stripped = stripped.strip_prefix("  ").unwrap_or(stripped);
+    let stripped = stripped.strip_prefix(' ').unwrap_or(stripped);
+    let rest = stripped.strip_prefix('>')?;
+    let rest = rest.strip_prefix(' ').unwrap_or(rest);
+    let summary = rest.strip_prefix('!')?;
+    let summary = summary.strip_prefix(' ').unwrap_or(summary);
+    Some(summary.trim_end().to_string())
+}
+
+/// Strips one `>` quote prefix. Returns `None` for non-quote lines, which
+/// end a collapsible group.
+fn strip_quote_prefix(line: &str) -> Option<&str> {
+    let stripped = line.strip_prefix("   ").unwrap_or(line);
+    let stripped = stripped.strip_prefix("  ").unwrap_or(stripped);
+    let stripped = stripped.strip_prefix(' ').unwrap_or(stripped);
+    let rest = stripped.strip_prefix('>')?;
+    if let Some(bang) = rest.strip_prefix('!')
+        && (bang.is_empty() || bang.starts_with(' '))
+    {
+        return None;
+    }
+    Some(rest.strip_prefix(' ').unwrap_or(rest))
+}
+
+/// Swaps block placeholders back for rendered HTML. Bodies render through
+/// the same pipeline (depth + 1); titles stay plain escaped text so a
+/// `<script>` in a summary never becomes markup.
+fn restore_custom_blocks(html: &str, blocks: &[CustomBlock], depth: usize) -> String {
+    let mut out = html.to_string();
+    for (idx, block) in blocks.iter().enumerate() {
+        let name = block_placeholder(idx);
+        let rendered_body = if block.body.trim().is_empty() {
+            String::new()
+        } else {
+            render_html_with_depth(&block.body, depth + 1)
+        };
+        let replacement = match block.kind {
+            BlockKind::Details => {
+                if rendered_body.is_empty() {
+                    format!(
+                        "<details class=\"details\"><summary>{}</summary></details>",
+                        escape_html_text(&block.title)
+                    )
+                } else {
+                    format!(
+                        "<details class=\"details\"><summary>{}</summary>\n{rendered_body}\n</details>",
+                        escape_html_text(&block.title)
+                    )
+                }
+            }
+            BlockKind::Pullquote => format!(
+                "<figure class=\"pullquote\"><blockquote>\n{rendered_body}\n</blockquote></figure>"
+            ),
+            BlockKind::CollapsibleQuote => {
+                if rendered_body.is_empty() {
+                    format!(
+                        "<details class=\"quote\"><summary>{}</summary></details>",
+                        escape_html_text(&block.title)
+                    )
+                } else {
+                    format!(
+                        "<details class=\"quote\"><summary>{}</summary>\n<blockquote>\n{rendered_body}\n</blockquote>\n</details>",
+                        escape_html_text(&block.title)
+                    )
+                }
+            }
+        };
+        // The extractor emits the placeholder as its own paragraph, so only
+        // the paragraph form is replaced: a literal NAWBLOCK0NAW inside a
+        // code span never matches here.
+        out = out.replace(&format!("<p>{name}</p>"), &replacement);
+    }
+    out
+}
+
+fn escape_html_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Maps `__italic__` to `*italic*` before parsing. pulldown-cmark hardwires
+/// `__` to `<strong>`; the project order says double underscore is italic
+/// and underline uses `++`, so this rewrite is the single place where that
+/// rule lives. Fenced code, inline code, link destinations and `$` math are
+/// left verbatim; `___triple___` is left to the parser (bold+italic).
+fn map_double_underscore_to_italic(markdown: &str) -> String {
+    let mut out = String::with_capacity(markdown.len());
+    let mut in_fence = false;
+    for line in markdown.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_fence = !in_fence;
+            out.push_str(line);
+            continue;
+        }
+        if in_fence {
+            out.push_str(line);
+            continue;
+        }
+        out.push_str(&map_underscores_in_line(line));
+    }
+    out
+}
+
+fn map_underscores_in_line(line: &str) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0;
+    let mut in_code = false;
+    let mut in_math = false;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '`' {
+            in_code = !in_code;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        if c == '$' {
+            in_math = !in_math;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        if !in_code && !in_math && c == ']' && i + 1 < chars.len() && chars[i + 1] == '(' {
+            out.push_str("](");
+            i += 2;
+            while i < chars.len() && chars[i] != ')' && chars[i] != '\n' {
+                out.push(chars[i]);
+                i += 1;
+            }
+            continue;
+        }
+        if !in_code && !in_math && c == '_' && i + 1 < chars.len() && chars[i + 1] == '_' {
+            let prev = if i == 0 { '\n' } else { chars[i - 1] };
+            let next = if i + 2 >= chars.len() {
+                '\n'
+            } else {
+                chars[i + 2]
+            };
+            if prev == '_' || next == '_' {
+                out.push_str("__");
+                i += 2;
+                continue;
+            }
+            if let Some(end) = find_closing_double_underscore(&chars, i + 2) {
+                let inner: String = chars[i + 2..end].iter().collect();
+                if !inner.trim().is_empty() && !inner.contains("__") {
+                    out.push('*');
+                    out.push_str(&inner);
+                    out.push('*');
+                    i = end + 2;
+                    continue;
+                }
+            }
+            out.push_str("__");
+            i += 2;
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
+fn find_closing_double_underscore(chars: &[char], from: usize) -> Option<usize> {
+    let mut i = from;
+    while i + 1 < chars.len() {
+        if chars[i] == '\n' {
+            return None;
+        }
+        if chars[i] == '_' && chars[i + 1] == '_' {
+            let prev = if i == 0 { '\n' } else { chars[i - 1] };
+            let next_is_underscore = i + 2 < chars.len() && chars[i + 2] == '_';
+            if prev != '_' && !next_is_underscore {
+                return Some(i);
+            }
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Fenced `mermaid`/`dot`/`graphviz`/`plantuml`/`math` blocks keep their text
+/// and gain a class hook. The Bun worker (Phase 3) renders them to SVG later;
+/// with no worker the reader still gets a readable code block. Degrade,
+/// never fail.
+fn postprocess_diagrams(html: &str) -> String {
+    let mut out = html.to_string();
+    for (lang, class) in [
+        ("mermaid", "mermaid"),
+        ("dot", "diagram diagram-dot"),
+        ("graphviz", "diagram diagram-dot"),
+        ("plantuml", "diagram diagram-plantuml"),
+        ("puml", "diagram diagram-plantuml"),
+        ("math", "math math-block"),
+    ] {
+        out = out.replace(
+            &format!("<pre><code class=\"language-{lang}\">"),
+            &format!("<pre class=\"{class}\"><code class=\"language-{lang}\">"),
+        );
+    }
+    out
+}
+
+/// Inline chat sugar on rendered HTML: `||spoiler||`, `==mark==`,
+/// `++underline++`. Runs on HTML (not Markdown) so inner `**bold**` is
+/// already `<strong>` and survives inside the wrapper. `<pre>`, `<code>`
+/// and math spans are skipped so code samples stay literal.
+fn postprocess_inline_spans(html: &str) -> String {
+    let segments = split_protected_html(html);
+    let mut out = String::with_capacity(html.len());
+    for seg in segments {
+        if seg.protected {
+            out.push_str(seg.text);
+        } else {
+            out.push_str(&replace_delimited(
+                seg.text,
+                "||",
+                "<span class=\"spoiler\">",
+                "</span>",
+            ));
+        }
+    }
+    let segments = split_protected_html(&out);
+    let mut second = String::with_capacity(out.len());
+    for seg in segments {
+        if seg.protected {
+            second.push_str(seg.text);
+        } else {
+            second.push_str(&replace_delimited(seg.text, "==", "<mark>", "</mark>"));
+        }
+    }
+    let segments = split_protected_html(&second);
+    let mut third = String::with_capacity(second.len());
+    for seg in segments {
+        if seg.protected {
+            third.push_str(seg.text);
+        } else {
+            third.push_str(&replace_delimited(seg.text, "++", "<u>", "</u>"));
+        }
+    }
+    third
+}
+
+struct HtmlSegment<'a> {
+    text: &'a str,
+    protected: bool,
+}
+
+/// Splits rendered HTML into protected (`<pre>`, `<code>`, math spans) and
+/// normal segments. Delimiter replacement only runs on normal ones.
+fn split_protected_html(html: &str) -> Vec<HtmlSegment<'_>> {
+    let mut segs = Vec::new();
+    let mut i = 0;
+    let mut normal_start = 0;
+    while i < html.len() {
+        let rest = &html[i..];
+        let is_guard = rest.starts_with("<pre")
+            || rest.starts_with("<code")
+            || (rest.starts_with("<span") && rest.get(..64).unwrap_or("").contains("math"));
+        let guard: Option<usize> = if rest.starts_with("<pre") {
+            html[i..].find("</pre>").map(|p| p + 6)
+        } else if rest.starts_with("<code") {
+            html[i..].find("</code>").map(|p| p + 7)
+        } else if is_guard {
+            html[i..].find("</span>").map(|p| p + 7)
+        } else {
+            None
+        };
+        if is_guard {
+            if i > normal_start {
+                segs.push(HtmlSegment {
+                    text: &html[normal_start..i],
+                    protected: false,
+                });
+            }
+            let len = guard.unwrap_or(rest.len());
+            segs.push(HtmlSegment {
+                text: &html[i..i + len],
+                protected: true,
+            });
+            i += len;
+            normal_start = i;
+        } else {
+            i += 1;
+        }
+    }
+    if normal_start < html.len() {
+        segs.push(HtmlSegment {
+            text: &html[normal_start..],
+            protected: false,
+        });
+    }
+    segs
+}
+
+/// Replaces `||a||`-style pairs with an HTML wrapper. Flanking rules keep
+/// `C++`, `x==y` and `a||b` literal: the opener needs a non-alphanumeric
+/// (or start) before it and a non-space after it; the closer needs a
+/// non-space before it and a non-alphanumeric (or end) after it. First
+/// close wins, empty pairs are left alone.
+fn replace_delimited(text: &str, delim: &str, open_tag: &str, close_tag: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let d: Vec<char> = delim.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if matches_delim(&chars, i, &d) && is_valid_opener(&chars, i, d.len()) {
+            if let Some(end) = find_valid_closer(&chars, i + d.len(), &d) {
+                let inner: String = chars[i + d.len()..end].iter().collect();
+                if !inner.trim().is_empty() && !inner.contains(delim) {
+                    out.push_str(open_tag);
+                    out.push_str(&inner);
+                    out.push_str(close_tag);
+                    i = end + d.len();
+                    continue;
+                }
+            }
+            for _ in 0..d.len() {
+                out.push(chars[i]);
+                i += 1;
+            }
+            continue;
+        }
+        // Skip over HTML tags so `class="a==b"` never matches.
+        if chars[i] == '<' {
+            while i < chars.len() && chars[i] != '>' {
+                out.push(chars[i]);
+                i += 1;
+            }
+            if i < chars.len() {
+                out.push('>');
+                i += 1;
+            }
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+fn matches_delim(chars: &[char], at: usize, d: &[char]) -> bool {
+    at + d.len() <= chars.len() && chars[at..at + d.len()] == *d
+}
+
+fn is_valid_opener(chars: &[char], at: usize, len: usize) -> bool {
+    let prev_ok = at == 0 || !chars[at - 1].is_alphanumeric();
+    let next_ok = at + len < chars.len() && !chars[at + len].is_whitespace();
+    prev_ok && next_ok
+}
+
+fn find_valid_closer(chars: &[char], from: usize, d: &[char]) -> Option<usize> {
+    let mut i = from;
+    while i + d.len() <= chars.len() {
+        if chars[i] == '\n' {
+            return None;
+        }
+        if chars[i] == '<' {
+            while i < chars.len() && chars[i] != '>' {
+                i += 1;
+            }
+            i += 1;
+            continue;
+        }
+        if matches_delim(chars, i, d) {
+            let prev_ok = i > 0 && !chars[i - 1].is_whitespace();
+            let next_ok = i + d.len() >= chars.len() || !chars[i + d.len()].is_alphanumeric();
+            if prev_ok && next_ok {
+                return Some(i);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+/// Gives every `#`-heading a stable `id` so pages support `#fragment`
+/// links and a future table of contents. Duplicate titles get `-2`, `-3`.
+fn add_heading_ids(html: &str) -> String {
+    use std::collections::HashMap;
+    use std::fmt::Write;
+
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    while let Some(open) = rest.find("<h") {
+        let level = rest[open + 2..].chars().next();
+        let Some(n) = level
+            .and_then(|c| c.to_digit(10))
+            .filter(|n| (1..=6).contains(n))
+        else {
+            out.push_str(&rest[..open + 2]);
+            rest = &rest[open + 2..];
+            continue;
+        };
+        let tag_start = open + 3;
+        let Some(tag_end) = rest[tag_start..].find('>') else {
+            break;
+        };
+        let content_start = tag_start + tag_end + 1;
+        let close = format!("</h{n}>");
+        let Some(content_end) = rest[content_start..].find(&close) else {
+            break;
+        };
+        let inner = &rest[content_start..content_start + content_end];
+        let (inner, attr_id, attr_class) = split_heading_attrs(inner);
+        let text: String = strip_inline_tags(inner);
+        let base = attr_id
+            .filter(|id| !id.is_empty())
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| slugify(&text));
+        let count = seen.entry(base.clone()).or_insert(0);
+        *count += 1;
+        let id = if *count == 1 {
+            base
+        } else {
+            format!("{}-{}", base, count)
+        };
+        if id.is_empty() {
+            let _ = write!(out, "{}<h{n}>{inner}{close}", &rest[..open],);
+        } else if let Some(class) = attr_class {
+            let _ = write!(
+                out,
+                "{}<h{n} id=\"{id}\" class=\"{class}\">{inner}{close}",
+                &rest[..open],
+            );
+        } else {
+            let _ = write!(out, "{}<h{n} id=\"{id}\">{inner}{close}", &rest[..open],);
+        }
+        rest = &rest[content_start + content_end + close.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Splits a trailing `{key="value" ...}` block off heading HTML. Only `id`
+/// and `class` survive, anything else is dropped. A malformed block stays
+/// literal text so authors always see what they wrote.
+fn split_heading_attrs(inner: &str) -> (&str, Option<&str>, Option<&str>) {
+    let trimmed = inner.trim_end();
+    if !trimmed.ends_with('}') {
+        return (inner, None, None);
+    }
+    let Some(block_start) = trimmed.rfind('{') else {
+        return (inner, None, None);
+    };
+    let mut id = None;
+    let mut class = None;
+    let mut rest = trimmed[block_start + 1..trimmed.len() - 1].trim();
+    let mut ok = true;
+    while !rest.is_empty() && ok {
+        let first_ok = rest
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_lowercase())
+            .unwrap_or(false);
+        let key_len: usize = rest
+            .chars()
+            .take_while(|c| c.is_ascii_lowercase() || *c == '-' || c.is_ascii_digit())
+            .map(|c| c.len_utf8())
+            .sum();
+        let value = rest[key_len..]
+            .strip_prefix("=\"")
+            .and_then(|v| v.find('"').map(|end| &v[..end]));
+        match (first_ok && key_len > 0, value) {
+            (true, Some(val)) => {
+                let key = &rest[..key_len];
+                if key == "id" && id.is_none() && !val.is_empty() {
+                    id = Some(val);
+                } else if key == "class" && class.is_none() {
+                    class = Some(val);
+                }
+                rest = rest[key_len + 2 + val.len() + 1..].trim_start();
+            }
+            _ => ok = false,
+        }
+    }
+    if !ok {
+        return (inner, None, None);
+    }
+    (trimmed[..block_start].trim_end(), id, class)
+}
+
+fn strip_inline_tags(html: &str) -> String {
+    let mut text = String::with_capacity(html.len());
+    let mut inside = false;
+    for c in html.chars() {
+        match c {
+            '<' => inside = true,
+            '>' => inside = false,
+            _ if !inside => text.push(c),
+            _ => {}
+        }
+    }
+    text
+}
+
+fn slugify(text: &str) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = true;
+    for c in text.to_lowercase().chars() {
+        if c.is_alphanumeric() {
+            slug.push(c);
+            prev_dash = false;
+        } else if !prev_dash {
+            slug.push('-');
+            prev_dash = true;
+        }
+    }
+    slug.trim_matches('-').to_string()
+}
+
+/// Version of the render pipeline. Part of the `render_cache` key: bump it
+/// whenever `render_page` output changes for identical input. Skin and
+/// chrome changes count: a new footer is a new rendering.
+pub const RENDERER_VERSION: i32 = 4;
+
+/// A fully rendered page plus the key it is cached under.
+pub struct RenderedPage {
+    pub content_hash: Vec<u8>,
+    pub html: String,
+}
+
+/// Body-only content hash. Matches the `revisions.content_hash` semantics.
+pub fn content_hash(body_md: &str) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(body_md.as_bytes()).to_vec()
+}
+
+/// Cache key hash. Everything that renders into the page is part of the
+/// key: correctness beats cross-page deduplication.
+pub fn page_hash(title: &str, lang: &str, body_md: &str, summary: &str) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(title.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(lang.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(body_md.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(summary.as_bytes());
+    hasher.finalize().to_vec()
+}
+
+/// Everything a full page render needs. One struct instead of a growing
+/// parameter list, so template chrome never reshapes the call sites again.
+pub struct PageInput<'a> {
+    pub title: &'a str,
+    pub body_md: &'a str,
+    pub wiki_name: &'a str,
+    pub lang: &'a str,
+    pub version: &'a str,
+    pub served_from_cache: bool,
+    pub summary: &'a str,
+}
+
+/// Renders a full page through the `page.html` template. `version` and the
+/// cache flag land in the footer; on a hit the caller passes
+/// `served_from_cache` instead of re-rendering. The displayed duration
+/// covers the Markdown stage, the template adds microseconds on top.
+pub fn render_page(
+    env: &minijinja::Environment,
+    input: &PageInput<'_>,
+) -> Result<RenderedPage, naw_core::error::AppError> {
+    let content_hash = page_hash(input.title, input.lang, input.body_md, input.summary);
+    let started = std::time::Instant::now();
+    let body_html = render_html(input.body_md);
+    let render_ms = started.elapsed().as_millis() as u64;
+    let footer_note = if input.served_from_cache {
+        "served from cache".to_string()
+    } else {
+        format!("rendered in {render_ms} ms")
+    };
+    let template = env.get_template("page.html").map_err(template_error)?;
+    let html = template
+        .render(minijinja::context! {
+            title => input.title,
+            wiki_name => input.wiki_name,
+            lang => input.lang,
+            body => body_html,
+            version => input.version,
+            footer_note => footer_note,
+            summary => input.summary,
+        })
+        .map_err(template_error)?;
+    Ok(RenderedPage { content_hash, html })
+}
+
+fn template_error(err: minijinja::Error) -> naw_core::error::AppError {
+    tracing::error!(error = %err, "template render error");
+    naw_core::error::AppError::Internal
 }
 
 #[cfg(test)]
@@ -34,7 +829,7 @@ mod tests {
     #[test]
     fn renders_headings_and_paragraphs() {
         let html = render_html("# Title\n\nHello.");
-        assert!(html.contains("<h1>Title</h1>"));
+        assert!(html.contains("<h1 id=\"title\">Title</h1>"));
         assert!(html.contains("<p>Hello.</p>"));
     }
 
@@ -65,5 +860,224 @@ mod tests {
         let html = render_html("*Filian* is **fast**.");
         assert!(html.contains("<em>Filian</em>"));
         assert!(html.contains("<strong>fast</strong>"));
+    }
+
+    #[test]
+    fn headings_keep_ids_after_sanitize() {
+        let html = render_html("# Hello World\n\n## Hello World\n");
+        assert!(html.contains("<h1 id=\"hello-world\">"));
+        assert!(html.contains("<h2 id=\"hello-world-2\">"));
+    }
+
+    #[test]
+    fn all_heading_levels_render() {
+        let html =
+            render_html("# One\n\n## Two\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n");
+        for (n, slug) in ["1", "2", "3", "4", "5", "6"]
+            .iter()
+            .zip(["one", "two", "three", "four", "five", "six"])
+        {
+            assert!(html.contains(&format!("<h{n} id=\"{slug}\">")), "level {n}");
+        }
+    }
+
+    #[test]
+    fn footnotes_render() {
+        let html = render_html("Text[^1].\n\n[^1]: The note.\n");
+        assert!(html.contains("The note."));
+        assert!(html.contains("href=\"#1\""));
+    }
+
+    #[test]
+    fn br_tag_survives() {
+        let html = render_html("line one\n<br/>\nline two");
+        assert!(html.contains("<br"));
+        assert!(!html.contains("<script>"));
+    }
+
+    #[test]
+    fn heading_attrs_apply() {
+        let html = render_html("### Ours {id=\"smth\" class=\"highlighted\"}\n");
+        assert!(html.contains("<h3 id=\"smth\" class=\"highlighted\">Ours</h3>"));
+    }
+
+    #[test]
+    fn heading_attrs_unknown_dropped() {
+        let html = render_html("### Ours {id=\"x\" status=\"new\"}\n");
+        assert!(html.contains("<h3 id=\"x\">Ours</h3>"));
+        assert!(!html.contains("status"));
+    }
+
+    fn test_env() -> minijinja::Environment<'static> {
+        naw_core::templates::load_templates(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../skins/default"
+        ))
+        .expect("skins/default must exist with layout, page and 404 templates")
+    }
+
+    fn test_input() -> PageInput<'static> {
+        PageInput {
+            title: "Home",
+            body_md: "# Hi",
+            wiki_name: "FilianWIKI",
+            lang: "en",
+            version: "0.1.0",
+            served_from_cache: false,
+            summary: "",
+        }
+    }
+
+    #[test]
+    fn page_renders_title_and_body() {
+        let html = render_page(&test_env(), &test_input())
+            .expect("render")
+            .html;
+        assert!(html.contains("<title>Home"));
+        assert!(html.contains("<h1 id=\"hi\">Hi</h1>"));
+        assert!(html.contains("FilianWIKI"));
+        assert!(html.contains("0.1.0"));
+        assert!(html.contains("rendered in "));
+    }
+
+    #[test]
+    fn cached_footer_has_no_timing() {
+        let mut input = test_input();
+        input.served_from_cache = true;
+        let html = render_page(&test_env(), &input).expect("render").html;
+        assert!(html.contains("served from cache"));
+        assert!(!html.contains("rendered in"));
+    }
+
+    #[test]
+    fn summary_renders_as_lede() {
+        let mut input = test_input();
+        input.summary = "Short version.";
+        let html = render_page(&test_env(), &input).expect("render").html;
+        assert!(html.contains("<p class=\"page-summary\">Short version.</p>"));
+        let plain = render_page(&test_env(), &test_input())
+            .expect("render")
+            .html;
+        assert!(!plain.contains("<p class=\"page-summary\">"));
+    }
+
+    #[test]
+    fn page_hash_is_stable_and_sensitive() {
+        let a = page_hash("T", "en", "# Hi", "");
+        assert_eq!(a, page_hash("T", "en", "# Hi", ""));
+        assert_ne!(a, page_hash("T", "en", "# Bye", ""));
+        assert_ne!(a, page_hash("Other", "en", "# Hi", ""));
+        assert_ne!(a, page_hash("T", "en", "# Hi", "lede"));
+    }
+
+    #[test]
+    fn missing_template_is_an_error() {
+        let env = minijinja::Environment::new();
+        assert!(render_page(&env, &test_input()).is_err());
+    }
+
+    #[test]
+    fn double_underscore_is_italic() {
+        let html = render_html("__Filian__ is fast.");
+        assert!(html.contains("<em>Filian</em>"), "{html}");
+        assert!(!html.contains("<strong>Filian</strong>"));
+    }
+
+    #[test]
+    fn strikethrough_sup_sub_render() {
+        // pulldown-cmark uses flanking rules: intra-word `H~2~O` stays
+        // literal, spaced delimiters render. Document the spaced form.
+        let html = render_html("~~gone~~ H ~2~ O E=mc ^2^.\n");
+        assert!(html.contains("<del>gone</del>"), "{html}");
+        assert!(html.contains("<sub>2</sub>"), "{html}");
+        assert!(html.contains("<sup>2</sup>"), "{html}");
+    }
+
+    #[test]
+    fn spoiler_mark_underline_render() {
+        let html = render_html("||secret|| ==lit== ++under++.\n");
+        assert!(
+            html.contains("<span class=\"spoiler\">secret</span>"),
+            "{html}"
+        );
+        assert!(html.contains("<mark>lit</mark>"), "{html}");
+        assert!(html.contains("<u>under</u>"), "{html}");
+    }
+
+    #[test]
+    fn spoiler_keeps_inner_bold() {
+        let html = render_html("||**bold** inside||\n");
+        assert!(html.contains("<span class=\"spoiler\">"), "{html}");
+        assert!(html.contains("<strong>bold</strong>"), "{html}");
+    }
+
+    #[test]
+    fn code_protects_sugar() {
+        let html = render_html("`||not spoiler||`\n");
+        assert!(!html.contains("spoiler\">"), "{html}");
+        assert!(html.contains("||not spoiler||"), "{html}");
+    }
+
+    #[test]
+    fn math_renders_with_class() {
+        let html = render_html("Einstein: $E=mc^2$\n\n$$x+y$$\n");
+        assert!(html.contains("math-inline"), "{html}");
+        assert!(html.contains("math-display"), "{html}");
+    }
+
+    #[test]
+    fn gfm_alert_renders() {
+        let html = render_html("> [!NOTE]\n> Keep it cozy.\n");
+        assert!(html.contains("markdown-alert-note"), "{html}");
+    }
+
+    #[test]
+    fn collapsible_quote_renders() {
+        let html = render_html(">! Click me\n> hidden text\n");
+        assert!(html.contains("<details class=\"quote\">"), "{html}");
+        assert!(html.contains("<summary>Click me</summary>"), "{html}");
+        assert!(html.contains("hidden text"), "{html}");
+    }
+
+    #[test]
+    fn details_block_renders() {
+        let html = render_html(":::details Lore\nBody **bold**.\n:::\n");
+        assert!(html.contains("<details class=\"details\">"), "{html}");
+        assert!(html.contains("<summary>Lore</summary>"), "{html}");
+        assert!(html.contains("<strong>bold</strong>"), "{html}");
+    }
+
+    #[test]
+    fn pullquote_block_renders() {
+        let html = render_html(":::pullquote\nShe is fast.\n:::\n");
+        assert!(html.contains("<figure class=\"pullquote\">"), "{html}");
+    }
+
+    #[test]
+    fn mermaid_fence_keeps_text_with_hook() {
+        let html = render_html("```mermaid\ngraph TD;\n```\n");
+        assert!(html.contains("<pre class=\"mermaid\">"), "{html}");
+        assert!(html.contains("graph TD;"), "{html}");
+    }
+
+    #[test]
+    fn wikilink_renders() {
+        let html = render_html("See [[home|Home page]].\n");
+        assert!(html.contains("href=\"home\""), "{html}");
+        assert!(html.contains(">Home page</a>"), "{html}");
+    }
+
+    #[test]
+    fn definition_list_renders() {
+        let html = render_html("Term\n  : Definition.\n");
+        assert!(html.contains("<dl>"), "{html}");
+        assert!(html.contains("<dt>"), "{html}");
+    }
+
+    #[test]
+    fn details_summary_survives_sanitize() {
+        let html = render_html(">! Title\n> body\n");
+        assert!(html.contains("<details"), "{html}");
+        assert!(html.contains("<summary>"), "{html}");
     }
 }

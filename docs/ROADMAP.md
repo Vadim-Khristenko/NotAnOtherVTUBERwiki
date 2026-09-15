@@ -16,7 +16,7 @@ reasons.
 That is not nothing. Editing a design document costs an afternoon. Editing a database
 schema after a thousand wikis depend on it costs a year.
 
-The first wiki built on this engine is **SnackersWIKI**, for the Snackers, the community
+The first wiki built on this engine is **FilianWIKI**, for the Snackers, the community
 around Filian. Some of its content currently lives on FANDOM and will be migrated later,
 while the new wiki grows.
 
@@ -196,7 +196,7 @@ Make editing pleasant, without ever putting it on the reader path.
 
 ---
 
-## Phase 7 · Skinning and SnackersWIKI
+## Phase 7 · Skinning and FilianWIKI
 
 - Skin loader with template inheritance and per wiki asset isolation
 - The `snackers` skin, pinks and purples, dark mode by default
@@ -207,7 +207,7 @@ Make editing pleasant, without ever putting it on the reader path.
 - Snacker of the Month widget, admin configurable
 - Timeline and relationship charts via mermaid
 
-**Done when:** SnackersWIKI is live at `snackers.vai-rice.space` and looks like it belongs
+**Done when:** FilianWIKI is live at `snackers.vai-rice.space` and looks like it belongs
 to that community rather than to us.
 
 ---
@@ -238,7 +238,7 @@ The things that decide whether anyone finds the wiki.
 - Backup automation with retention
 - `/metrics` endpoint, dashboards in an optional profile
 - k6 suite and the benchmark document with methodology
-- Deploy SnackersWIKI
+- Deploy FilianWIKI
 
 **Done when:** the thing survives being on the public internet.
 

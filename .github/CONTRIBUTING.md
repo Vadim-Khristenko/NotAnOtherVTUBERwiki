@@ -34,7 +34,7 @@ looks like:
 | Translation | Create the same-named file in `docs/ru/` directory and translate, see below | Russian or English |
 | Art | See [AI-ASSETS.md](../AI-ASSETS.md) | Drawing, pixel art, SVG |
 | Triage | Reproduce bugs, label issues, answer questions | Patience |
-| Wiki content | That happens on SnackersWIKI once it is deployed, not here | Fandom knowledge |
+| Wiki content | That happens on FilianWIKI once it is deployed, not here | Fandom knowledge |
 
 ---
 

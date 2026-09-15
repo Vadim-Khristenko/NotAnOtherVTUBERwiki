@@ -9,7 +9,7 @@
 Markdown first, genuinely skinnable, fast on a Raspberry Pi, readable with JavaScript off,
 and licensed so that nobody can turn it into a closed product.
 
-*Codename: NotAnOtherVTUBERwiki. First deployment: SnackersWIKI, for the Snackers,
+*Codename: NotAnOtherVTUBERwiki. First deployment: FilianWIKI, the wiki of the Snackers,
 the community around Filian.*
 
 [English](README.md) | [Русский](docs/ru/README.md)
@@ -191,7 +191,7 @@ cargo sqlx migrate run
 
 # 4. Run the engine
 cargo run -p naw-cli -- serve
-# health: http://127.0.0.1:8080/health, readiness: /ready
+# health: http://127.0.0.1:4242/health, readiness: /ready
 
 # 5. Optionally build the authoring UI
 cd ui && bun install && bun run build
@@ -303,7 +303,7 @@ helps.
 ## About the Snackers of it all
 
 This project started inside the Snackers, the community around Filian. The first wiki built
-on it is SnackersWIKI. There are references to the community scattered through the codebase
+on it is FilianWIKI. There are references to the community scattered through the codebase
 because they are harmless and because we like them. They are not load bearing, and the
 engine is in no way specific to one VTuber.
 

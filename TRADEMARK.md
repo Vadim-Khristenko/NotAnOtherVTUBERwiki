@@ -8,7 +8,10 @@ license in this repository:
 
 - the name **NotAnotherWiki**
 - the codename **NotAnOtherVTUBERwiki**
+- the name **FilianWIKI**
 - the name **SnackersWIKI**
+- the bundled **snackers** skin shipped in `skins/snackers/`, which is all
+  rights reserved under its own license
 - the project logo, wordmark, and any official visual identity
 
 ## What this means

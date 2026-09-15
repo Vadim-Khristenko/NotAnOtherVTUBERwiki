@@ -9,7 +9,7 @@
 Markdown вместо вики-разметки, настоящие скины, быстрая работа на Raspberry Pi,
 чтение с выключенным JavaScript и лицензия, из которой нельзя сделать закрытый продукт.
 
-*Кодовое имя: NotAnOtherVTUBERwiki. Первый запуск: SnackersWIKI, для Snackers,
+*Кодовое имя: NotAnOtherVTUBERwiki. Первый запуск: FilianWIKI, вики Snackers,
 комьюнити вокруг Filian.*
 
 [English](../../README.md) | Русский
@@ -187,7 +187,7 @@ cargo sqlx migrate run
 
 # 4. Запустить движок
 cargo run -p naw-cli -- serve
-# состояние системы: http://127.0.0.1:8080/health, готовность: /ready
+# состояние системы: http://127.0.0.1:4242/health, готовность: /ready
 
 # 5. При желании собрать UI редактора
 cd ui && bun install && bun run build
@@ -297,7 +297,7 @@ cd ui && bun install && bun run build
 ## Про Snackers
 
 Проект начался внутри Snackers, комьюнити вокруг Filian. Первая вика на нём это
-SnackersWIKI. Отсылки к комьюнити разбросаны по коду, потому что они безвредные и
+FilianWIKI. Отсылки к комьюнити разбросаны по коду, потому что они безвредные и
 потому что нам так нравится. Они ни на что не влияют, и движок ни разу не заточен
 под одного VTuber.
 
