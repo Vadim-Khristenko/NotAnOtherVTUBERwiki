@@ -134,13 +134,20 @@ async fn seed_wiki(pool: &PgPool, opts: &SeedOptions) -> Result<Uuid, AppError> 
     let id = Uuid::new_v4();
     let aliases =
         serde_json::to_value(&opts.aliases).map_err(|err| AppError::Config(err.to_string()))?;
+    // Exactly one default wiki may exist: a second default makes Host
+    // resolution order dependent. A seed only becomes the default when none
+    // is flagged yet.
+    let has_default = sqlx::query!("SELECT id FROM wikis WHERE settings->>'default' = 'true'")
+        .fetch_optional(pool)
+        .await?
+        .is_some();
     sqlx::query!(
         "INSERT INTO wikis (id, slug, domain, name, settings) VALUES ($1, $2, $3, $4, $5)",
         id,
         opts.slug,
         opts.domain,
         opts.name,
-        serde_json::json!({"default": true, "home_slug": "home", "aliases": aliases})
+        serde_json::json!({"default": !has_default, "home_slug": "home", "aliases": aliases})
     )
     .execute(pool)
     .await?;

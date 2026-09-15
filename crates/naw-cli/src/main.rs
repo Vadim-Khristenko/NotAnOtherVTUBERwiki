@@ -189,7 +189,7 @@ async fn serve() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    tracing::info!(%addr, "naw listening");
+    tracing::info!(skin_dir = %state.config.skin_dir, %addr, "naw listening");
     match axum::serve(listener, naw_web::router(state)).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {

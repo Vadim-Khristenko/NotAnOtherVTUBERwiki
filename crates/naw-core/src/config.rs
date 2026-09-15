@@ -110,6 +110,12 @@ impl Config {
         if let Ok(value) = std::env::var("NAW_STORAGE_ROOT") {
             cfg.storage_root = value;
         }
+        if let Ok(value) = std::env::var("NAW_SKIN_DIR") {
+            cfg.skin_dir = value;
+        }
+        if let Ok(value) = std::env::var("NAW_SEED_DIR") {
+            cfg.seed_dir = value;
+        }
         Ok(cfg)
     }
 }

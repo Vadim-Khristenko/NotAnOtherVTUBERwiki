@@ -22,10 +22,11 @@ fn template_error(err: minijinja::Error) -> AppError {
 const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 async fn load_wikis(db: &sqlx::PgPool) -> Result<Vec<WikiRef>, AppError> {
-    let rows =
-        sqlx::query!(r#"SELECT id, slug, domain, name, default_locale, settings FROM wikis"#)
-            .fetch_all(db)
-            .await?;
+    let rows = sqlx::query!(
+        r#"SELECT id, slug, domain, name, default_locale, settings FROM wikis ORDER BY slug"#
+    )
+    .fetch_all(db)
+    .await?;
     Ok(rows
         .into_iter()
         .map(|row| {
@@ -268,6 +269,19 @@ async fn find_page(
     }))
 }
 
+/// Builds a redirect only when the target is a valid header value. Axum
+/// turns an invalid `Location` into a 500 that leaks the http crate error
+/// text, so every redirect target from slugs, settings or query strings
+/// goes through here. `None` means render or 404 instead of redirecting.
+fn redirect_response(status: StatusCode, target: &str) -> Option<Response> {
+    let location = axum::http::HeaderValue::from_str(target).ok()?;
+    axum::response::Response::builder()
+        .status(status)
+        .header(header::LOCATION, location)
+        .body(Body::empty())
+        .ok()
+}
+
 /// Redirects `/` to the wiki home page.
 #[instrument(skip(state))]
 pub async fn home(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, AppError> {
@@ -280,7 +294,16 @@ pub async fn home(State(state): State<AppState>, headers: HeaderMap) -> Result<R
         .get("home_slug")
         .and_then(|v| v.as_str())
         .unwrap_or("home");
-    Ok(Redirect::permanent(&format!("/{slug}")).into_response())
+    // A broken home_slug in settings must not become a 500: fall back to a
+    // plain 404 page instead of a redirect with an invalid Location.
+    if !is_valid_slug(slug) {
+        return not_found(&state, &wiki.default_locale, &wiki.name).await;
+    }
+    let target = format!("/{slug}");
+    match redirect_response(StatusCode::PERMANENT_REDIRECT, &target) {
+        Some(response) => Ok(response),
+        None => not_found(&state, &wiki.default_locale, &wiki.name).await,
+    }
 }
 
 /// Serves one page from the render cache. Main namespace only for launch.
@@ -305,7 +328,11 @@ pub async fn page(
         return not_found(&state, &locale, &wiki.name).await;
     };
     if let Some(target) = jump_target(&slug, &query) {
-        return Ok(Redirect::to(&target).into_response());
+        // jump_target pins the fragment charset, so this is Some in practice.
+        // If it ever is not, render the page instead of failing the request.
+        if let Some(response) = redirect_response(StatusCode::SEE_OTHER, &target) {
+            return Ok(response);
+        }
     }
     render_or_cached(
         &state,
@@ -434,7 +461,11 @@ pub async fn create_page(
     )
     .execute(&state.db)
     .await?;
-    Ok(Redirect::to(&format!("/{slug}")).into_response())
+    // The slug passed validation above, so "/{slug}" is ASCII only and
+    // the redirect cannot fail. "/" is the belt and braces fallback.
+    let target = format!("/{slug}");
+    Ok(redirect_response(StatusCode::SEE_OTHER, &target)
+        .unwrap_or_else(|| Redirect::to("/").into_response()))
 }
 
 /// Edit form prefilled with the current revision.
@@ -476,6 +507,17 @@ pub async fn save_page(
     Form(form): Form<EditForm>,
 ) -> Result<Response, AppError> {
     let slug = slug.trim().to_lowercase();
+    // Anything outside the slug charset can never match a stored page, and
+    // must never reach the success redirect as a Location value.
+    if !is_valid_slug(&slug) {
+        let wikis = load_wikis(&state.db).await?;
+        let wiki = resolve_wiki(request_host(&headers), &wikis);
+        let (lang, name) = wiki
+            .as_ref()
+            .map(|w| (w.default_locale.as_str(), w.name.as_str()))
+            .unwrap_or(("en", "NotAnotherWiki"));
+        return not_found(&state, lang, name).await;
+    }
     let title = form.title.trim().to_string();
     if title.is_empty() || title.len() > TITLE_MAX {
         return Ok(bad_request("title: 1 to 200 chars"));
@@ -541,7 +583,9 @@ pub async fn save_page(
     )
     .execute(&state.db)
     .await?;
-    Ok(Redirect::to(&format!("/{slug}")).into_response())
+    let target = format!("/{slug}");
+    Ok(redirect_response(StatusCode::SEE_OTHER, &target)
+        .unwrap_or_else(|| Redirect::to("/").into_response()))
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -574,6 +618,15 @@ pub async fn preview(
     let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
         return not_found(&state, "en", "NotAnotherWiki").await;
     };
+    // Preview renders on demand with no cache row, so it carries the same
+    // size contract as saving. Oversized input is 413, not a 500, and the
+    // global body limit layer stops anything far larger before this point.
+    if form.title.len() > TITLE_MAX {
+        return Ok(bad_request("title: 1 to 200 chars"));
+    }
+    if form.body_md.len() > BODY_MAX {
+        return Ok((StatusCode::PAYLOAD_TOO_LARGE, "body: up to 500000 chars").into_response());
+    }
     let title = form.title.trim();
     let title = if title.is_empty() { "Preview" } else { title };
     if query.fragment.unwrap_or(0) == 1 {
@@ -603,9 +656,65 @@ pub async fn preview(
         .into_response())
 }
 
+/// Skin brand files served from `{skin_dir}/favicon/`. The allowlist below
+/// is the whole surface: no request value ever reaches the filesystem, so
+/// traversal is impossible by construction. Missing files are 404, never
+/// 500, which also keeps the default skin (no favicon shipped) quiet.
+const SKIN_ASSETS: &[(&str, &str)] = &[
+    ("favicon.ico", "image/x-icon"),
+    ("favicon-96x96.png", "image/png"),
+    ("apple-touch-icon.png", "image/png"),
+    ("site.webmanifest", "application/manifest+json"),
+    ("web-app-manifest-192x192.png", "image/png"),
+    ("web-app-manifest-512x512.png", "image/png"),
+];
+
+async fn skin_asset(state: &AppState, file: &str) -> Result<Response, AppError> {
+    let Some((_, content_type)) = SKIN_ASSETS.iter().find(|(name, _)| *name == file) else {
+        return not_found(state, "en", "NotAnotherWiki").await;
+    };
+    let path = format!("{}/favicon/{file}", state.config.skin_dir);
+    let Ok(bytes) = std::fs::read(&path) else {
+        return not_found(state, "en", "NotAnotherWiki").await;
+    };
+    Ok((
+        [
+            (header::CONTENT_TYPE, *content_type),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+pub async fn favicon_ico(State(state): State<AppState>) -> Result<Response, AppError> {
+    skin_asset(&state, "favicon.ico").await
+}
+
+pub async fn favicon_png(State(state): State<AppState>) -> Result<Response, AppError> {
+    skin_asset(&state, "favicon-96x96.png").await
+}
+
+pub async fn apple_touch_icon(State(state): State<AppState>) -> Result<Response, AppError> {
+    skin_asset(&state, "apple-touch-icon.png").await
+}
+
+pub async fn site_manifest(State(state): State<AppState>) -> Result<Response, AppError> {
+    skin_asset(&state, "site.webmanifest").await
+}
+
+pub async fn manifest_icon_192(State(state): State<AppState>) -> Result<Response, AppError> {
+    skin_asset(&state, "web-app-manifest-192x192.png").await
+}
+
+pub async fn manifest_icon_512(State(state): State<AppState>) -> Result<Response, AppError> {
+    skin_asset(&state, "web-app-manifest-512x512.png").await
+}
+
 #[cfg(test)]
 mod tests {
-    use super::is_valid_slug;
+    use super::{PageQuery, is_valid_slug, jump_target, redirect_response};
+    use axum::http::StatusCode;
 
     #[test]
     fn slugs_accept_plain_names() {
@@ -620,5 +729,37 @@ mod tests {
         assert!(!is_valid_slug("a/b"));
         assert!(!is_valid_slug("a b"));
         assert!(!is_valid_slug("../home"));
+    }
+
+    fn query(jump_to: Option<&str>) -> PageQuery {
+        PageQuery {
+            jump_to: jump_to.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn jump_accepts_plain_anchors() {
+        assert_eq!(
+            jump_target("home", &query(Some("lore"))),
+            Some("/home#lore".to_string())
+        );
+    }
+
+    #[test]
+    fn jump_rejects_markup_and_overflow() {
+        assert_eq!(jump_target("home", &query(Some("<script>"))), None);
+        assert_eq!(jump_target("home", &query(Some("a b"))), None);
+        assert_eq!(jump_target("home", &query(Some("a/b"))), None);
+        assert_eq!(jump_target("home", &query(None)), None);
+        assert_eq!(jump_target("home", &query(Some(""))), None);
+        assert_eq!(jump_target("home", &query(Some(&"x".repeat(101)))), None);
+    }
+
+    #[test]
+    fn redirects_keep_their_status_and_reject_bad_targets() {
+        let ok =
+            redirect_response(StatusCode::SEE_OTHER, "/home#lore").expect("plain target is fine");
+        assert_eq!(ok.status(), StatusCode::SEE_OTHER);
+        assert!(redirect_response(StatusCode::SEE_OTHER, "/ho\nme").is_none());
     }
 }
