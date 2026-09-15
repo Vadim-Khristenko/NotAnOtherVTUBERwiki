@@ -99,6 +99,33 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .syntax-help { margin-top: 1.6rem; color: var(--muted); font-size: 0.88rem; }
 .syntax-help summary { cursor: pointer; font-weight: 600; }
 .syntax-help code { font-family: var(--font-mono); background: var(--surface-sunken); padding: 0.1rem 0.35rem; border-radius: 0.3rem; }
+/* Polish layer: type rhythm, states and unique details. Variables above stay
+ * the customization API, everything below consumes them. */
+::selection { background: var(--accent); color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.site-header { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(8px); }
+.site-brand::before { content: ""; display: inline-block; width: 0.7em; height: 0.7em; margin-right: 0.45rem; background: var(--accent); border-radius: 0.2em; vertical-align: baseline; }
+.content h1 { letter-spacing: -0.02em; text-wrap: balance; }
+.content h2, .content h3 { text-wrap: balance; }
+.content a { text-underline-offset: 0.15em; }
+.content a:hover { text-decoration-thickness: 2px; }
+.content hr { border: none; border-top: 1px solid var(--line); margin: 2rem auto; width: 60%; }
+.content img { max-width: 100%; height: auto; border-radius: var(--radius); }
+.content thead { background: var(--bg-elevated); }
+.content tbody tr:nth-child(even) { background: var(--bg-elevated); }
+.content input[type="checkbox"] { accent-color: var(--accent); width: 1rem; height: 1rem; }
+.footnote-definition { font-size: 0.9rem; color: var(--muted); border-top: 1px solid var(--line); margin-top: 2rem; padding-top: 0.8rem; }
+.footnote-reference a { text-decoration: none; }
+.content kbd { font-family: var(--font-mono); font-size: 0.82em; background: var(--surface-sunken); border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 0.35rem; padding: 0.1rem 0.4rem; white-space: nowrap; }
+.spoiler:focus-visible { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.button-save, .button-preview, .toolbar button, .theme-toggle { transition: transform 0.08s ease, border-color 0.15s, background 0.15s; }
+.button-save:hover { filter: brightness(1.07); }
+.button-save:active, .button-preview:active, .toolbar button:active { transform: translateY(1px); }
+.field-input:focus, .field-body:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+details.details summary::marker, details.quote summary::marker { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
 /* Rich formatting v4: every sugar from the renderer has a matching style,
  * light and dark via variables. No author CSS needed for the basics. */
 .content blockquote { margin: 1rem 0; padding: 0.6rem 1rem; border-left: 3px solid var(--border-strong); color: var(--ink-soft); background: var(--bg-elevated); border-radius: 0 var(--radius) var(--radius) 0; }

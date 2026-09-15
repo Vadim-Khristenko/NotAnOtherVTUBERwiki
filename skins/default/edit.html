@@ -21,6 +21,8 @@
 <button type="button" data-wrap="++" title="Underline"><u>U</u></button>
 <button type="button" data-wrap="==" title="Highlight">H</button>
 <button type="button" data-wrap="||" title="Spoiler">&#9618;</button>
+<button type="button" data-wrap="((" data-suffix="))" title="Keyboard key"><kbd>K</kbd></button>
+<button type="button" data-snippet=":sparkles:" title="Emoji">&#9786;</button>
 <button type="button" data-prefix="## " title="Heading">H</button>
 <button type="button" data-link title="Link">link</button>
 <button type="button" data-prefix="&gt; " title="Quote">&rdquo;</button>
@@ -60,6 +62,7 @@
 <li>Alerts: <code>&gt; [!NOTE]</code> / <code>TIP</code> / <code>IMPORTANT</code> / <code>WARNING</code> / <code>CAUTION</code></li>
 <li><code>- list</code>, <code>1. numbered</code>, task <code>- [ ] todo</code>, definition: <code>Term</code> then <code>&nbsp;&nbsp;: def</code></li>
 <li>Footnote <code>[^1]</code> in text plus <code>[^1]: note</code> at the bottom</li>
+<li><code>((Ctrl+C))</code> keyboard keys, <code>:fire:</code> <code>:tada:</code> <code>:sparkles:</code> emoji shortcodes (unknown codes stay literal)</li>
 <li>Math: <code>$E=mc^2$</code> inline, <code>$$x+y$$</code> display, <code>```math</code> block</li>
 <li>Diagrams: <code>```mermaid</code> / <code>dot</code> / <code>plantuml</code> … <code>```</code> (code text kept, SVG render comes with the worker)</li>
 <li>Line break: two trailing spaces or <code>&lt;br&gt;</code></li>
@@ -123,14 +126,22 @@
     area.focus();
     area.dispatchEvent(new Event("input"));
   }
+  function insertSnippet(snippet) {
+    var s = area.selectionStart, e = area.selectionEnd, v = area.value;
+    area.value = v.slice(0, s) + snippet + v.slice(e);
+    area.focus();
+    area.selectionStart = area.selectionEnd = s + snippet.length;
+    area.dispatchEvent(new Event("input"));
+  }
   document.addEventListener("click", function (ev) {
-    var btn = ev.target.closest("button[data-wrap],button[data-prefix],button[data-link],button[data-footnote],button[data-block]");
+    var btn = ev.target.closest("button[data-wrap],button[data-prefix],button[data-link],button[data-footnote],button[data-block],button[data-snippet]");
     if (!btn) return;
-    if (btn.hasAttribute("data-wrap")) surround(btn.getAttribute("data-wrap"));
+    if (btn.hasAttribute("data-wrap")) surround(btn.getAttribute("data-wrap"), btn.getAttribute("data-suffix") || btn.getAttribute("data-wrap"));
     else if (btn.hasAttribute("data-prefix")) prefixLines(btn.getAttribute("data-prefix"));
     else if (btn.hasAttribute("data-link")) insertLink();
     else if (btn.hasAttribute("data-footnote")) insertFootnote();
     else if (btn.hasAttribute("data-block")) insertBlock(btn.getAttribute("data-block"));
+    else if (btn.hasAttribute("data-snippet")) insertSnippet(btn.getAttribute("data-snippet"));
   });
   document.addEventListener("selectionchange", function () {
     if (!selbar) return;
