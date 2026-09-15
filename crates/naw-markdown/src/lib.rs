@@ -17,6 +17,15 @@
 ///   `**bold**` stays `<strong>`, underline uses `++` to avoid the
 ///   CommonMark/Discord `__` collision).
 /// - `||spoiler||` becomes `<span class="spoiler">`, `==mark==` becomes
+///   `<mark>`, `==red|text==` becomes `<mark class="mark-red">` (eight
+///   fixed colors, unknown names stay literal), `++underline++` becomes
+///   `<u>`, `((keys))` becomes `<kbd>`, `:fire:` shortcodes become glyphs.
+/// - `> quote` is a blockquote, `>! Summary` plus `> body` lines is a
+///   collapsible quote (`<details class="quote">`).
+/// - `:::details Title ... :::` and `:::pullquote ... :::` blocks.
+/// - `[[toc]]` alone in a paragraph becomes a nav of the page headings with
+///   exact final anchors. Footnote definitions collect at the end of the
+///   body no matter where their `[^n]:` lines stand.
 ///   `<mark>`, `++underline++` becomes `<u>`, `((keys))` becomes `<kbd>`,
 ///   and `:fire:` style shortcodes become Unicode pictographs from a fixed
 ///   table (unknown codes stay literal).
@@ -78,8 +87,21 @@ fn render_html_with_depth(markdown: &str, depth: usize) -> String {
     // Inline sugar on HTML text (inner formatting already rendered, so
     // `||**bold**||` keeps its `<strong>` inside the spoiler span). Code
     // and math sections are skipped.
-    let dirty = postprocess_inline_spans(&dirty);
-    let anchored = add_heading_ids(&dirty);
+    let mut dirty = postprocess_inline_spans(&dirty);
+    // Tables: pulldown-cmark reports column alignment as an inline style,
+    // which the sanitizer would strip. `align` survives the whitelist.
+    dirty = preserve_table_alignment(&dirty);
+    // Footnotes move into the `fn-` namespace before heading ids are
+    // assigned, so `# 1` and `[^1]` never share one anchor.
+    dirty = namespace_footnote_ids(&dirty);
+    let mut anchored = add_heading_ids(&dirty);
+    // Last writer wins nothing: every id in the document must be unique, no
+    // matter whether it came from a heading, a footnote or an author attr.
+    anchored = dedupe_ids(&anchored);
+    // Navigation and notes settle last: the table of contents needs final
+    // anchors, footnotes belong at the bottom in reference order.
+    anchored = insert_toc(&anchored);
+    anchored = collect_footnotes(&anchored);
     // `id` and `class` join the generic whitelist so heading anchors and
     // author styling survive. Neither executes anything; the worst a class
     // does is collide with site styles, which is the author's own choice.
@@ -446,6 +468,7 @@ fn postprocess_inline_spans(html: &str) -> String {
     let mut current = html.to_string();
     for pass in [
         Pass::Delimited("||", "<span class=\"spoiler\" tabindex=\"0\">", "</span>"),
+        Pass::MarkColor,
         Pass::Delimited("==", "<mark>", "</mark>"),
         Pass::Delimited("++", "<u>", "</u>"),
         Pass::Kbd,
@@ -461,6 +484,7 @@ fn postprocess_inline_spans(html: &str) -> String {
                     Pass::Delimited(d, open, close) => {
                         next.push_str(&replace_delimited(seg.text, d, open, close));
                     }
+                    Pass::MarkColor => next.push_str(&replace_mark_color(seg.text)),
                     Pass::Kbd => next.push_str(&replace_kbd(seg.text)),
                     Pass::Emoji => next.push_str(&replace_emoji(seg.text)),
                 }
@@ -474,8 +498,65 @@ fn postprocess_inline_spans(html: &str) -> String {
 #[derive(Clone, Copy)]
 enum Pass {
     Delimited(&'static str, &'static str, &'static str),
+    MarkColor,
     Kbd,
     Emoji,
+}
+
+/// Fixed highlight colors for `==color|text==`. A closed set keeps author
+/// input out of both class names and style attributes.
+const MARK_COLORS: &[&str] = &[
+    "red", "orange", "yellow", "green", "blue", "violet", "pink", "gray",
+];
+
+/// `==red|text==` becomes `<mark class="mark-red">`. Unknown color names
+/// fall through to the plain `==mark==` pass, so `==a|b==` still highlights
+/// instead of dying. HTML tags are skipped.
+fn replace_mark_color(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let d = ['=', '='];
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if matches_delim(&chars, i, &d) && is_valid_opener(&chars, i, d.len()) {
+            let mut j = i + 2;
+            while j < chars.len() && chars[j].is_ascii_lowercase() {
+                j += 1;
+            }
+            let name: String = chars[i + 2..j].iter().collect();
+            let piped = j < chars.len() && chars[j] == '|';
+            if piped
+                && MARK_COLORS.contains(&name.as_str())
+                && let Some(end) = find_valid_closer(&chars, j + 1, &d)
+            {
+                let inner: String = chars[j + 1..end].iter().collect();
+                if !inner.trim().is_empty() && !inner.contains("==") {
+                    out.push_str(&format!("<mark class=\"mark-{name}\">"));
+                    out.push_str(&inner);
+                    out.push_str("</mark>");
+                    i = end + 2;
+                    continue;
+                }
+            }
+            out.push_str("==");
+            i += 2;
+            continue;
+        }
+        if chars[i] == '<' {
+            while i < chars.len() && chars[i] != '>' {
+                out.push(chars[i]);
+                i += 1;
+            }
+            if i < chars.len() {
+                out.push('>');
+                i += 1;
+            }
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
 }
 
 struct HtmlSegment<'a> {
@@ -830,6 +911,202 @@ fn emoji_for(name: &str) -> Option<&'static str> {
     })
 }
 
+/// pulldown-cmark marks aligned table cells with an inline `style`, which
+/// ammonia strips. Only the table writer emits this exact shape, so a plain
+/// rewrite to the whitelisted `align` attribute is safe.
+fn preserve_table_alignment(html: &str) -> String {
+    let mut out = html.to_string();
+    for align in ["left", "center", "right"] {
+        out = out.replace(
+            &format!(" style=\"text-align: {align}\">"),
+            &format!(" align=\"{align}\">"),
+        );
+    }
+    out
+}
+
+/// Moves footnote anchors into the `fn-` namespace: `[^a]` becomes
+/// `#fn-a` on both the reference and the definition. Exact prefixes from
+/// the pulldown-cmark writer, so author text can never collide with them.
+fn namespace_footnote_ids(html: &str) -> String {
+    html.replace(
+        "<div class=\"footnote-definition\" id=\"",
+        "<div class=\"footnote-definition\" id=\"fn-",
+    )
+    .replace(
+        "<sup class=\"footnote-reference\"><a href=\"#",
+        "<sup class=\"footnote-reference\"><a href=\"#fn-",
+    )
+}
+
+/// Enforces document wide id uniqueness in document order. The first use of
+/// an id wins; later ones gain `-2`, `-3` suffixes. Renamed footnote
+/// definitions pull their reference links along, so jumps never land on the
+/// wrong element. Plain content links to a duplicated anchor keep pointing
+/// at the first one, which matches the heading rule authors already know.
+fn dedupe_ids(html: &str) -> String {
+    use std::collections::HashMap;
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut renames: Vec<(String, String)> = Vec::new();
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(pos) = rest.find(" id=\"") {
+        let val_start = pos + 5;
+        let Some(end) = rest[val_start..].find('"') else {
+            break;
+        };
+        let id = &rest[val_start..val_start + end];
+        let count = seen.entry(id.to_string()).or_insert(0);
+        *count += 1;
+        if *count == 1 {
+            out.push_str(&rest[..val_start + end]);
+        } else {
+            let new_id = format!("{}-{}", id, count);
+            out.push_str(&rest[..val_start]);
+            out.push_str(&new_id);
+            let context = &rest[..pos];
+            let tail = if context.len() > 64 {
+                &context[context.len() - 64..]
+            } else {
+                context
+            };
+            if tail.contains("<div class=\"footnote-definition\"") {
+                renames.push((id.to_string(), new_id));
+            }
+        }
+        rest = &rest[val_start + end..];
+    }
+    out.push_str(rest);
+    for (old, new) in renames {
+        out = out.replace(
+            &format!("<sup class=\"footnote-reference\"><a href=\"#{old}\">"),
+            &format!("<sup class=\"footnote-reference\"><a href=\"#{new}\">"),
+        );
+    }
+    out
+}
+/// Replaces a lone `[[toc]]` paragraph with a nav of the page headings.
+/// Runs on final HTML so links match the assigned ids exactly, duplicates
+/// included. Accepts the raw `[[toc]]` form and the wikilink form the
+/// parser makes of it. Without headings the placeholder vanishes silently.
+fn insert_toc(html: &str) -> String {
+    let mut items: Vec<(u32, String, String)> = Vec::new();
+    let mut rest = html;
+    while let Some(open) = rest.find("<h") {
+        let level = rest[open + 2..].chars().next();
+        let Some(n) = level
+            .and_then(|c| c.to_digit(10))
+            .filter(|n| (1..=6).contains(n))
+        else {
+            rest = &rest[open + 2..];
+            continue;
+        };
+        let tag_start = open + 3;
+        let Some(tag_end) = rest[tag_start..].find('>') else {
+            break;
+        };
+        let tag = &rest[tag_start..tag_start + tag_end];
+        let Some(id) = attr_value(tag, "id") else {
+            rest = &rest[tag_start + tag_end + 1..];
+            continue;
+        };
+        let content_start = tag_start + tag_end + 1;
+        let close = format!("</h{n}>");
+        let Some(content_end) = rest[content_start..].find(&close) else {
+            break;
+        };
+        let inner = &rest[content_start..content_start + content_end];
+        // Already HTML escaped by the renderer, so no second escaping here.
+        let text = strip_inline_tags(inner).trim().to_string();
+        if !text.is_empty() {
+            items.push((n, id, text));
+        }
+        rest = &rest[content_start + content_end + close.len()..];
+    }
+    let nav = if items.is_empty() {
+        String::new()
+    } else {
+        let mut nav = String::from("<nav class=\"toc\"><ul>");
+        for (level, id, text) in &items {
+            nav.push_str(&format!(
+                "<li class=\"toc-{level}\"><a href=\"#{id}\">{text}</a></li>"
+            ));
+        }
+        nav.push_str("</ul></nav>");
+        nav
+    };
+    html.replace("<p>[[toc]]</p>", &nav)
+        .replace("<p><a href=\"toc\">toc</a></p>", &nav)
+}
+
+/// Reads `attr="value"` from a tag fragment. First match wins.
+fn attr_value(tag: &str, attr: &str) -> Option<String> {
+    let key = format!("{attr}=\"");
+    let pos = tag.find(&key)?;
+    let start = pos + key.len();
+    let end = tag[start..].find('"')?;
+    Some(tag[start..start + end].to_string())
+}
+
+/// Collects footnote definitions at the end of the body. pulldown-cmark
+/// emits each definition where its `[^n]:` line stands, so a note defined
+/// mid article would split the reading flow. Readers expect notes at the
+/// bottom in reference order, so they move into one closing block. Nesting
+/// aware: a definition holding details or divs keeps them.
+fn collect_footnotes(html: &str) -> String {
+    const OPEN: &str = "<div class=\"footnote-definition\"";
+    let mut defs: Vec<&str> = Vec::new();
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(pos) = rest.find(OPEN) {
+        out.push_str(&rest[..pos]);
+        let mut depth = 0;
+        let mut i = pos;
+        let mut end = None;
+        while i < rest.len() {
+            if rest[i..].starts_with("</div>") {
+                depth -= 1;
+                i += 6;
+                if depth == 0 {
+                    end = Some(i);
+                    break;
+                }
+                continue;
+            }
+            if rest[i..].starts_with("<div")
+                && rest[i + 4..]
+                    .chars()
+                    .next()
+                    .map(|c| c == ' ' || c == '>' || c == '/' || c == '\t' || c == '\n')
+                    .unwrap_or(false)
+            {
+                depth += 1;
+            }
+            i += 1;
+        }
+        match end {
+            Some(stop) => {
+                defs.push(&rest[pos..stop]);
+                rest = &rest[stop..];
+            }
+            None => {
+                out.push_str(&rest[pos..]);
+                rest = "";
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+    if defs.is_empty() {
+        return out;
+    }
+    out.push_str("<div class=\"footnotes\">");
+    for def in defs {
+        out.push_str(def);
+    }
+    out.push_str("</div>");
+    out
+}
 /// Gives every `#`-heading a stable `id` so pages support `#fragment`
 /// links and a future table of contents. Duplicate titles get `-2`, `-3`.
 fn add_heading_ids(html: &str) -> String {
@@ -969,7 +1246,7 @@ fn slugify(text: &str) -> String {
 /// Version of the render pipeline. Part of the `render_cache` key: bump it
 /// whenever `render_page` output changes for identical input. Skin and
 /// chrome changes count: a new footer is a new rendering.
-pub const RENDERER_VERSION: i32 = 4;
+pub const RENDERER_VERSION: i32 = 6;
 
 /// A fully rendered page plus the key it is cached under.
 pub struct RenderedPage {
@@ -1110,7 +1387,7 @@ mod tests {
     fn footnotes_render() {
         let html = render_html("Text[^1].\n\n[^1]: The note.\n");
         assert!(html.contains("The note."));
-        assert!(html.contains("href=\"#1\""));
+        assert!(html.contains("href=\"#fn-1\""));
     }
 
     #[test]
@@ -1317,6 +1594,66 @@ mod tests {
         assert!(html.contains("\u{1F525}"), "{html}");
         assert!(html.contains("\u{1F389}"), "{html}");
         assert!(!html.contains(":fire:"), "{html}");
+    }
+
+    #[test]
+    fn heading_one_and_footnote_one_share_no_anchor() {
+        let html = render_html("# 1\n\nText[^1].\n\n[^1]: The note.\n");
+        assert!(html.contains("<h1 id=\"1\">1</h1>"), "{html}");
+        assert!(html.contains("id=\"fn-1\""), "{html}");
+        assert!(html.contains("href=\"#fn-1\""), "{html}");
+        assert_eq!(html.matches("id=\"1\"").count(), 1);
+    }
+
+    #[test]
+    fn author_id_colliding_with_footnote_gets_suffixed_with_refs_following() {
+        let html = render_html("## Taken {id=\"fn-1\"}\n\nText[^1].\n\n[^1]: The note.\n");
+        assert!(html.contains("<h2 id=\"fn-1\">Taken</h2>"), "{html}");
+        assert!(html.contains("id=\"fn-1-2\""), "{html}");
+        assert!(html.contains("href=\"#fn-1-2\""), "{html}");
+    }
+
+    #[test]
+    fn footnotes_collect_at_the_bottom() {
+        let html = render_html("Text[^1].\n\n[^1]: The note.\n\nAfter.\n");
+        let note = html.find("The note.").expect("note renders");
+        let after = html.find("After.").expect("tail renders");
+        assert!(after < note, "{html}");
+        assert!(html.contains("<div class=\"footnotes\">"), "{html}");
+    }
+
+    #[test]
+    fn colored_marks_render_and_unknown_names_fall_through() {
+        let html = render_html("==red|hot== and ==plain== and ==nope|x==.\n");
+        assert!(
+            html.contains("<mark class=\"mark-red\">hot</mark>"),
+            "{html}"
+        );
+        assert!(html.contains("<mark>plain</mark>"), "{html}");
+        assert!(html.contains("<mark>nope|x</mark>"), "{html}");
+    }
+
+    #[test]
+    fn toc_lists_headings_with_final_anchors() {
+        let html = render_html("[[toc]]\n\n# One\n\n## One\n");
+        assert!(html.contains("<nav class=\"toc\">"), "{html}");
+        assert!(html.contains("href=\"#one\""), "{html}");
+        assert!(html.contains("href=\"#one-2\""), "{html}");
+    }
+
+    #[test]
+    fn toc_without_headings_vanishes() {
+        let html = render_html("[[toc]]\n\nJust text.\n");
+        assert!(!html.contains("toc"), "{html}");
+    }
+
+    #[test]
+    fn table_alignment_survives_sanitizing() {
+        let html = render_html("| l | c | r |\n|:--|:--:|--:|\n| 1 | 2 | 3 |\n");
+        assert!(html.contains("align=\"left\""), "{html}");
+        assert!(html.contains("align=\"center\""), "{html}");
+        assert!(html.contains("align=\"right\""), "{html}");
+        assert!(!html.contains("text-align"), "{html}");
     }
 
     #[test]
