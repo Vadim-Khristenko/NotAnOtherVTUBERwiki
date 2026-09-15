@@ -17,7 +17,9 @@
 ///   `**bold**` stays `<strong>`, underline uses `++` to avoid the
 ///   CommonMark/Discord `__` collision).
 /// - `||spoiler||` becomes `<span class="spoiler">`, `==mark==` becomes
-///   `<mark>`, `++underline++` becomes `<u>`.
+///   `<mark>`, `++underline++` becomes `<u>`, `((keys))` becomes `<kbd>`,
+///   and `:fire:` style shortcodes become Unicode pictographs from a fixed
+///   table (unknown codes stay literal).
 /// - `> quote` is a blockquote, `>! Summary` plus `> body` lines is a
 ///   collapsible quote (`<details class="quote">`).
 /// - `:::details Title ... :::` and `:::pullquote ... :::` blocks.
@@ -81,10 +83,12 @@ fn render_html_with_depth(markdown: &str, depth: usize) -> String {
     // `id` and `class` join the generic whitelist so heading anchors and
     // author styling survive. Neither executes anything; the worst a class
     // does is collide with site styles, which is the author's own choice.
-    // `open` on `<details>` keeps collapsible quotes working; `<ol start>`
-    // is already allowed by ammonia's defaults.
+    // `tabindex="0"` on spoilers keeps them keyboard and touch operable with
+    // zero JavaScript on the reader path. `open` on `<details>` keeps
+    // collapsible quotes working; `<ol start>` is already allowed by
+    // ammonia's defaults.
     ammonia::Builder::default()
-        .add_generic_attributes(["id", "class"])
+        .add_generic_attributes(["id", "class", "tabindex"])
         .add_tag_attributes("details", ["open"])
         .clean(&anchored)
         .to_string()
@@ -434,43 +438,44 @@ fn postprocess_diagrams(html: &str) -> String {
 }
 
 /// Inline chat sugar on rendered HTML: `||spoiler||`, `==mark==`,
-/// `++underline++`. Runs on HTML (not Markdown) so inner `**bold**` is
+/// `++underline++`, `((kbd))` and `:emoji:` shortcodes. Runs on HTML (not
+/// Markdown) so inner `**bold**` is
 /// already `<strong>` and survives inside the wrapper. `<pre>`, `<code>`
 /// and math spans are skipped so code samples stay literal.
 fn postprocess_inline_spans(html: &str) -> String {
-    let segments = split_protected_html(html);
-    let mut out = String::with_capacity(html.len());
-    for seg in segments {
-        if seg.protected {
-            out.push_str(seg.text);
-        } else {
-            out.push_str(&replace_delimited(
-                seg.text,
-                "||",
-                "<span class=\"spoiler\">",
-                "</span>",
-            ));
+    let mut current = html.to_string();
+    for pass in [
+        Pass::Delimited("||", "<span class=\"spoiler\" tabindex=\"0\">", "</span>"),
+        Pass::Delimited("==", "<mark>", "</mark>"),
+        Pass::Delimited("++", "<u>", "</u>"),
+        Pass::Kbd,
+        Pass::Emoji,
+    ] {
+        let segments = split_protected_html(&current);
+        let mut next = String::with_capacity(current.len());
+        for seg in segments {
+            if seg.protected {
+                next.push_str(seg.text);
+            } else {
+                match pass {
+                    Pass::Delimited(d, open, close) => {
+                        next.push_str(&replace_delimited(seg.text, d, open, close));
+                    }
+                    Pass::Kbd => next.push_str(&replace_kbd(seg.text)),
+                    Pass::Emoji => next.push_str(&replace_emoji(seg.text)),
+                }
+            }
         }
+        current = next;
     }
-    let segments = split_protected_html(&out);
-    let mut second = String::with_capacity(out.len());
-    for seg in segments {
-        if seg.protected {
-            second.push_str(seg.text);
-        } else {
-            second.push_str(&replace_delimited(seg.text, "==", "<mark>", "</mark>"));
-        }
-    }
-    let segments = split_protected_html(&second);
-    let mut third = String::with_capacity(second.len());
-    for seg in segments {
-        if seg.protected {
-            third.push_str(seg.text);
-        } else {
-            third.push_str(&replace_delimited(seg.text, "++", "<u>", "</u>"));
-        }
-    }
-    third
+    current
+}
+
+#[derive(Clone, Copy)]
+enum Pass {
+    Delimited(&'static str, &'static str, &'static str),
+    Kbd,
+    Emoji,
 }
 
 struct HtmlSegment<'a> {
@@ -605,6 +610,226 @@ fn find_valid_closer(chars: &[char], from: usize, d: &[char]) -> Option<usize> {
     }
     None
 }
+
+/// `((Ctrl+C))` becomes `<kbd>Ctrl+C</kbd>`. Same flanking idea as the
+/// symmetric delimiters, with `(` and `)` as the guard characters so smileys
+/// like `:((` stay literal. HTML tags are skipped.
+fn replace_kbd(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let opens = i + 1 < chars.len() && chars[i] == '(' && chars[i + 1] == '(';
+        let prev_ok = i == 0 || chars[i - 1] != '(';
+        let next_ok = i + 2 < chars.len() && !chars[i + 2].is_whitespace();
+        if opens && prev_ok && next_ok {
+            if let Some(end) = find_kbd_close(&chars, i + 2) {
+                let inner: String = chars[i + 2..end].iter().collect();
+                if !inner.trim().is_empty() && !inner.contains("((") && !inner.contains("))") {
+                    out.push_str("<kbd>");
+                    out.push_str(&inner);
+                    out.push_str("</kbd>");
+                    i = end + 2;
+                    continue;
+                }
+            }
+            out.push_str("((");
+            i += 2;
+            continue;
+        }
+        if chars[i] == '<' {
+            while i < chars.len() && chars[i] != '>' {
+                out.push(chars[i]);
+                i += 1;
+            }
+            if i < chars.len() {
+                out.push('>');
+                i += 1;
+            }
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+fn find_kbd_close(chars: &[char], from: usize) -> Option<usize> {
+    let mut i = from;
+    while i + 1 < chars.len() {
+        if chars[i] == '\n' {
+            return None;
+        }
+        if chars[i] == '<' {
+            while i < chars.len() && chars[i] != '>' {
+                i += 1;
+            }
+            i += 1;
+            continue;
+        }
+        if chars[i] == ')' && chars[i + 1] == ')' {
+            let prev_ok = i > 0 && !chars[i - 1].is_whitespace();
+            let next_ok = i + 2 >= chars.len() || chars[i + 2] != ')';
+            if prev_ok && next_ok {
+                return Some(i);
+            }
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+    None
+}
+
+/// `:fire:` style shortcodes become Unicode pictographs from a fixed table.
+/// Unknown codes, times like `12:30` and URLs stay literal: the opener needs
+/// a non-alphanumeric before it and an alphanumeric after it, the name is
+/// 2 to 32 chars from a small charset, and the closer must not be followed
+/// by an alphanumeric. HTML tags are skipped.
+fn replace_emoji(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '<' {
+            while i < chars.len() && chars[i] != '>' {
+                out.push(chars[i]);
+                i += 1;
+            }
+            if i < chars.len() {
+                out.push('>');
+                i += 1;
+            }
+            continue;
+        }
+        if chars[i] == ':'
+            && (i == 0 || (!chars[i - 1].is_alphanumeric() && chars[i - 1] != ':'))
+            && i + 1 < chars.len()
+            && chars[i + 1].is_alphanumeric()
+        {
+            let mut j = i + 1;
+            while j < chars.len() && is_shortcode_char(chars[j]) {
+                j += 1;
+            }
+            let name: String = chars[i + 1..j].iter().collect();
+            let closed = j < chars.len() && chars[j] == ':';
+            let next_ok = j + 1 >= chars.len() || !chars[j + 1].is_alphanumeric();
+            if closed
+                && next_ok
+                && let Some(glyph) = emoji_for(&name)
+            {
+                out.push_str(glyph);
+                i = j + 1;
+                continue;
+            }
+            out.push(':');
+            i += 1;
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+fn is_shortcode_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '+'
+}
+
+/// Fixed shortcode table, Discord and GitHub flavored. Deliberately small:
+/// every entry is plain Unicode text, so it works with JavaScript off and in
+/// every skin with no assets. Unknown codes render literally.
+fn emoji_for(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "heart" => "\u{2764}",
+        "fire" => "\u{1F525}",
+        "star" => "\u{2B50}",
+        "sparkles" => "\u{2728}",
+        "tada" | "party" => "\u{1F389}",
+        "rocket" => "\u{1F680}",
+        "eyes" => "\u{1F440}",
+        "wave" => "\u{1F44B}",
+        "grin" => "\u{1F601}",
+        "smile" => "\u{1F604}",
+        "laugh" | "joy" => "\u{1F602}",
+        "wink" => "\u{1F609}",
+        "blush" => "\u{1F60A}",
+        "heart_eyes" => "\u{1F60D}",
+        "star_struck" => "\u{1F929}",
+        "cry" => "\u{1F622}",
+        "sob" => "\u{1F62D}",
+        "angry" => "\u{1F620}",
+        "thinking" => "\u{1F914}",
+        "hug" => "\u{1F917}",
+        "sleep" => "\u{1F634}",
+        "clown" => "\u{1F921}",
+        "ghost" => "\u{1F47B}",
+        "alien" => "\u{1F47D}",
+        "robot" => "\u{1F916}",
+        "cat" => "\u{1F431}",
+        "dog" => "\u{1F436}",
+        "fox" => "\u{1F98A}",
+        "frog" => "\u{1F438}",
+        "panda" => "\u{1F43C}",
+        "penguin" => "\u{1F427}",
+        "unicorn" => "\u{1F984}",
+        "dragon" => "\u{1F432}",
+        "thumbsup" | "+1" => "\u{1F44D}",
+        "thumbsdown" | "-1" => "\u{1F44E}",
+        "ok" => "\u{1F44C}",
+        "point_right" => "\u{1F449}",
+        "clap" => "\u{1F44F}",
+        "pray" => "\u{1F64F}",
+        "muscle" => "\u{1F4AA}",
+        "crown" => "\u{1F451}",
+        "gem" => "\u{1F48E}",
+        "trophy" => "\u{1F3C6}",
+        "medal" => "\u{1F3C5}",
+        "bell" => "\u{1F514}",
+        "gift" => "\u{1F381}",
+        "cake" => "\u{1F382}",
+        "cookie" => "\u{1F36A}",
+        "donut" => "\u{1F369}",
+        "popcorn" => "\u{1F37F}",
+        "pizza" => "\u{1F355}",
+        "burger" => "\u{1F354}",
+        "fries" => "\u{1F35F}",
+        "taco" => "\u{1F32E}",
+        "sushi" => "\u{1F363}",
+        "ramen" => "\u{1F35C}",
+        "cheese" => "\u{1F9C0}",
+        "egg" => "\u{1F373}",
+        "strawberry" => "\u{1F353}",
+        "peach" => "\u{1F351}",
+        "grape" => "\u{1F347}",
+        "melon" => "\u{1F348}",
+        "coffee" => "\u{2615}",
+        "tea" => "\u{1F375}",
+        "game" => "\u{1F3AE}",
+        "dice" => "\u{1F3B2}",
+        "mic" => "\u{1F3A4}",
+        "headphones" => "\u{1F3A7}",
+        "music" => "\u{1F3B5}",
+        "movie" => "\u{1F3AC}",
+        "camera" => "\u{1F4F7}",
+        "book" => "\u{1F4DA}",
+        "pin" => "\u{1F4CC}",
+        "check" => "\u{2705}",
+        "cross" => "\u{274C}",
+        "warn" => "\u{26A0}\u{FE0F}",
+        "info" => "\u{2139}\u{FE0F}",
+        "question" => "\u{2753}",
+        "bang" => "\u{2757}",
+        "plus" => "\u{2795}",
+        "minus" => "\u{2796}",
+        "arrow_right" => "\u{27A1}\u{FE0F}",
+        "recycle" => "\u{267B}\u{FE0F}",
+        "100" => "\u{1F4AF}",
+        "vs" => "\u{1F19A}",
+        _ => return None,
+    })
+}
+
 /// Gives every `#`-heading a stable `id` so pages support `#fragment`
 /// links and a future table of contents. Duplicate titles get `-2`, `-3`.
 fn add_heading_ids(html: &str) -> String {
@@ -997,7 +1222,7 @@ mod tests {
     fn spoiler_mark_underline_render() {
         let html = render_html("||secret|| ==lit== ++under++.\n");
         assert!(
-            html.contains("<span class=\"spoiler\">secret</span>"),
+            html.contains("<span class=\"spoiler\" tabindex=\"0\">secret</span>"),
             "{html}"
         );
         assert!(html.contains("<mark>lit</mark>"), "{html}");
@@ -1007,7 +1232,7 @@ mod tests {
     #[test]
     fn spoiler_keeps_inner_bold() {
         let html = render_html("||**bold** inside||\n");
-        assert!(html.contains("<span class=\"spoiler\">"), "{html}");
+        assert!(html.contains("<span class=\"spoiler\""), "{html}");
         assert!(html.contains("<strong>bold</strong>"), "{html}");
     }
 
@@ -1072,6 +1297,34 @@ mod tests {
         let html = render_html("Term\n  : Definition.\n");
         assert!(html.contains("<dl>"), "{html}");
         assert!(html.contains("<dt>"), "{html}");
+    }
+
+    #[test]
+    fn kbd_renders() {
+        let html = render_html("Press ((Ctrl+C)) to copy.\n");
+        assert!(html.contains("<kbd>Ctrl+C</kbd>"), "{html}");
+    }
+
+    #[test]
+    fn kbd_skipped_in_code() {
+        let html = render_html("`((not a key))`\n");
+        assert!(!html.contains("<kbd>"), "{html}");
+    }
+
+    #[test]
+    fn emoji_shortcodes_render() {
+        let html = render_html("Good luck :fire: and :tada:!\n");
+        assert!(html.contains("\u{1F525}"), "{html}");
+        assert!(html.contains("\u{1F389}"), "{html}");
+        assert!(!html.contains(":fire:"), "{html}");
+    }
+
+    #[test]
+    fn emoji_leaves_times_urls_and_unknown_alone() {
+        let html = render_html("Meet at 12:30, see https://x.test/a and :nope:.\n");
+        assert!(html.contains("12:30"), "{html}");
+        assert!(html.contains("https://x.test/a"), "{html}");
+        assert!(html.contains(":nope:"), "{html}");
     }
 
     #[test]
