@@ -99,6 +99,7 @@ pub async fn run(
             &slug,
             &title,
             &body_md,
+            skin_dir,
         )
         .await?;
     }
@@ -173,6 +174,7 @@ async fn ensure_page(
     slug: &str,
     title: &str,
     body_md: &str,
+    skin_dir: &str,
 ) -> Result<(), AppError> {
     if sqlx::query!(
         "SELECT id FROM pages WHERE wiki_id = $1 AND slug = $2",
@@ -185,7 +187,10 @@ async fn ensure_page(
     {
         seed_content(pool, wiki_id, locale, slug, title, body_md).await?;
     }
-    ensure_cache(pool, env, wiki_id, wiki_name, locale, title, body_md).await
+    ensure_cache(
+        pool, env, wiki_id, wiki_name, locale, title, body_md, skin_dir,
+    )
+    .await
 }
 
 async fn seed_content(
@@ -229,6 +234,8 @@ async fn seed_content(
 
 /// Renders the page into the cache when the current renderer version has
 /// no row yet. This heals stale skins: bump the version, reseed, done.
+// Nine coherent page coordinates, same reason as ensure_page above.
+#[allow(clippy::too_many_arguments)]
 async fn ensure_cache(
     pool: &PgPool,
     env: &minijinja::Environment<'_>,
@@ -237,8 +244,9 @@ async fn ensure_cache(
     locale: &str,
     title: &str,
     body_md: &str,
+    skin_dir: &str,
 ) -> Result<(), AppError> {
-    let key = naw_markdown::page_hash(title, locale, body_md, "");
+    let key = naw_markdown::page_hash(title, locale, body_md, "", skin_dir);
     if sqlx::query!(
         "SELECT html FROM render_cache WHERE wiki_id = $1 AND content_hash = $2 AND renderer_version = $3",
         wiki_id,
@@ -261,6 +269,7 @@ async fn ensure_cache(
             version: ENGINE_VERSION,
             served_from_cache: false,
             summary: "",
+            skin: skin_dir,
         },
     )?;
     sqlx::query!(

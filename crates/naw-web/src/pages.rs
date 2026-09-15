@@ -93,7 +93,7 @@ async fn render_or_cached(
     summary: &str,
     headers: &HeaderMap,
 ) -> Result<Response, AppError> {
-    let key = naw_markdown::page_hash(title, locale, &body_md, summary);
+    let key = naw_markdown::page_hash(title, locale, &body_md, summary, &state.config.skin_dir);
     let etag = etag_for(&key);
     if let Some(row) = sqlx::query!(
         "SELECT html FROM render_cache WHERE wiki_id = $1 AND content_hash = $2 AND renderer_version = $3",
@@ -116,6 +116,7 @@ async fn render_or_cached(
             version: ENGINE_VERSION,
             served_from_cache: false,
             summary,
+            skin: &state.config.skin_dir,
         },
     )?;
     let rendered_etag = etag_for(&rendered.content_hash);
@@ -450,6 +451,7 @@ pub async fn create_page(
             version: ENGINE_VERSION,
             served_from_cache: false,
             summary: summary.as_deref().unwrap_or(""),
+            skin: &state.config.skin_dir,
         },
     )?;
     sqlx::query!(
@@ -572,6 +574,7 @@ pub async fn save_page(
             version: ENGINE_VERSION,
             served_from_cache: false,
             summary: summary.as_deref().unwrap_or(""),
+            skin: &state.config.skin_dir,
         },
     )?;
     sqlx::query!(
@@ -647,6 +650,7 @@ pub async fn preview(
             version: ENGINE_VERSION,
             served_from_cache: false,
             summary: "",
+            skin: &state.config.skin_dir,
         },
     )?;
     Ok((

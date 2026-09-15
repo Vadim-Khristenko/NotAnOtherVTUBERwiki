@@ -1246,7 +1246,7 @@ fn slugify(text: &str) -> String {
 /// Version of the render pipeline. Part of the `render_cache` key: bump it
 /// whenever `render_page` output changes for identical input. Skin and
 /// chrome changes count: a new footer is a new rendering.
-pub const RENDERER_VERSION: i32 = 7;
+pub const RENDERER_VERSION: i32 = 8;
 
 /// A fully rendered page plus the key it is cached under.
 pub struct RenderedPage {
@@ -1261,8 +1261,10 @@ pub fn content_hash(body_md: &str) -> Vec<u8> {
 }
 
 /// Cache key hash. Everything that renders into the page is part of the
-/// key: correctness beats cross-page deduplication.
-pub fn page_hash(title: &str, lang: &str, body_md: &str, summary: &str) -> Vec<u8> {
+/// key: correctness beats cross-page deduplication. The skin directory
+/// counts too: the same article under two skins is two different pages,
+/// and sharing a cache row would serve one skin dressed as the other.
+pub fn page_hash(title: &str, lang: &str, body_md: &str, summary: &str, skin: &str) -> Vec<u8> {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(title.as_bytes());
@@ -1272,6 +1274,8 @@ pub fn page_hash(title: &str, lang: &str, body_md: &str, summary: &str) -> Vec<u
     hasher.update(body_md.as_bytes());
     hasher.update([0u8]);
     hasher.update(summary.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(skin.as_bytes());
     hasher.finalize().to_vec()
 }
 
@@ -1285,6 +1289,7 @@ pub struct PageInput<'a> {
     pub version: &'a str,
     pub served_from_cache: bool,
     pub summary: &'a str,
+    pub skin: &'a str,
 }
 
 /// Renders a full page through the `page.html` template. `version` and the
@@ -1295,7 +1300,13 @@ pub fn render_page(
     env: &minijinja::Environment,
     input: &PageInput<'_>,
 ) -> Result<RenderedPage, naw_core::error::AppError> {
-    let content_hash = page_hash(input.title, input.lang, input.body_md, input.summary);
+    let content_hash = page_hash(
+        input.title,
+        input.lang,
+        input.body_md,
+        input.summary,
+        input.skin,
+    );
     let started = std::time::Instant::now();
     let body_html = render_html(input.body_md);
     let render_ms = started.elapsed().as_millis() as u64;
@@ -1427,6 +1438,7 @@ mod tests {
             version: "0.1.0",
             served_from_cache: false,
             summary: "",
+            skin: "skins/default",
         }
     }
 
@@ -1465,11 +1477,12 @@ mod tests {
 
     #[test]
     fn page_hash_is_stable_and_sensitive() {
-        let a = page_hash("T", "en", "# Hi", "");
-        assert_eq!(a, page_hash("T", "en", "# Hi", ""));
-        assert_ne!(a, page_hash("T", "en", "# Bye", ""));
-        assert_ne!(a, page_hash("Other", "en", "# Hi", ""));
-        assert_ne!(a, page_hash("T", "en", "# Hi", "lede"));
+        let a = page_hash("T", "en", "# Hi", "", "skins/default");
+        assert_eq!(a, page_hash("T", "en", "# Hi", "", "skins/default"));
+        assert_ne!(a, page_hash("T", "en", "# Bye", "", "skins/default"));
+        assert_ne!(a, page_hash("Other", "en", "# Hi", "", "skins/default"));
+        assert_ne!(a, page_hash("T", "en", "# Hi", "lede", "skins/default"));
+        assert_ne!(a, page_hash("T", "en", "# Hi", "", "skins/snackers"));
     }
 
     #[test]
