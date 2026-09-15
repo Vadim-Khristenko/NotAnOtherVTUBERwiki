@@ -28,6 +28,7 @@ That is the whole document. The rest is the precise wording.
 | `.github/assets/FILIAN_WIKI_BANNER.jpeg` | Repository banner, 2816 x 1584 | AI generated |
 | `.github/assets/filian-ascii.txt` | ASCII art | Human made |
 | All `.rs`, `.ts`, `.vue`, `.sql`, `.toml` files | The engine | Humans |
+| `skins/snackers/favicon/` icon pack (ico, png, svg, manifest) | FilianWIKI brand icons | AI generated |
 
 If an asset is AI generated, assisted, or human made, its entry says so. If we add assets later, they go in this
 table with the same honesty, including when a human made them.

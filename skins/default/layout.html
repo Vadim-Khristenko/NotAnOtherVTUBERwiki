@@ -114,7 +114,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .content thead { background: var(--bg-elevated); }
 .content tbody tr:nth-child(even) { background: var(--bg-elevated); }
 .content input[type="checkbox"] { accent-color: var(--accent); width: 1rem; height: 1rem; }
-.footnote-definition { font-size: 0.9rem; color: var(--muted); border-top: 1px solid var(--line); margin-top: 2rem; padding-top: 0.8rem; }
+.footnote-definition { margin: 0 0 0.5rem; }
 .footnote-reference a { text-decoration: none; }
 .content kbd { font-family: var(--font-mono); font-size: 0.82em; background: var(--surface-sunken); border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 0.35rem; padding: 0.1rem 0.4rem; white-space: nowrap; }
 .spoiler:focus-visible { outline: 2px dashed var(--accent); outline-offset: 2px; }
@@ -129,8 +129,32 @@ details.details summary::marker, details.quote summary::marker { color: var(--ac
 /* Rich formatting v4: every sugar from the renderer has a matching style,
  * light and dark via variables. No author CSS needed for the basics. */
 .content blockquote { margin: 1rem 0; padding: 0.6rem 1rem; border-left: 3px solid var(--border-strong); color: var(--ink-soft); background: var(--bg-elevated); border-radius: 0 var(--radius) var(--radius) 0; }
-.content mark { background: #fff3a3; color: inherit; padding: 0 0.2em; border-radius: 0.2em; }
-html[data-theme="dark"] .content mark { background: #5a4a00; color: #fff7cc; }
+.content mark { background: #eab308; color: #241a00; padding: 0 0.2em; border-radius: 0.2em; }
+html[data-theme="dark"] .content mark { background: #8a6d00; color: #fff6d6; }
+.content mark.mark-red { background: #ffd9d9; color: #6b1414; }
+.content mark.mark-orange { background: #ffe3c2; color: #6b3410; }
+.content mark.mark-yellow { background: #f5d020; color: #241a00; }
+.content mark.mark-green { background: #d3f0d3; color: #145214; }
+.content mark.mark-blue { background: #d7e6ff; color: #123a75; }
+.content mark.mark-violet { background: #e6dcff; color: #3d1e78; }
+.content mark.mark-pink { background: #ffd9ec; color: #70143f; }
+.content mark.mark-gray { background: #e2e2e8; color: #33333a; }
+html[data-theme="dark"] .content mark.mark-red { background: #7a2424; color: #ffe3e3; }
+html[data-theme="dark"] .content mark.mark-orange { background: #7a4416; color: #ffedda; }
+html[data-theme="dark"] .content mark.mark-yellow { background: #8a6d00; color: #fff6d6; }
+html[data-theme="dark"] .content mark.mark-green { background: #1f5c2e; color: #e2f5e2; }
+html[data-theme="dark"] .content mark.mark-blue { background: #274b7a; color: #e2ecff; }
+html[data-theme="dark"] .content mark.mark-violet { background: #4a2d85; color: #ece4ff; }
+html[data-theme="dark"] .content mark.mark-pink { background: #7c2350; color: #ffe6f3; }
+html[data-theme="dark"] .content mark.mark-gray { background: #3a3a44; color: #e8e8ee; }
+.footnotes { margin-top: 2rem; border-top: 1px solid var(--line); padding-top: 0.8rem; font-size: 0.9rem; color: var(--muted); }
+.footnote-definition { margin: 0 0 0.5rem; }
+.toc { margin: 1rem 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elevated); padding: 0.7rem 1rem; }
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 0.15rem 0; }
+.toc-2 { padding-left: 0.9rem; }
+.toc-3 { padding-left: 1.8rem; }
+.toc-4, .toc-5, .toc-6 { padding-left: 2.7rem; }
 .spoiler { background: var(--surface-sunken); color: transparent; border-radius: 0.3rem; padding: 0 0.35rem; cursor: pointer; transition: color 0.15s; }
 .spoiler:hover, .spoiler:focus { color: var(--ink); }
 .content blockquote.markdown-alert-note, .content blockquote.markdown-alert-tip, .content blockquote.markdown-alert-important, .content blockquote.markdown-alert-warning, .content blockquote.markdown-alert-caution { border-left-width: 4px; }

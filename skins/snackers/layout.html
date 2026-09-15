@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" href="/favicon-96x96.png" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
 <title>{{ title }} | {{ wiki_name }}</title>
 <style>
 /*
@@ -109,7 +113,8 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 :focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 .site-header { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(8px); }
 .site-header::after { content: ""; display: block; height: 3px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
-.site-brand::before { content: ""; display: inline-block; width: 0.75em; height: 0.75em; margin-right: 0.45rem; border-radius: 0.25em; background: linear-gradient(135deg, var(--accent), var(--accent-2)); transform: rotate(-8deg); vertical-align: baseline; }
+.site-brand { display: inline-flex; align-items: center; }
+.brand-mark { width: 1.5em; height: 1.5em; margin-right: 0.45rem; border-radius: 0.35em; box-shadow: var(--shadow); }
 .content h1 { letter-spacing: -0.02em; text-wrap: balance; }
 .content h1::after { content: ""; display: block; width: 3.5rem; height: 4px; margin-top: 0.4rem; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
 .content h2, .content h3 { text-wrap: balance; }
@@ -120,7 +125,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .content thead { background: var(--bg-elevated); }
 .content tbody tr:nth-child(even) { background: var(--bg-elevated); }
 .content input[type="checkbox"] { accent-color: var(--accent); width: 1rem; height: 1rem; }
-.footnote-definition { font-size: 0.9rem; color: var(--muted); border-top: 1px solid var(--line); margin-top: 2rem; padding-top: 0.8rem; }
+.footnote-definition { margin: 0 0 0.5rem; }
 .footnote-reference a { text-decoration: none; }
 .content kbd { font-family: var(--font-mono); font-size: 0.82em; background: var(--surface); border: 1px solid var(--border-strong); border-bottom-width: 3px; border-radius: 0.5rem; padding: 0.1rem 0.45rem; white-space: nowrap; }
 .spoiler:focus-visible { outline: 2px dashed var(--accent-2); outline-offset: 2px; }
@@ -141,8 +146,32 @@ details.details summary::marker, details.quote summary::marker { color: var(--ac
 }
 /* Rich formatting v4, snackers palette on the default structure. */
 .content blockquote { margin: 1rem 0; padding: 0.6rem 1rem; border-left: 3px solid var(--border-strong); color: var(--ink-soft); background: var(--bg-elevated); border-radius: 0 var(--radius) var(--radius) 0; }
-.content mark { background: #ffe08a; color: inherit; padding: 0 0.2em; border-radius: 0.2em; }
-html[data-theme="dark"] .content mark { background: #6b3fa0; color: #ffe9f4; }
+.content mark { background: #eab308; color: #241a00; padding: 0 0.2em; border-radius: 0.2em; }
+html[data-theme="dark"] .content mark { background: #8a6d00; color: #fff6d6; }
+.content mark.mark-red { background: #ffc9d6; color: #6b1430; }
+.content mark.mark-orange { background: #ffe0bd; color: #6b3410; }
+.content mark.mark-yellow { background: #f5d020; color: #241a00; }
+.content mark.mark-green { background: #c9ecc9; color: #0f4d20; }
+.content mark.mark-blue { background: #d3e2ff; color: #1c3570; }
+.content mark.mark-violet { background: #e2d4ff; color: #421e78; }
+.content mark.mark-pink { background: #ffc2e2; color: #70143f; }
+.content mark.mark-gray { background: #e6d9e6; color: #4a2d4a; }
+html[data-theme="dark"] .content mark.mark-red { background: #7c2440; color: #ffe3ec; }
+html[data-theme="dark"] .content mark.mark-orange { background: #7a4416; color: #ffedda; }
+html[data-theme="dark"] .content mark.mark-yellow { background: #8a6d00; color: #fff6d6; }
+html[data-theme="dark"] .content mark.mark-green { background: #1f5c34; color: #e2f5e6; }
+html[data-theme="dark"] .content mark.mark-blue { background: #2c4478; color: #e2ecff; }
+html[data-theme="dark"] .content mark.mark-violet { background: #53308f; color: #ece4ff; }
+html[data-theme="dark"] .content mark.mark-pink { background: #8a2a5c; color: #ffe6f3; }
+html[data-theme="dark"] .content mark.mark-gray { background: #4a2d55; color: #f0e2f0; }
+.footnotes { margin-top: 2rem; border-top: 2px solid var(--border-strong); padding-top: 0.8rem; font-size: 0.9rem; color: var(--muted); }
+.footnote-definition { margin: 0 0 0.5rem; }
+.toc { margin: 1rem 0; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg-elevated); padding: 0.7rem 1rem; box-shadow: var(--shadow); }
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 0.15rem 0; }
+.toc-2 { padding-left: 0.9rem; }
+.toc-3 { padding-left: 1.8rem; }
+.toc-4, .toc-5, .toc-6 { padding-left: 2.7rem; }
 .spoiler { background: var(--surface-sunken); color: transparent; border-radius: 0.3rem; padding: 0 0.35rem; cursor: pointer; transition: color 0.15s; }
 .spoiler:hover, .spoiler:focus { color: var(--ink); }
 .content blockquote.markdown-alert-note, .content blockquote.markdown-alert-tip, .content blockquote.markdown-alert-important, .content blockquote.markdown-alert-warning, .content blockquote.markdown-alert-caution { border-left-width: 4px; }

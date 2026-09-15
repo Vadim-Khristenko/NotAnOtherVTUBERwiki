@@ -20,6 +20,7 @@
 <button type="button" data-wrap="~~" title="Strikethrough"><s>S</s></button>
 <button type="button" data-wrap="++" title="Underline"><u>U</u></button>
 <button type="button" data-wrap="==" title="Highlight">H</button>
+<button type="button" data-wrap="==yellow|" data-suffix="==" title="Colored highlight">H+</button>
 <button type="button" data-wrap="||" title="Spoiler">&#9618;</button>
 <button type="button" data-wrap="((" data-suffix="))" title="Keyboard key"><kbd>K</kbd></button>
 <button type="button" data-snippet=":sparkles:" title="Emoji">&#9786;</button>
@@ -55,13 +56,14 @@
 <summary>Markdown cheatsheet</summary>
 <ul>
 <li><code># H1</code> … <code>###### H6</code>, optional attrs at the end: <code>## Title {id="x" class="y"}</code></li>
-<li><code>**bold**</code>, <code>*italic*</code>, <code>__italic__</code>, <code>~~strike~~</code>, <code>++underline++</code>, <code>==mark==</code>, <code>||spoiler||</code>, <code>`code`</code></li>
+<li><code>**bold**</code>, <code>*italic*</code>, <code>__italic__</code>, <code>~~strike~~</code>, <code>++underline++</code>, <code>==mark==</code>, <code>==red|hot==</code> (red orange yellow green blue violet pink gray), <code>||spoiler||</code>, <code>`code`</code></li>
 <li><code>H ~2~ O</code> sub, <code>E=mc ^2^</code> sup (spaces around markers)</li>
 <li><code>[text](https://…)</code> or <code>[[slug|text]]</code> for links</li>
 <li><code>&gt; quote</code>, collapsible: <code>&gt;! Summary</code> then <code>&gt; body</code>; block: <code>:::details Title</code> … <code>:::</code>, pullquote: <code>:::pullquote</code> … <code>:::</code></li>
 <li>Alerts: <code>&gt; [!NOTE]</code> / <code>TIP</code> / <code>IMPORTANT</code> / <code>WARNING</code> / <code>CAUTION</code></li>
 <li><code>- list</code>, <code>1. numbered</code>, task <code>- [ ] todo</code>, definition: <code>Term</code> then <code>&nbsp;&nbsp;: def</code></li>
-<li>Footnote <code>[^1]</code> in text plus <code>[^1]: note</code> at the bottom</li>
+<li>Footnote <code>[^1]</code> in text plus <code>[^1]: note</code> anywhere, definitions always collect at the bottom</li>
+<li><code>[[toc]]</code> alone in a paragraph becomes the page contents</li>
 <li><code>((Ctrl+C))</code> keyboard keys, <code>:fire:</code> <code>:tada:</code> <code>:sparkles:</code> emoji shortcodes (unknown codes stay literal)</li>
 <li>Math: <code>$E=mc^2$</code> inline, <code>$$x+y$$</code> display, <code>```math</code> block</li>
 <li>Diagrams: <code>```mermaid</code> / <code>dot</code> / <code>plantuml</code> … <code>```</code> (code text kept, SVG render comes with the worker)</li>
