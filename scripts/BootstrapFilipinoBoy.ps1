@@ -1,10 +1,24 @@
 [CmdletBinding()]
 param()
 
+function Write-Step([string]$Message) {
+    Write-Host ""
+    Write-Host "==> $Message" -ForegroundColor Cyan
+}
+function Write-Ok([string]$Message) {
+    Write-Host "  [ok] $Message" -ForegroundColor Green
+}
+function Write-Info([string]$Message) {
+    Write-Host "  .. $Message" -ForegroundColor Gray
+}
+function Write-Fail([string]$Message) {
+    Write-Host "  [fail] $Message" -ForegroundColor Red
+}
 $ErrorActionPreference = "Stop"
 $version = $PSVersionTable.PSVersion
 if ($version.Major -lt 7) {
-    throw "BootstrapFilipinoBoy.ps1 requires PowerShell 7.6.x or newer; found $version"
+    Write-Fail "BootstrapFilipinoBoy.ps1 needs PowerShell 7.6 or newer; found $version. Install pwsh and rerun."
+    exit 1
 }
 $Root = Split-Path -Parent $PSScriptRoot
 $env:NAW_HTTP_BIND = if ($env:NAW_HTTP_BIND) { $env:NAW_HTTP_BIND } else { "127.0.0.1" }
@@ -17,15 +31,21 @@ $env:NAW_TEST_BASE_URL = "http://$($env:NAW_HTTP_BIND):$($env:NAW_HTTP_PORT)"
 
 $started = $false
 try {
+    Write-Step "Booting dev stack"
     & (Join-Path $PSScriptRoot "dev-up.ps1") -WithWorker
     if ($LASTEXITCODE -ne 0) { throw "dev-up failed" }
     $started = $true
+    Write-Ok "dev stack up"
 
+    Write-Step "Checking FilianWIKI brand"
     $homePage = (& curl.exe --fail --silent --show-error --max-time 5 "$($env:NAW_TEST_BASE_URL)/home" | Out-String)
     if ($LASTEXITCODE -ne 0 -or $homePage -notmatch "FilianWIKI") { throw "FilianWIKI brand missing from /home" }
+    Write-Ok "/home carries the FilianWIKI brand"
     $manifest = (& curl.exe --fail --silent --show-error --max-time 5 "$($env:NAW_TEST_BASE_URL)/site.webmanifest" | Out-String)
     if ($LASTEXITCODE -ne 0 -or $manifest -notmatch "FilianWIKI") { throw "FilianWIKI brand missing from manifest" }
+    Write-Ok "manifest carries the FilianWIKI brand"
 
+    Write-Step "Running WeCantGive500"
     Push-Location $Root
     try {
         $env:SQLX_OFFLINE = "true"
@@ -38,9 +58,10 @@ try {
     } finally {
         Pop-Location
     }
+    Write-Ok "WeCantGive500 passed"
 
-    Write-Output "BootstrapFilipinoBoy is ready: $($env:NAW_TEST_BASE_URL)"
-    Write-Output "Stop application processes with: scripts/dev-down.ps1"
+    Write-Ok "BootstrapFilipinoBoy is ready: $($env:NAW_TEST_BASE_URL)"
+    Write-Info "Stop application processes with: scripts/dev-down.ps1"
     exit 0
 } catch {
     if ($started) {

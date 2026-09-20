@@ -14,9 +14,19 @@ WITH_WORKER=0
 for arg in "$@"; do
   case "$arg" in
     --with-worker) WITH_WORKER=1 ;;
-    *) echo "unknown option: $arg" >&2; exit 2 ;;
+    -h|--help)
+      echo "Usage: dev-up.sh [--with-worker]"
+      echo "Starts postgres + valkey, migrates, seeds FilianWIKI, serves on 127.0.0.1:4242."
+      exit 0
+      ;;
+    *) echo "unknown option: $arg (try --help)" >&2; exit 2 ;;
   esac
 done
+
+step() { printf '\n==> %s\n' "$1"; }
+ok() { printf '  [ok] %s\n' "$1"; }
+info() { printf '  .. %s\n' "$1"; }
+fail() { printf '  [fail] %s\n' "$1" >&2; }
 
 mkdir -p "$STATE_DIR"
 
@@ -27,7 +37,9 @@ export NAW_HTTP_PORT="${NAW_HTTP_PORT:-4242}"
 export NAW_SKIN_DIR="${NAW_SKIN_DIR:-skins/snackers}"
 export NAW_SEED_DIR="${NAW_SEED_DIR:-seeds}"
 
+step "Starting postgres + valkey"
 docker compose -f "$ROOT/docker-compose.yml" up -d postgres valkey
+ok "compose services requested"
 
 wait_for_health() {
   local container="$1"
@@ -43,10 +55,18 @@ wait_for_health() {
 }
 
 wait_for_health nawwk-postgres
+ok "postgres healthy"
 wait_for_health nawwk-valkey
+ok "valkey healthy"
+
+step "Checking naw binary"
 
 if [[ ! -x "$ROOT/target/debug/naw" && ! -x "$ROOT/target/debug/naw.exe" ]]; then
+  step "Building naw (debug)"
   (cd "$ROOT" && SQLX_OFFLINE=true cargo build --bin naw)
+  ok "naw built"
+else
+  ok "naw binary found"
 fi
 
 if [[ -x "$ROOT/target/debug/naw" ]]; then
@@ -55,11 +75,14 @@ else
   BINARY="$ROOT/target/debug/naw.exe"
 fi
 
+step "Migrating + seeding FilianWIKI"
 (cd "$ROOT" && "$BINARY" migrate)
+ok "migrations applied"
 (cd "$ROOT" && "$BINARY" seed --flavor filian --slug filian --name FilianWIKI --domain snackers.vai-rice.space --vtuber Filian --community Snackers)
+ok "FilianWIKI seed applied"
 
 if [[ -f "$APP_PID_FILE" ]] && kill -0 "$(cat "$APP_PID_FILE")" 2>/dev/null; then
-  echo "naw is already running with PID $(cat "$APP_PID_FILE")"
+  ok "naw already running with PID $(cat "$APP_PID_FILE")"
 else
   rm -f "$APP_PID_FILE"
   (
@@ -73,9 +96,9 @@ else
 fi
 
 if [[ "$WITH_WORKER" == "1" ]]; then
-  command -v bun >/dev/null 2>&1 || { echo "--with-worker requires Bun >= 1.4.2" >&2; exit 1; }
+  command -v bun >/dev/null 2>&1 || { fail "--with-worker needs Bun >= 1.4.2"; exit 1; }
   if [[ -f "$WORKER_PID_FILE" ]] && kill -0 "$(cat "$WORKER_PID_FILE")" 2>/dev/null; then
-    echo "worker is already running with PID $(cat "$WORKER_PID_FILE")"
+    ok "worker already running with PID $(cat "$WORKER_PID_FILE")"
   else
     rm -f "$WORKER_PID_FILE"
     (
@@ -86,21 +109,23 @@ if [[ "$WITH_WORKER" == "1" ]]; then
   fi
 fi
 
+step "Waiting for /health"
 for _ in $(seq 1 30); do
   if curl --silent --show-error --fail "http://${NAW_HTTP_BIND}:${NAW_HTTP_PORT}/health" >/dev/null 2>&1; then
-    echo "FilianWIKI dev server: http://${NAW_HTTP_BIND}:${NAW_HTTP_PORT}"
-    echo "Logs: $APP_LOG"
-    [[ "$WITH_WORKER" == "1" ]] && echo "Worker: http://127.0.0.1:${WORKER_PORT:-8081}/health"
+    ok "FilianWIKI dev server: http://${NAW_HTTP_BIND}:${NAW_HTTP_PORT}"
+    info "Logs: $APP_LOG"
+    info "Stop with: scripts/dev-down.sh"
+    [[ "$WITH_WORKER" == "1" ]] && info "Worker: http://127.0.0.1:${WORKER_PORT:-8081}/health"
     exit 0
   fi
   if [[ -f "$APP_PID_FILE" ]] && ! kill -0 "$(cat "$APP_PID_FILE")" 2>/dev/null; then
-    echo "naw exited before /health became ready" >&2
+    fail "naw exited before /health became ready"
     tail -n 40 "$APP_ERR" "$APP_LOG" >&2 || true
     exit 1
   fi
   sleep 1
 done
 
-echo "naw did not become ready on port $NAW_HTTP_PORT" >&2
+fail "naw did not become ready on port $NAW_HTTP_PORT"
 tail -n 40 "$APP_ERR" "$APP_LOG" >&2 || true
 exit 1
