@@ -3,6 +3,10 @@
 //! mail infrastructure. The SMTP backend (Mailpit in compose) lands with
 //! T9; the call sites stay the same.
 
+// The whole email flow is built but not routed yet: /settings/email and
+// /verify-email arrive with the system pages. Drop this when they do.
+#![allow(dead_code)]
+
 use uuid::Uuid;
 
 use naw_core::error::AppError;

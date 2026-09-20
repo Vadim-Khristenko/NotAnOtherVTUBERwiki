@@ -10,6 +10,10 @@ pub const USERNAME_MIN: usize = 3;
 pub const USERNAME_MAX: usize = 32;
 
 /// The full rule set, used for validation after sanitizing.
+///
+/// `claim` produces valid names by construction, so the only caller left is
+/// the test suite until a user can type a name of their own in settings.
+#[allow(dead_code)]
 pub fn is_valid(username: &str) -> bool {
     let len = username.chars().count();
     if !(USERNAME_MIN..=USERNAME_MAX).contains(&len) {

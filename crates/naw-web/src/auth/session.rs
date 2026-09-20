@@ -18,7 +18,12 @@ use naw_core::state::AppState;
 pub const SESSION_COOKIE: &str = "naw_session";
 
 /// The signed-in user attached to every request as `Option<CurrentUser>`.
+///
+/// Only `id` has a reader so far. The rest is what the settings and profile
+/// pages will render, and loading it here means those pages need no second
+/// query.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct CurrentUser {
     pub id: Uuid,
     pub username: String,

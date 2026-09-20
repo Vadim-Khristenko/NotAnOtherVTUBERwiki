@@ -5,14 +5,14 @@
 //! chrome, and every error shown to the user is generic while the detail
 //! lands in the log.
 //!
-//! The provider round trip (start + callback) and the email flows land in
-//! the next tasks; their helpers sit idle until wired, hence the scoped
-//! dead_code allowance below. Remove it as the call sites arrive.
+//! The provider round trip is live. What is still idle carries its own
+//! narrow `dead_code` allowance at the definition, so that anything newly
+//! unused here fails the build instead of hiding behind a module-wide waiver.
 
-#![allow(dead_code)]
-
+pub mod http;
 pub mod mailer;
 pub mod pkce;
+pub mod providers;
 pub mod redirect;
 pub mod routes;
 pub mod session;

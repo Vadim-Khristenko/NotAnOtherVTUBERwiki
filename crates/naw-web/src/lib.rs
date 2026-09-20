@@ -26,6 +26,10 @@ pub fn router(state: AppState) -> Router {
         .route("/login", get(auth::routes::login_page))
         .route("/logout", post(auth::routes::logout))
         .route("/auth/dev", get(auth::routes::dev_login))
+        // The dev route is declared first so it wins over the generic
+        // `{provider}` match below.
+        .route("/auth/{provider}", get(auth::routes::start))
+        .route("/auth/{provider}/callback", get(auth::routes::callback))
         .route("/", get(pages::home))
         .route("/new", get(pages::new_page).post(pages::create_page))
         .route("/preview", post(pages::preview))
