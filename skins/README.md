@@ -17,13 +17,10 @@ If you build a skin, start by copying this one.
 ### snackers: home of the Snackers
 
 The FilianWIKI skin, built for the Snackers community around Filian. Deep
-plum surfaces, neon pink primary, violet secondary, dark mode by default
-because streams run late. Sticky header with a pink to violet gradient
-rule, a tilted gradient brand mark, pill buttons with a soft pink shadow
-that lift on hover, rounded cards, and a gradient pullquote for the lines
-worth quoting. It looks like a sticker wall at a convention: loud in the
-right places, readable everywhere else. Light mode keeps the same energy
-in pastel, for daytime lurking.
+plum surfaces, pink primary, violet secondary, dark mode by default
+because streams run late. Flat sticky header with a solid pink rule,
+rectangular buttons, bordered details and a left-ruled pullquote. Light
+mode keeps the same structure in pastel, for daytime lurking.
 
 The snackers skin carries its own license terms, see
 [snackers/LICENSE](snackers/LICENSE). Reuse outside this project needs
