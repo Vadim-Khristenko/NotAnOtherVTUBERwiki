@@ -316,7 +316,10 @@ pub async fn page(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let slug = slug.trim().to_lowercase();
-    if slug.is_empty() || slug.len() > 200 {
+    // Reject malformed path input before it reaches PostgreSQL text parameters.
+    // PostgreSQL rejects embedded NUL bytes, which would otherwise turn a
+    // client-controlled path into an internal 500.
+    if !is_valid_slug(&slug) {
         return not_found(&state, "en", "NotAnotherWiki").await;
     }
     let wikis = load_wikis(&state.db).await?;
@@ -478,6 +481,9 @@ pub async fn edit_page(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let slug = slug.trim().to_lowercase();
+    if !is_valid_slug(&slug) {
+        return not_found(&state, "en", "NotAnotherWiki").await;
+    }
     let wikis = load_wikis(&state.db).await?;
     let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
         return not_found(&state, "en", "NotAnotherWiki").await;
