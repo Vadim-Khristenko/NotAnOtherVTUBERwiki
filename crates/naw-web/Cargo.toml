@@ -28,4 +28,5 @@ cookie.workspace = true
 chrono.workspace = true
 ipnetwork.workspace = true
 reqwest.workspace = true
+jsonwebtoken.workspace = true
 async-trait.workspace = true

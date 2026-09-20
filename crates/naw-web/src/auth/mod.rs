@@ -10,6 +10,7 @@
 //! unused here fails the build instead of hiding behind a module-wide waiver.
 
 pub mod http;
+pub mod jwks;
 pub mod mailer;
 pub mod pkce;
 pub mod providers;

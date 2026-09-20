@@ -152,6 +152,7 @@ mod tests {
                 redirect_uri: "https://snackers.wiki/auth/discord/callback",
                 code_verifier: Some("verifier"),
                 nonce: None,
+                cache: None,
                 http: &http,
             })
             .await
@@ -233,6 +234,7 @@ mod tests {
                 redirect_uri: "https://snackers.wiki/auth/discord/callback",
                 code_verifier: Some("v"),
                 nonce: None,
+                cache: None,
                 http: &http,
             })
             .await

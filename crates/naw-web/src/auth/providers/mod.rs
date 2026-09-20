@@ -11,6 +11,7 @@
 pub mod discord;
 pub mod github;
 pub mod oauth2;
+pub mod telegram;
 
 use std::collections::BTreeMap;
 
@@ -36,9 +37,11 @@ pub struct CompleteParams<'a> {
     pub code_verifier: Option<&'a str>,
     /// Part of the OIDC contract: the id_token's `nonce` claim must match the
     /// one sent to the authorize endpoint. GitHub and Discord take the
-    /// userinfo route and never read it, Telegram will.
-    #[allow(dead_code)]
+    /// userinfo route and ignore it, Telegram checks it.
     pub nonce: Option<&'a str>,
+    /// Where a JWKS may be cached. `None` means fetch every time, which is what
+    /// the offline provider tests do.
+    pub cache: Option<&'a deadpool_redis::Pool>,
     pub http: &'a dyn HttpFetch,
 }
 
@@ -89,13 +92,13 @@ pub fn resolve(auth: &AuthConfig, id: ProviderId) -> Option<Box<dyn LoginProvide
             .discord
             .as_ref()
             .map(|creds| Box::new(discord::Discord::new(creds)) as Box<dyn LoginProvider>),
-        // Telegram OIDC, Google, Yandex, Twitch and Steam land in the next
-        // slices. Until then they are honestly absent rather than half wired.
-        ProviderId::Telegram
-        | ProviderId::Google
-        | ProviderId::Yandex
-        | ProviderId::Twitch
-        | ProviderId::Steam => None,
+        ProviderId::Telegram => auth
+            .telegram
+            .as_ref()
+            .map(|creds| Box::new(telegram::Telegram::new(creds)) as Box<dyn LoginProvider>),
+        // Google, Yandex, Twitch and Steam land in the next slices. Until then
+        // they are honestly absent rather than half wired.
+        ProviderId::Google | ProviderId::Yandex | ProviderId::Twitch | ProviderId::Steam => None,
         // The dev provider does not go through the OAuth round trip at all,
         // it has its own handler.
         ProviderId::Dev => None,
@@ -104,10 +107,14 @@ pub fn resolve(auth: &AuthConfig, id: ProviderId) -> Option<Box<dyn LoginProvide
 
 /// The providers a user can actually click right now, in display order.
 pub fn enabled(auth: &AuthConfig) -> Vec<Box<dyn LoginProvider>> {
-    [ProviderId::Github, ProviderId::Discord]
-        .into_iter()
-        .filter_map(|id| resolve(auth, id))
-        .collect()
+    [
+        ProviderId::Github,
+        ProviderId::Discord,
+        ProviderId::Telegram,
+    ]
+    .into_iter()
+    .filter_map(|id| resolve(auth, id))
+    .collect()
 }
 
 #[cfg(test)]
@@ -144,14 +151,33 @@ mod tests {
 
     #[test]
     fn unimplemented_providers_are_none_even_with_credentials() {
-        // Telegram credentials in config must not produce a half-wired flow.
+        // Credentials for a provider that has no backend yet must not produce a
+        // half-wired flow that dead-ends after the redirect.
         let auth = AuthConfig {
-            telegram: Some(creds()),
             google: Some(creds()),
+            yandex: Some(creds()),
+            twitch: Some(creds()),
             ..AuthConfig::default()
         };
-        assert!(resolve(&auth, ProviderId::Telegram).is_none());
         assert!(resolve(&auth, ProviderId::Google).is_none());
+        assert!(resolve(&auth, ProviderId::Yandex).is_none());
+        assert!(resolve(&auth, ProviderId::Twitch).is_none());
+        assert!(resolve(&auth, ProviderId::Steam).is_none());
+    }
+
+    #[test]
+    fn all_three_round_one_providers_are_wired() {
+        let auth = AuthConfig {
+            github: Some(creds()),
+            discord: Some(creds()),
+            telegram: Some(creds()),
+            ..AuthConfig::default()
+        };
+        let labels: Vec<_> = enabled(&auth)
+            .iter()
+            .map(|provider| provider.label())
+            .collect();
+        assert_eq!(labels, vec!["GitHub", "Discord", "Telegram"]);
     }
 
     fn query(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -190,6 +216,7 @@ mod tests {
             redirect_uri: "https://wiki.test/auth/github/callback",
             code_verifier: None,
             nonce: None,
+            cache: None,
             http,
         }
     }

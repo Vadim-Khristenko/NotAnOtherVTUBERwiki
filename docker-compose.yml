@@ -79,7 +79,10 @@ services:
     container_name: nawwk-worker
     restart: unless-stopped
     environment:
-      PORT: "8081"
+      # Must match what worker/src/index.ts actually reads. It was PORT, which
+      # the worker never looks at, so the value was inert and only appeared to
+      # work because 8081 is also the built-in default.
+      WORKER_PORT: "8081"
       VALKEY_URL: redis://valkey:6379
     ports:
       - "8081:8081"

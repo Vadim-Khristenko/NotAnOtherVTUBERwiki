@@ -205,6 +205,7 @@ pub async fn callback(
             redirect_uri: &redirect_uri,
             code_verifier: Some(&flow.verifier),
             nonce: Some(&flow.nonce),
+            cache: Some(&state.valkey),
             http: super::http::shared(),
         })
         .await
