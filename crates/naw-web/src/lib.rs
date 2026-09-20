@@ -1,5 +1,6 @@
 //! NotAnotherWiki Engine HTTP layer: router, middleware, handlers.
 
+mod auth;
 mod pages;
 mod resolve;
 
@@ -22,6 +23,9 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
+        .route("/login", get(auth::routes::login_page))
+        .route("/logout", post(auth::routes::logout))
+        .route("/auth/dev", get(auth::routes::dev_login))
         .route("/", get(pages::home))
         .route("/new", get(pages::new_page).post(pages::create_page))
         .route("/preview", post(pages::preview))
@@ -42,6 +46,10 @@ pub fn router(state: AppState) -> Router {
         .layer(
             tower::ServiceBuilder::new()
                 .layer(tower_http::catch_panic::CatchPanicLayer::new())
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    auth::session::layer,
+                ))
                 .layer(tower_http::limit::RequestBodyLimitLayer::new(1024 * 1024))
                 .layer(
                     tower_http::set_header::SetResponseHeaderLayer::if_not_present(

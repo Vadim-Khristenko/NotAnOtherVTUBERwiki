@@ -45,7 +45,15 @@ sqlx = { version = "0.9.0", default-features = false, features = [
     "uuid",
     "chrono",
     "json",
+    "ipnetwork",
 ] }
+
+# --- auth (rustls everywhere, no OpenSSL)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+base64 = "0.22"
+rand = "0.9"
+cookie = "0.18"
+ipnetwork = "0.21"
 
 # --- cache and queues (Valkey 9 speaking the Redis protocol)
 deadpool-redis = { version = "0.23.1", features = ["rt_tokio_1"] }

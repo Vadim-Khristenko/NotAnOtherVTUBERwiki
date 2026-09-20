@@ -190,7 +190,12 @@ async fn serve() -> ExitCode {
         }
     };
     tracing::info!(skin_dir = %state.config.skin_dir, %addr, "naw listening");
-    match axum::serve(listener, naw_web::router(state)).await {
+    match axum::serve(
+        listener,
+        naw_web::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("server error: {err}");

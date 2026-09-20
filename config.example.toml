@@ -21,3 +21,47 @@ seed_dir = "seeds"
 # Root directory for the local storage driver. Relative paths resolve from
 # the process working directory.
 storage_root = "./uploads"
+
+# ---------------------------------------------------------------------------
+# Auth. Off until credentials exist; a provider turns on when both of its
+# environment variables are set (NAW_GITHUB_CLIENT_ID / _SECRET and so on).
+# Secrets belong in config.toml (gitignored) or the environment, never here.
+# ---------------------------------------------------------------------------
+[auth]
+enabled = false
+
+# Absolute base URL used in OAuth callbacks and email links.
+# base_url = "http://127.0.0.1:4242"
+
+# Session lifetime in hours, 720 = 30 days.
+session_ttl_hours = 720
+
+# Attach an identity to an existing account when the provider certified the
+# email and it matches. Set false to always create fresh accounts.
+auto_link_verified_email = true
+
+# Loopback-only `dev` provider for end-to-end runs without real secrets.
+dev_login = false
+
+# Serves /dev/mailbox when the mail backend is "log". Loopback only.
+dev_mailbox = false
+
+# Usernames only an admin may grant.
+reserved_usernames = ["vai", "snacker", "filian", "admin", "moderator", "wiki", "support"]
+
+# Per-provider client credentials can also be written here, but the
+# environment is preferred: NAW_GITHUB_CLIENT_ID, NAW_GITHUB_CLIENT_SECRET,
+# NAW_DISCORD_*, NAW_TELEGRAM_*, NAW_GOOGLE_*, NAW_YANDEX_*, NAW_TWITCH_*.
+# [auth.github]
+# client_id = ""
+# client_secret = ""
+
+# Steam uses an API key for the profile lookup only.
+# steam_api_key = ""
+
+# Outbound mail: "log" prints to the log (and /dev/mailbox in dev),
+# "smtp" sends through smtp_url (Mailpit in the compose stack).
+[auth.mail]
+backend = "log"
+# smtp_url = "smtp://127.0.0.1:1025"
+# mail_from = "FilianWIKI <noreply@vai-rice.space>"

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE oauth_identities SET last_login_at = now()\n             WHERE provider = $1 AND provider_user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "db84bd905702b21c68201f32927bb945942efa7cc77ded2c5407e6300d18553a"
+}
