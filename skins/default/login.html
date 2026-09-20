@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+{#
+  Provider buttons come from the registry, so a provider appears here exactly
+  when its credentials are configured. `next` is already guarded by
+  redirect::safe_next before it reaches this template.
+#}
+{% block body %}
+<h1>Sign in to {{ wiki_name }}</h1>
+{% if error %}<p class="notice notice-warn" role="alert">{{ error }}</p>{% endif %}
+{% if providers %}
+<p>Reading never needs an account. Signing in lets you edit, and keeps your name on your work.</p>
+<ul class="provider-list">
+  {% for provider in providers %}
+  <li><a class="provider-btn" href="/auth/{{ provider.slug }}?next={{ next }}" rel="nofollow">Continue with {{ provider.label }}</a></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="notice">No sign-in providers are configured on this wiki yet.</p>
+{% endif %}
+{% if dev_login %}
+<p class="notice notice-warn">Development sign-in is enabled on this instance.
+  <a href="/auth/dev?next={{ next }}">Sign in as the dev user</a></p>
+{% endif %}
+<p><a href="/">Back to the wiki</a></p>
+{% endblock %}

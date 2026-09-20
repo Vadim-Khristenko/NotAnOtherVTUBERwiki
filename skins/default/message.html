@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{#
+  Generic system page: auth failures, 403, maintenance, email verification
+  results. The message is always something safe to show a stranger; the detail
+  that explains what really happened lives in the log, never here.
+
+  Every binding is supplied by the handler, so this template needs no defaults.
+#}
+{% block body %}
+<h1>{{ heading }}</h1>
+<p class="notice notice-{{ tone }}" role="alert">{{ message }}</p>
+<p><a href="{{ back_href }}">{{ back_label }}</a></p>
+{% endblock %}

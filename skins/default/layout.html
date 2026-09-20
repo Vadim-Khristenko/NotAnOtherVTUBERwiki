@@ -69,7 +69,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .site-nav { display: flex; align-items: center; gap: 0.6rem; }
 .nav-link { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
 .nav-link:hover { color: var(--accent); }
-.theme-toggle { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 999px; padding: 0.3rem 0.7rem; cursor: pointer; font-size: 0.85rem; }
+.theme-toggle { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: var(--radius); padding: 0.3rem 0.7rem; cursor: pointer; font-size: 0.85rem; }
 .content { max-width: var(--content-width); margin: 0 auto; padding: 1.5rem 1.2rem 3rem; }
 .content h1, .content h2 { line-height: 1.25; }
 .page-summary { font-size: 1.1rem; color: var(--muted); border-left: 3px solid var(--accent); padding-left: 0.8rem; }
@@ -93,17 +93,35 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .toolbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 0.35rem; background: var(--bg); padding: 0.5rem 0; }
 .toolbar button { background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 0.4rem; padding: 0.35rem 0.65rem; cursor: pointer; font-size: 0.88rem; }
 .toolbar button:hover { border-color: var(--accent); }
-.selbar { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 10; display: flex; gap: 0.35rem; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px; padding: 0.4rem 0.6rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); }
+/* A solid border separates this from the page. The old pill plus a 24px drop
+ * shadow was faking depth the rest of the skin does not have. */
+.selbar { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 10; display: flex; gap: 0.35rem; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0.4rem 0.6rem; }
 .selbar[hidden] { display: none; }
 .selbar button { background: transparent; border: none; color: var(--ink); padding: 0.3rem 0.6rem; cursor: pointer; font-size: 0.9rem; }
 .syntax-help { margin-top: 1.6rem; color: var(--muted); font-size: 0.88rem; }
 .syntax-help summary { cursor: pointer; font-weight: 600; }
 .syntax-help code { font-family: var(--font-mono); background: var(--surface-sunken); padding: 0.1rem 0.35rem; border-radius: 0.3rem; }
+/* Auth and system pages. Flat by design, matching the snackers pass: no
+ * gradients, no glow, no hover lift. Everything consumes the variables above. */
+.notice { border-left: 3px solid var(--border-strong); background: var(--surface-sunken); color: var(--ink-soft); padding: 0.7rem 0.9rem; margin: 1rem 0; }
+.notice-ok { border-left-color: var(--accent); color: var(--ink); }
+.notice-warn { border-left-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.notice-error { border-left-color: var(--accent); background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+.provider-list { list-style: none; padding: 0; margin: 1.2rem 0; display: flex; flex-direction: column; gap: 0.6rem; max-width: 22rem; }
+.provider-btn { display: block; padding: 0.7rem 1.1rem; font-weight: 600; text-decoration: none; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); }
+.provider-btn:hover { border-color: var(--accent); }
+.settings-section { margin: 1.8rem 0; padding-top: 1.2rem; border-top: 1px solid var(--line); }
+.settings-section h2 { margin-top: 0; }
+.identity-list { list-style: none; padding: 0; margin: 0.8rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.identity-list li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.55rem 0.8rem; background: var(--surface); border: 1px solid var(--line); }
+.identity-meta { color: var(--muted); font-size: 0.88rem; }
 /* Polish layer: type rhythm, states and unique details. Variables above stay
  * the customization API, everything below consumes them. */
 ::selection { background: var(--accent); color: var(--accent-ink); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.site-header { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(8px); }
+/* No backdrop-filter: the header is already opaque from the rule above, so a
+ * blur costs a GPU layer and changes nothing on screen. */
+.site-header { position: sticky; top: 0; z-index: 20; }
 .site-brand::before { content: ""; display: inline-block; width: 0.7em; height: 0.7em; margin-right: 0.45rem; background: var(--accent); border-radius: 0.2em; vertical-align: baseline; }
 .content h1 { letter-spacing: -0.02em; text-wrap: balance; }
 .content h2, .content h3 { text-wrap: balance; }
@@ -119,7 +137,9 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .content kbd { font-family: var(--font-mono); font-size: 0.82em; background: var(--surface-sunken); border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 0.35rem; padding: 0.1rem 0.4rem; white-space: nowrap; }
 .spoiler:focus-visible { outline: 2px dashed var(--accent); outline-offset: 2px; }
 .button-save, .button-preview, .toolbar button, .theme-toggle { transition: transform 0.08s ease, border-color 0.15s, background 0.15s; }
-.button-save:hover { filter: brightness(1.07); }
+/* brightness() on hover is fake depth. An explicit border is the same signal
+ * without inventing a light source the design does not use. */
+.button-save:hover { box-shadow: inset 0 0 0 2px var(--accent-soft); }
 .button-save:active, .button-preview:active, .toolbar button:active { transform: translateY(1px); }
 .field-input:focus, .field-body:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 details.details summary::marker, details.quote summary::marker { color: var(--accent); }

@@ -15,6 +15,7 @@ pub mod mailer;
 pub mod pkce;
 pub mod providers;
 pub mod redirect;
+pub mod render;
 pub mod routes;
 pub mod session;
 pub mod state_store;

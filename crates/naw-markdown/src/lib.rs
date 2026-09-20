@@ -1246,7 +1246,7 @@ fn slugify(text: &str) -> String {
 /// Version of the render pipeline. Part of the `render_cache` key: bump it
 /// whenever `render_page` output changes for identical input. Skin and
 /// chrome changes count: a new footer is a new rendering.
-pub const RENDERER_VERSION: i32 = 9;
+pub const RENDERER_VERSION: i32 = 10;
 
 /// A fully rendered page plus the key it is cached under.
 pub struct RenderedPage {

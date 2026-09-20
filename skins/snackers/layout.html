@@ -76,7 +76,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .site-nav { display: flex; align-items: center; gap: 0.6rem; }
 .nav-link { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
 .nav-link:hover { color: var(--accent); }
-.theme-toggle { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 999px; padding: 0.3rem 0.7rem; cursor: pointer; font-size: 0.85rem; }
+.theme-toggle { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: var(--radius); padding: 0.3rem 0.7rem; cursor: pointer; font-size: 0.85rem; }
 .content { max-width: var(--content-width); margin: 0 auto; padding: 1.5rem 1.2rem 3rem; }
 .content h1, .content h2 { line-height: 1.25; }
 .page-summary { font-size: 1.1rem; color: var(--muted); border-left: 3px solid var(--accent); padding-left: 0.8rem; }
@@ -100,12 +100,30 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .toolbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 0.35rem; background: var(--bg); padding: 0.5rem 0; }
 .toolbar button { background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 0.4rem; padding: 0.35rem 0.65rem; cursor: pointer; font-size: 0.88rem; }
 .toolbar button:hover { border-color: var(--accent); }
-.selbar { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 10; display: flex; gap: 0.35rem; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px; padding: 0.4rem 0.6rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); }
+/* The flatten pass in fec2252 missed this one: a pill with a 24px drop shadow
+ * is exactly the depth the rest of this skin refuses to fake. */
+.selbar { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 10; display: flex; gap: 0.35rem; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0.4rem 0.6rem; }
 .selbar[hidden] { display: none; }
 .selbar button { background: transparent; border: none; color: var(--ink); padding: 0.3rem 0.6rem; cursor: pointer; font-size: 0.9rem; }
 .syntax-help { margin-top: 1.6rem; color: var(--muted); font-size: 0.88rem; }
 .syntax-help summary { cursor: pointer; font-weight: 600; }
 .syntax-help code { font-family: var(--font-mono); background: var(--surface-sunken); padding: 0.1rem 0.35rem; border-radius: 0.3rem; }
+/* Auth and system pages. This skin does not ship login.html or message.html,
+ * so those templates come from skins/default while the layout, and therefore
+ * this CSS, stays ours. Without these rules the login page renders unstyled.
+ * Flat on purpose, matching the rest of the skin: no gradients, no glow. */
+.notice { border-left: 3px solid var(--border-strong); background: var(--surface-sunken); color: var(--ink-soft); padding: 0.7rem 0.9rem; margin: 1rem 0; }
+.notice-ok { border-left-color: var(--accent); color: var(--ink); }
+.notice-warn { border-left-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.notice-error { border-left-color: var(--accent); background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+.provider-list { list-style: none; padding: 0; margin: 1.2rem 0; display: flex; flex-direction: column; gap: 0.6rem; max-width: 22rem; }
+.provider-btn { display: block; padding: 0.7rem 1.1rem; font-weight: 600; text-decoration: none; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); }
+.provider-btn:hover { border-color: var(--accent); }
+.settings-section { margin: 1.8rem 0; padding-top: 1.2rem; border-top: 1px solid var(--line); }
+.settings-section h2 { margin-top: 0; }
+.identity-list { list-style: none; padding: 0; margin: 0.8rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.identity-list li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.55rem 0.8rem; background: var(--surface); border: 1px solid var(--line); }
+.identity-meta { color: var(--muted); font-size: 0.88rem; }
 /* Snackers character: same structure, flat surfaces, one pink accent.
  * No gradients, no glow, no hover lift. The header rule and the quote
  * mark are the only decoration. */
@@ -132,7 +150,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .button-save { border-radius: var(--radius); }
 .button-preview { border-radius: var(--radius); }
 .toolbar button { border-radius: 0.4rem; }
-.button-save:hover { filter: brightness(1.06); }
+.button-save:hover { box-shadow: inset 0 0 0 2px var(--accent-soft); }
 .button-save:active, .button-preview:active, .toolbar button:active { transform: translateY(1px); }
 .field-input, .field-body { border-radius: var(--radius-lg); }
 .field-input:focus, .field-body:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }

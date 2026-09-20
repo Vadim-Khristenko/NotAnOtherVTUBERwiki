@@ -11,6 +11,8 @@ const TEMPLATES: &[&str] = &[
     "page.html",
     "404.html",
     "edit.html",
+    "login.html",
+    "message.html",
 ];
 
 /// Reference skin that fills templates a custom skin does not ship.

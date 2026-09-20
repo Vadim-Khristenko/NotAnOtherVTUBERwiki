@@ -18,10 +18,12 @@ use std::net::SocketAddr;
 
 use naw_core::state::AppState;
 
+use crate::resolve::{self, Chrome};
+
 use super::redirect::safe_next;
 use super::state_store::{self, Flow, FlowState};
 use super::types::ProviderId;
-use super::{pkce, providers, session};
+use super::{pkce, providers, render, session};
 
 fn is_loopback(addr: Option<&SocketAddr>) -> bool {
     addr.map(|a| a.ip().is_loopback()).unwrap_or(false)
@@ -51,50 +53,50 @@ fn callback_uri(state: &AppState, provider: ProviderId) -> Option<String> {
     Some(format!("{base}/auth/{}/callback", provider.as_str()))
 }
 
-fn not_found_page() -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\" />\
-         <title>NotAnotherWiki</title></head><body><p>Not found</p>\
-         <p><a href=\"/\">Back to the wiki</a></p></body></html>",
-    )
-        .into_response()
+/// The brand for this request, or a neutral one when no wiki matches. Auth
+/// pages must still render when the Host is unknown, so a failure here degrades
+/// to the fallback name rather than to a 500.
+async fn chrome_or_fallback(state: &AppState, headers: &HeaderMap) -> Chrome {
+    match resolve::chrome(&state.db, headers).await {
+        Ok(Some(chrome)) => chrome,
+        Ok(None) => Chrome {
+            wiki_id: uuid::Uuid::nil(),
+            wiki_name: resolve::UNKNOWN_WIKI.to_string(),
+            lang: resolve::UNKNOWN_LANG.to_string(),
+        },
+        Err(err) => {
+            tracing::error!(error = %err, "wiki lookup failed on an auth route");
+            Chrome {
+                wiki_id: uuid::Uuid::nil(),
+                wiki_name: resolve::UNKNOWN_WIKI.to_string(),
+                lang: resolve::UNKNOWN_LANG.to_string(),
+            }
+        }
+    }
 }
 
 /// GET /login: the sign-in page. Buttons come from the registry, so a provider
-/// appears exactly when its credentials exist. Never cached.
-pub async fn login_page(State(state): State<AppState>, _headers: HeaderMap) -> Response {
+/// appears exactly when its credentials exist. Rendered by the active skin and
+/// never cached.
+pub async fn login_page(
+    State(state): State<AppState>,
+    Query(params): Query<BTreeMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    let chrome = chrome_or_fallback(&state, &headers).await;
     if !state.config.auth.enabled {
-        return not_found_page();
+        return render::not_found(&state, &chrome);
     }
-    let mut buttons = String::new();
-    for provider in providers::enabled(&state.config.auth) {
-        let slug = provider.id().as_str();
-        let label = provider.label();
-        buttons.push_str(&format!(
-            "<a class=\"btn\" href=\"/auth/{slug}\">Sign in with {label}</a> "
-        ));
-    }
-    if state.config.auth.dev_login {
-        buttons.push_str("<a class=\"btn\" href=\"/auth/dev?next=/\">Dev sign in</a> ");
-    }
-    if buttons.is_empty() {
-        buttons = "<p>No sign-in providers are configured yet.</p>".to_string();
-    }
-    let wiki = "NotAnotherWiki";
-    let html = format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\" />\
-         <title>Sign in | {wiki}</title></head><body>\
-         <h1>Sign in to {wiki}</h1>{buttons}\
-         <p><a href=\"/\">Back to the wiki</a></p></body></html>"
-    );
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        html,
-    )
-        .into_response()
+    let next = safe_next(params.get("next").map(String::as_str));
+    // `?err=` is set by our own redirects, so it selects a fixed string rather
+    // than being echoed back into the page.
+    let error = match params.get("err").map(String::as_str) {
+        Some("cancelled") => Some("The last sign-in was cancelled. Nothing was created."),
+        Some("expired") => Some("That sign-in link had expired. This one will work."),
+        Some(_) => Some("The last sign-in did not go through. Try again."),
+        None => None,
+    };
+    render::login(&state, &chrome, &next, error)
 }
 
 /// GET /auth/{provider}: mint state and PKCE, then 302 to the provider.
@@ -108,21 +110,26 @@ pub async fn start(
     Query(params): Query<BTreeMap<String, String>>,
     headers: HeaderMap,
 ) -> Response {
+    let chrome = chrome_or_fallback(&state, &headers).await;
     if !state.config.auth.enabled {
-        return not_found_page();
+        return render::not_found(&state, &chrome);
     }
     let Some(id) = ProviderId::from_slug(&slug) else {
-        return not_found_page();
+        return render::not_found(&state, &chrome);
     };
     let Some(provider) = providers::resolve(&state.config.auth, id) else {
-        return not_found_page();
+        return render::not_found(&state, &chrome);
     };
     let Some(redirect_uri) = callback_uri(&state, id) else {
         tracing::error!(
             provider = id.as_str(),
             "auth.base_url is unset, cannot build a callback URL"
         );
-        return super::AuthError::Upstream("callback url unavailable".to_string()).into_response();
+        return render::auth_error(
+            &state,
+            &chrome,
+            &super::AuthError::Upstream("callback url unavailable".to_string()),
+        );
     };
 
     let linking = params.get("mode").map(String::as_str) == Some("link");
@@ -152,7 +159,7 @@ pub async fn start(
     };
     let state_token = match state_store::begin(&state.valkey, flow).await {
         Ok(token) => token,
-        Err(err) => return err.into_response(),
+        Err(err) => return render::auth_error(&state, &chrome, &err),
     };
 
     let url = match provider.authorize_url(&providers::AuthorizeParams {
@@ -162,7 +169,7 @@ pub async fn start(
         nonce: Some(&nonce),
     }) {
         Ok(url) => url,
-        Err(err) => return err.into_response(),
+        Err(err) => return render::auth_error(&state, &chrome, &err),
     };
     // 302 for the outbound leg, 303 after the callback. Keeps logs honest.
     (StatusCode::FOUND, [(header::LOCATION, url)]).into_response()
@@ -176,27 +183,36 @@ pub async fn callback(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Response {
+    let chrome = chrome_or_fallback(&state, &headers).await;
     if !state.config.auth.enabled {
-        return not_found_page();
+        return render::not_found(&state, &chrome);
     }
     let Some(id) = ProviderId::from_slug(&slug) else {
-        return not_found_page();
+        return render::not_found(&state, &chrome);
     };
     let Some(provider) = providers::resolve(&state.config.auth, id) else {
-        return not_found_page();
+        return render::not_found(&state, &chrome);
     };
     let Some(redirect_uri) = callback_uri(&state, id) else {
-        return super::AuthError::Upstream("callback url unavailable".to_string()).into_response();
+        return render::auth_error(
+            &state,
+            &chrome,
+            &super::AuthError::Upstream("callback url unavailable".to_string()),
+        );
     };
 
     // The state is taken before anything else and is single use, so a replayed
     // callback dies here rather than minting a second session.
     let Some(state_token) = query.get("state").filter(|token| !token.is_empty()) else {
-        return super::AuthError::BadRequest("callback carried no state").into_response();
+        return render::auth_error(
+            &state,
+            &chrome,
+            &super::AuthError::BadRequest("callback carried no state"),
+        );
     };
     let flow = match state_store::take(&state.valkey, state_token, id.as_str()).await {
         Ok(flow) => flow,
-        Err(err) => return err.into_response(),
+        Err(err) => return render::auth_error(&state, &chrome, &err),
     };
 
     let identity = match provider
@@ -211,7 +227,7 @@ pub async fn callback(
         .await
     {
         Ok(identity) => identity,
-        Err(err) => return err.into_response(),
+        Err(err) => return render::auth_error(&state, &chrome, &err),
     };
 
     let link_user_id = match flow.mode {
@@ -227,7 +243,7 @@ pub async fn callback(
     .await
     {
         Ok(outcome) => outcome,
-        Err(err) => return err.into_response(),
+        Err(err) => return render::auth_error(&state, &chrome, &err),
     };
     let user_id = match outcome {
         super::store::Outcome::Login(id)
@@ -242,7 +258,11 @@ pub async fn callback(
         Ok(id) => id,
         Err(err) => {
             tracing::error!(error = %err, "session create failed after a provider login");
-            return super::AuthError::Upstream("session create failed".to_string()).into_response();
+            return render::auth_error(
+                &state,
+                &chrome,
+                &super::AuthError::Upstream("session create failed".to_string()),
+            );
         }
     };
 
@@ -270,13 +290,15 @@ pub async fn dev_login(
     State(state): State<AppState>,
     Query(params): Query<BTreeMap<String, String>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
 ) -> Response {
     if !state.config.auth.enabled
         || !state.config.auth.dev_login
         || !is_loopback(Some(&addr))
         || secure_cookies(&state)
     {
-        return not_found_page();
+        let chrome = chrome_or_fallback(&state, &headers).await;
+        return render::not_found(&state, &chrome);
     }
     let identity = super::types::Identity {
         provider: ProviderId::Dev,
@@ -290,7 +312,10 @@ pub async fn dev_login(
     };
     let outcome = match super::store::finish_login(&state, &identity, None, false).await {
         Ok(outcome) => outcome,
-        Err(err) => return err.into_response(),
+        Err(err) => {
+            let chrome = chrome_or_fallback(&state, &headers).await;
+            return render::auth_error(&state, &chrome, &err);
+        }
     };
     let user_id = match outcome {
         super::store::Outcome::Login(id)
@@ -301,7 +326,12 @@ pub async fn dev_login(
         Ok(id) => id,
         Err(err) => {
             tracing::error!(error = %err, "dev session create failed");
-            return super::AuthError::Upstream("session create failed".to_string()).into_response();
+            let chrome = chrome_or_fallback(&state, &headers).await;
+            return render::auth_error(
+                &state,
+                &chrome,
+                &super::AuthError::Upstream("session create failed".to_string()),
+            );
         }
     };
     let next = safe_next(params.get("next").map(String::as_str));

@@ -11,7 +11,7 @@ use uuid::Uuid;
 use naw_core::error::AppError;
 use naw_core::state::AppState;
 
-use crate::resolve::{WikiRef, resolve_wiki};
+use crate::resolve::{WikiRef, load_wikis, request_host, resolve_wiki};
 
 fn template_error(err: minijinja::Error) -> AppError {
     tracing::error!(error = %err, "template error");
@@ -19,34 +19,7 @@ fn template_error(err: minijinja::Error) -> AppError {
 }
 
 /// Engine version shown in the footer. Tracks the workspace release.
-const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-async fn load_wikis(db: &sqlx::PgPool) -> Result<Vec<WikiRef>, AppError> {
-    let rows = sqlx::query!(
-        r#"SELECT id, slug, domain, name, default_locale, settings FROM wikis ORDER BY slug"#
-    )
-    .fetch_all(db)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|row| {
-            let is_default = row
-                .settings
-                .get("default")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            WikiRef {
-                id: row.id,
-                slug: row.slug,
-                domain: row.domain,
-                name: row.name,
-                default_locale: row.default_locale,
-                settings: row.settings,
-                is_default,
-            }
-        })
-        .collect())
-}
+pub(crate) const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn etag_for(hash: &[u8]) -> String {
     format!("\"{}\"", hex::encode(hash))
@@ -145,10 +118,6 @@ fn jump_target(slug: &str, query: &PageQuery) -> Option<String> {
         return None;
     }
     Some(format!("/{slug}#{frag}"))
-}
-
-fn request_host(headers: &HeaderMap) -> Option<&str> {
-    headers.get(header::HOST)?.to_str().ok()
 }
 
 const TITLE_MAX: usize = 200;
