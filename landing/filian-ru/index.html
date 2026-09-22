@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>filian.ru: Snackers RU, русскоязычные фанаты Filian</title>
+<meta name="description" content="Неофициальный фанатский сайт. Как найти Snackers RU, русскоязычное фан-сообщество Filian, где смотреть её клипы с русскими субтитрами и какие есть фанатские проекты.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#008080">
+<meta property="og:type" content="website">
+<meta property="og:title" content="filian.ru: Snackers RU">
+<meta property="og:description" content="Русскоязычное фан-сообщество Filian. Неофициальный фанатский сайт.">
+<meta property="og:url" content="https://filian.ru/">
+<link rel="canonical" href="https://filian.ru/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=PT+Mono&family=PT+Sans:ital,wght@0,400;0,700;1,400&family=Pixelify+Sans:wght@500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script>
+  // Runs before first paint so JS-only controls and a saved colour scheme do not flash.
+  document.documentElement.classList.add("js");
+  try {
+    var t = localStorage.getItem("filianru.theme"); if (t) document.documentElement.dataset.theme = t;
+    if (localStorage.getItem("filianru.crt") === "off") document.documentElement.classList.add("crt-off");
+    // app.js waits for the stylesheets, so without this the desktop would show for a
+    // moment and then vanish under the boot screen. Same rules as app.js; the
+    // timeout is a failsafe so the page can never stay blank if app.js fails.
+    if (localStorage.getItem("filianru.boot") !== "off" && sessionStorage.getItem("filianru.booted") !== "1" &&
+        !location.hash && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      document.documentElement.classList.add("booting");
+      setTimeout(function () { document.documentElement.classList.remove("booting"); }, 6000);
+    }
+  } catch (e) {}
+</script>
+</head>
+<body>
+<a class="skip" href="#welcome"><span data-l="ru">Перейти к содержимому</span><span data-l="en">Skip to content</span></a>
+
+<!-- The language switch is a real checkbox so English works with JavaScript off:
+     CSS reads its state with :has(), and it survives anchor navigation, which a
+     :target based switch would not. -->
+<input type="checkbox" id="lang-en" class="sr-only" aria-label="English / Английский">
+
+<div class="desktop">
+  <main class="windows" id="main">
+
+    <nav class="icons" aria-label="Рабочий стол">
+      <ul>
+        <li><a class="dicon" href="#snackers"><img src="icons/chat.svg" alt="" width="32" height="32"><span>Snackers RU</span></a></li>
+        <li><a class="dicon" href="#filian"><img src="icons/notepad.svg" alt="" width="32" height="32"><span>FILIAN.TXT</span></a></li>
+        <li><a class="dicon" href="#watch"><img src="icons/folder.svg" alt="" width="32" height="32"><span data-l="ru">На русском</span><span data-l="en">In Russian</span></a></li>
+        <li><a class="dicon" href="#projects"><img src="icons/computer.svg" alt="" width="32" height="32"><span data-l="ru">Проекты</span><span data-l="en">Projects</span></a></li>
+        <li><a class="dicon" href="#about"><img src="icons/info.svg" alt="" width="32" height="32"><span data-l="ru">О сайте</span><span data-l="en">About</span></a></li>
+        <li><a class="dicon" href="#fansites"><img src="icons/globe.svg" alt="" width="32" height="32"><span data-l="ru">Избранное</span><span data-l="en">Favorites</span></a></li>
+        <li class="js-only"><button type="button" class="dicon" data-open-log><img src="icons/log.svg" alt="" width="32" height="32"><span>filianIsLost.log</span></button></li>
+        <li class="js-only"><button type="button" class="dicon" data-open="dlg-bin"><img src="icons/bin.svg" alt="" width="32" height="32"><span data-l="ru">Корзина</span><span data-l="en">Recycle Bin</span></button></li>
+      </ul>
+    </nav>
+
+    <!-- ============ Welcome: the hero, shaped like the Win95 first-run dialog ============ -->
+    <section class="win" id="welcome" aria-labelledby="welcome-h">
+      <div class="titlebar">
+        <img src="icons/snack.svg" alt="" width="16" height="16">
+        <span class="titlebar__text"><span data-l="ru">Добро пожаловать</span><span data-l="en">Welcome</span></span>
+      </div>
+      <div class="win__body welcome">
+        <div class="welcome__main">
+          <h1 id="welcome-h" class="welcome__h">
+            <span class="welcome__pre"><span data-l="ru">Добро пожаловать в</span><span data-l="en">Welcome to</span></span>
+            <span class="wordmark">Snackers <span class="wordmark__ru">RU</span></span>
+          </h1>
+          <p class="lede">
+            <span data-l="ru">Русскоязычное фан-сообщество Filian в Discord. Клипы с субтитрами, фан-арт, ивенты и люди, которые тоже смотрят её стримы.</span>
+            <span data-l="en">The Russian-speaking Filian fan community on Discord. Subtitled clips, fan art, events, and people who watch her streams too.</span>
+          </p>
+        </div>
+        <div class="welcome__actions">
+          <a class="btn btn--default" href="https://discord.gg/Hw9SG2wrV3" rel="noopener"><span data-l="ru">Зайти в Discord</span><span data-l="en">Join on Discord</span></a>
+          <a class="btn" href="#filian"><span data-l="ru">Кто такая Filian</span><span data-l="en">Who is Filian</span></a>
+          <a class="btn" href="#watch"><span data-l="ru">Где смотреть</span><span data-l="en">Where to watch</span></a>
+          <button type="button" class="btn js-only" id="next-tip"><span data-l="ru">Следующий совет</span><span data-l="en">Next tip</span></button>
+        </div>
+        <div class="tip">
+            <img src="icons/bulb.svg" alt="" width="32" height="32">
+            <div class="tip__body">
+              <p class="tip__h" id="tip-h"><span data-l="ru">Знаете ли вы...</span><span data-l="en">Did you know...</span></p>
+              <!-- Every tip repeats a fact that also lives in a window below, so
+                   showing only the first one without JavaScript hides nothing. -->
+              <ol class="tips" aria-labelledby="tip-h" aria-live="polite">
+                <li class="is-current">
+                  <span data-l="ru">Фанатов Filian называют Snackers, в честь фруктовых мармеладок Welch's.</span>
+                  <span data-l="en">Filian's fans are called Snackers, after Welch's fruit snacks.</span>
+                </li>
+                <li>
+                  <span data-l="ru">17 августа 2025 года Snackers RU устроили арт-ивент на wplace и вместе рисовали filian на пиксельной карте мира.</span>
+                  <span data-l="en">On 17 August 2025, Snackers RU ran an art event on wplace and drew filian together on the pixel world map.</span>
+                </li>
+                <li>
+                  <span data-l="ru">Участники Snackers RU сделали английские субтитры к ролику Cyborg Crab о Filian, и она посмотрела его целиком.</span>
+                  <span data-l="en">Snackers RU members made English subtitles for a Cyborg Crab video about Filian, and she watched the whole thing.</span>
+                </li>
+                <li>
+                  <span data-l="ru">В X для артов есть тег #filianIsArt, а для клипов #filianClips.</span>
+                  <span data-l="en">On X, fan art goes under #filianIsArt and clips under #filianClips.</span>
+                </li>
+                <li>
+                  <span data-l="ru">Вики filian.wiki пишут фанаты сразу на двух языках, английском и русском, и её код открыт.</span>
+                  <span data-l="en">filian.wiki is written by fans in two languages, English and Russian, and its code is open.</span>
+                </li>
+              </ol>
+            </div>
+        </div>
+      </div>
+      <div class="welcome__foot js-only">
+        <label class="check"><input type="checkbox" id="boot-pref"> <span data-l="ru">Показывать заставку при запуске</span><span data-l="en">Show the startup screen</span></label>
+      </div>
+    </section>
+
+    <!-- ============ FILIAN.TXT: a Notepad window, because this part is for reading ============ -->
+    <section class="win" id="filian" aria-labelledby="filian-h">
+      <div class="titlebar">
+        <img src="icons/notepad.svg" alt="" width="16" height="16">
+        <span class="titlebar__text"><span data-l="ru">FILIAN.TXT: Блокнот</span><span data-l="en">FILIAN.TXT: Notepad</span></span>
+      </div>
+      <div class="menubar" aria-hidden="true">
+        <span data-l="ru"><u>Ф</u>айл</span><span data-l="en"><u>F</u>ile</span>
+        <span data-l="ru"><u>П</u>равка</span><span data-l="en"><u>E</u>dit</span>
+        <span data-l="ru"><u>П</u>оиск</span><span data-l="en"><u>S</u>earch</span>
+        <span data-l="ru"><u>С</u>правка</span><span data-l="en"><u>H</u>elp</span>
+      </div>
+      <div class="well prose">
+        <h2 id="filian-h"><span data-l="ru">Кто такая Filian</span><span data-l="en">Who is Filian</span></h2>
+        <p data-l="ru">Filian, по-русски Филиан, это VTuber из Северной Америки. Она стримит на Twitch, в основном на английском, и почти всегда в трекинге всего тела: ходит по кадру, прыгает и крутит сальто. Известна своим контентом из VRChat.</p>
+        <p data-l="en">Filian is a VTuber from North America. She streams on Twitch, mostly in English, and nearly always in full-body tracking: she walks around the frame, jumps and does flips. She is known for her VRChat content.</p>
+        <p data-l="ru">Её фанатов называют Snackers, в честь фруктовых мармеладок Welch's. Ещё она вела церемонию The VTuber Awards.</p>
+        <p data-l="en">Her fans are called Snackers, after Welch's fruit snacks. She has also hosted The VTuber Awards.</p>
+        <p data-l="ru">Знакомиться с ней лучше всего на её собственных каналах:</p>
+        <p data-l="en">The best way to meet her is on her own channels:</p>
+        <ul class="links">
+          <li><a href="https://www.twitch.tv/filian" rel="noopener">twitch.tv/filian</a> <span data-l="ru">стримы, официальный канал</span><span data-l="en">streams, her official channel</span></li>
+          <li><a href="https://discord.gg/filian" rel="noopener">Snackers HQ</a> <span data-l="ru">официальный сервер в Discord, на английском</span><span data-l="en">her official Discord server, in English</span></li>
+        </ul>
+        <p data-l="ru">Snackers RU не заменяет Snackers HQ. Это отдельное место для тех, кому удобнее общаться по-русски.</p>
+        <p data-l="en">Snackers RU does not replace Snackers HQ. It is a separate place for people who would rather talk in Russian.</p>
+      </div>
+    </section>
+
+    <!-- ============ Snackers RU: a Properties sheet, the natural home for label and value pairs ============ -->
+    <section class="win" id="snackers" aria-labelledby="snackers-h">
+      <div class="titlebar">
+        <img src="icons/chat.svg" alt="" width="16" height="16">
+        <span class="titlebar__text"><span data-l="ru">Свойства: Snackers RU</span><span data-l="en">Snackers RU Properties</span></span>
+      </div>
+      <div class="win__body">
+        <div class="props__head">
+          <img src="icons/chat.svg" alt="" width="32" height="32">
+          <div>
+            <h2 id="snackers-h">Snackers RU</h2>
+            <p class="muted"><span data-l="ru">Русскоязычное фан-сообщество Filian</span><span data-l="en">Russian-speaking Filian fan community</span></p>
+          </div>
+        </div>
+        <hr class="etched">
+        <dl class="props">
+          <div><dt><span data-l="ru">Тип:</span><span data-l="en">Type:</span></dt><dd><span data-l="ru">Сервер в Discord</span><span data-l="en">Discord server</span></dd></div>
+          <div><dt><span data-l="ru">Язык:</span><span data-l="en">Language:</span></dt><dd><span data-l="ru">Русский</span><span data-l="en">Russian</span></dd></div>
+          <div><dt><span data-l="ru">Кто ведёт:</span><span data-l="en">Run by:</span></dt><dd><span data-l="ru">Фанаты. Не Filian и не её команда.</span><span data-l="en">Fans. Not Filian, not her team.</span></dd></div>
+          <div><dt><span data-l="ru">Также:</span><span data-l="en">Also on:</span></dt><dd><a href="https://x.com/Snackers_RU" rel="noopener">@Snackers_RU</a> <span data-l="ru">в X</span><span data-l="en">on X</span></dd></div>
+          <div><dt><span data-l="ru">Теги:</span><span data-l="en">Tags:</span></dt><dd><span data-l="ru">#filianIsArt для артов, #filianClips для клипов</span><span data-l="en">#filianIsArt for art, #filianClips for clips</span></dd></div>
+        </dl>
+        <hr class="etched">
+        <p data-l="ru">Там общаются по-русски, делятся клипами и фан-артом и устраивают совместные ивенты.</p>
+        <p data-l="en">People there talk in Russian, share clips and fan art, and run events together.</p>
+        <fieldset class="group">
+          <legend><span data-l="ru">Из хроники</span><span data-l="en">From the log</span></legend>
+          <ol class="log">
+            <li><time datetime="2025-07"><span data-l="ru">Июль 2025</span><span data-l="en">July 2025</span></time> <span data-l="ru">У Snackers RU появляется аккаунт в X.</span><span data-l="en">Snackers RU opens its account on X.</span></li>
+            <li><time datetime="2025-08-17"><span data-l="ru">17 августа 2025</span><span data-l="en">17 August 2025</span></time> <span data-l="ru">Арт-ивент на wplace: вместе рисуют filian на общей пиксельной карте мира, инструкции лежат в Discord.</span><span data-l="en">Art event on wplace: members draw filian together on the shared pixel world map, with instructions in the Discord.</span></li>
+          </ol>
+        </fieldset>
+      </div>
+    </section>
+
+    <!-- ============ Where to watch: an Explorer window in Details view ============ -->
+    <section class="win" id="watch" aria-labelledby="watch-h">
+      <div class="titlebar">
+        <img src="icons/folder.svg" alt="" width="16" height="16">
+        <span class="titlebar__text"><span data-l="ru">На русском</span><span data-l="en">In Russian</span></span>
+      </div>
+      <div class="addressbar" aria-hidden="true">
+        <span><span data-l="ru">Адрес</span><span data-l="en">Address</span></span>
+        <span class="field"><span data-l="ru">C:\Смотреть\На русском</span><span data-l="en">C:\Watch\In Russian</span></span>
+      </div>
+      <div class="win__body">
+        <h2 id="watch-h"><span data-l="ru">Где смотреть на русском</span><span data-l="en">Where to watch in Russian</span></h2>
+        <p data-l="ru">Каналы, где Filian можно смотреть с русскими субтитрами или послушать о ней по-русски. Их ведут фанаты, не мы и не Filian.</p>
+        <p data-l="en">Channels where you can watch Filian with Russian subtitles, or hear about her in Russian. Fans run them, not us and not Filian.</p>
+        <ul class="details">
+          <li class="details__head" aria-hidden="true">
+            <span data-l="ru">Имя</span><span data-l="en">Name</span>
+            <span data-l="ru">Где</span><span data-l="en">Where</span>
+            <span data-l="ru">Что там</span><span data-l="en">What's there</span>
+          </li>
+          <li class="details__row">
+            <span class="details__name"><img src="icons/tv.svg" alt="" width="16" height="16"><b>Cyborg Crab</b></span>
+            <span class="details__where"><a href="https://www.youtube.com/@cyborg_crab" rel="noopener">YouTube</a>, <a href="https://www.twitch.tv/crabcyborg" rel="noopener">Twitch</a>, <a href="https://t.me/crablair" rel="noopener">Telegram</a></span>
+            <span class="details__what">
+              <span data-l="ru">Ролики о витуберах на русском, в том числе о Filian. Участники Snackers RU сделали к <a href="https://youtu.be/WnZX2ElBkwk" rel="noopener">этому ролику</a> английские субтитры, и Filian посмотрела его целиком.</span>
+              <span data-l="en">Videos about VTubers in Russian, Filian included. Snackers RU members made English subtitles for <a href="https://youtu.be/WnZX2ElBkwk" rel="noopener">this video</a>, and Filian watched it all the way through.</span>
+            </span>
+          </li>
+          <li class="details__row">
+            <span class="details__name"><img src="icons/tv.svg" alt="" width="16" height="16"><b>Филиан [RU]</b></span>
+            <span class="details__where"><a href="https://www.youtube.com/@FilianRu" rel="noopener">YouTube</a></span>
+            <span class="details__what"><span data-l="ru">Клипы со стримов с русскими субтитрами и подборки моментов за месяц.</span><span data-l="en">Stream clips with Russian subtitles, plus monthly highlight reels.</span></span>
+          </li>
+          <li class="details__row">
+            <span class="details__name"><img src="icons/tv.svg" alt="" width="16" height="16"><b>-SleveR-</b></span>
+            <span class="details__where"><a href="https://www.youtube.com/@slever17" rel="noopener">YouTube</a></span>
+            <span class="details__what"><span data-l="ru">Клипы с русскими субтитрами, в названиях помечены RusSub.</span><span data-l="en">Clips with Russian subtitles, tagged RusSub in the titles.</span></span>
+          </li>
+          <li class="details__row">
+            <span class="details__name"><img src="icons/tv.svg" alt="" width="16" height="16"><b>filiansscissorsRU</b></span>
+            <span class="details__where"><a href="https://www.youtube.com/@filiansscissorsRU" rel="noopener">YouTube</a></span>
+            <span class="details__what"><span data-l="ru">Клипы с русскими субтитрами, в том числе реакция Filian на ролик Cyborg Crab.</span><span data-l="en">Clips with Russian subtitles, including Filian reacting to the Cyborg Crab video.</span></span>
+          </li>
+        </ul>
+        <p class="note">
+          <span data-l="ru">Список не полный. Знаете канал, которого тут нет? Напишите на <a href="mailto:vadim@filian.ru">vadim@filian.ru</a>.</span>
+          <span data-l="en">This list is not complete. Know a channel that belongs here? Write to <a href="mailto:vadim@filian.ru">vadim@filian.ru</a>.</span>
+        </p>
+      </div>
+      <div class="statusbar"><span><span data-l="ru">Объектов: 4</span><span data-l="en">4 object(s)</span></span></div>
+    </section>
+
+    <!-- ============ Projects: My Computer, one "drive" per project ============ -->
+    <section class="win" id="projects" aria-labelledby="projects-h">
+      <div class="titlebar">
+        <img src="icons/computer.svg" alt="" width="16" height="16">
+        <span class="titlebar__text"><span data-l="ru">Мой компьютер</span><span data-l="en">My Computer</span></span>
+      </div>
+      <div class="win__body">
+        <h2 id="projects-h"><span data-l="ru">Фанатские проекты</span><span data-l="en">Fan projects</span></h2>
+        <div class="drives">
+          <article class="drive">
+            <img src="icons/book.svg" alt="" width="32" height="32">
+            <div>
+              <h3><a href="https://filian.wiki" rel="noopener">FilianWIKI</a> <span class="muted">filian.wiki</span></h3>
+              <p data-l="ru">Вики о Filian и Snackers, которую пишут фанаты. Переезжает с FANDOM на открытый движок, сделанный для этого сообщества. Английский и русский, код открыт под AGPL. Сейчас пре-альфа.</p>
+              <p data-l="en">A fan-written wiki about Filian and the Snackers. It is moving off FANDOM onto an open engine built for this community. English and Russian, code open under the AGPL. Currently pre-alpha.</p>
+            </div>
+          </article>
+          <article class="drive">
+            <img src="icons/wall.svg" alt="" width="32" height="32">
+            <div>
+              <h3><a href="https://the-wall.vai-rice.space/" rel="noopener">The Wall Dev</a> <span class="muted">the-wall.vai-rice.space</span></h3>
+              <p data-l="ru">Оверлей в стиле Windows 95 для Pixel Wall на filianislost.com: кланы, чаты и личные сообщения, помощь в рисовании, шаблоны, боты для Discord и Telegram. Работает через публичные API и не меняет сам сайт. Есть для Tampermonkey, Chrome, Firefox и Safari.</p>
+              <p data-l="en">A Windows 95 style overlay for the Pixel Wall on filianislost.com: clans, chats and DMs, drawing aids, templates, Discord and Telegram bots. It uses public APIs only and does not modify the site. Available for Tampermonkey, Chrome, Firefox and Safari.</p>
+            </div>
+          </article>
+        </div>
+        <p class="muted"><span data-l="ru">Оба проекта делает VAI_PROG, автор этой страницы.</span><span data-l="en">Both are made by VAI_PROG, who also made this page.</span></p>
+      </div>
+      <div class="statusbar"><span><span data-l="ru">Объектов: 2</span><span data-l="en">2 object(s)</span></span></div>
+    </section>
+
+    <!-- ============ About: the one place that carries the full disclaimer ============ -->
+    <section class="win" id="about" aria-labelledby="about-h">
+      <div class="titlebar">
+        <img src="icons/info.svg" alt="" width="16" height="16">
+        <span class="titlebar__text"><span data-l="ru">О программе filian.ru</span><span data-l="en">About filian.ru</span></span>
+      </div>
+      <div class="win__body">
+        <div class="props__head">
+          <img src="icons/info.svg" alt="" width="32" height="32">
+          <div>
+            <h2 id="about-h"><span data-l="ru">О сайте</span><span data-l="en">About this site</span></h2>
+            <p class="muted"><span data-l="ru">Сделал VAI_PROG (Вадим Х.), участник сообщества и разработчик.</span><span data-l="en">Made by VAI_PROG (Vadim Kh.), a community member and developer.</span></p>
+          </div>
+        </div>
+        <p data-l="ru">filian.ru помогает найти Snackers RU и фанатские проекты вокруг Filian.</p>
+        <p data-l="en">filian.ru helps people find Snackers RU and the fan projects around Filian.</p>
+        <div class="notice" role="note">
+          <img src="icons/warn.svg" alt="" width="32" height="32">
+          <p data-l="ru"><b>Это неофициальный фанатский сайт.</b> Он не связан с Filian, не одобрен ей, и никто здесь не говорит от её имени или от имени её команды. Сайт не является частью какой-либо ARG.</p>
+          <p data-l="en"><b>This is an unofficial fan site.</b> It is not affiliated with or endorsed by Filian, and nobody here speaks for her or her team. It is not part of any ARG.</p>
+        </div>
+        <dl class="props">
+          <div><dt><span data-l="ru">Автор:</span><span data-l="en">Author:</span></dt><dd>VAI_PROG, <a href="https://vai-rice.space" rel="noopener">vai-rice.space</a></dd></div>
+          <div><dt><span data-l="ru">Почта:</span><span data-l="en">Mail:</span></dt><dd><a href="mailto:vadim@filian.ru">vadim@filian.ru</a> <span data-l="ru">(лучше всего) или любой другой его адрес, например</span><span data-l="en">(best) or any other address of his, for example</span> <a href="mailto:vadim@filian.wiki">vadim@filian.wiki</a></dd></div>
+        </dl>
+        <p class="muted">
+          <span data-l="ru">Факты здесь взяты из открытых источников. Нашли ошибку или хотите, чтобы вас добавили или убрали? Напишите.</span>
+          <span data-l="en">Facts here come from public sources. Found a mistake, or want to be added or removed? Write in.</span>
+        </p>
+        <figure class="motto">
+          <blockquote lang="en">One Snackers can build world - Others can change universe</blockquote>
+          <figcaption lang="en">VAI_PROG, Probably somewhere between 2025 and 2026</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============ Other fans: a Favorites folder, because these are links out ============ -->
+    <section class="win" id="fansites" aria-labelledby="fansites-h">
+      <div class="titlebar">
+        <img src="icons/globe.svg" alt="" width="16" height="16">
+        <span class="titlebar__text"><span data-l="ru">Избранное</span><span data-l="en">Favorites</span></span>
+      </div>
+      <div class="win__body">
+        <h2 id="fansites-h"><span data-l="ru">Сайты других фанатов</span><span data-l="en">Sites by other fans</span></h2>
+        <p data-l="ru">Эти сайты сделали другие русскоязычные фанаты. VAI_PROG к ним отношения не имеет: это их работа, и все лавры им.</p>
+        <p data-l="en">Other Russian-speaking fans made these. VAI_PROG had nothing to do with them: it is their work, and the credit is theirs.</p>
+        <ul class="favs">
+          <li>
+            <img src="icons/globe.svg" alt="" width="32" height="32">
+            <div>
+              <h3><a href="https://filian.mom/" rel="noopener">filian.mom</a></h3>
+              <p data-l="ru">Вы знаете, что там.</p>
+              <p data-l="en">You know what is there.</p>
+            </div>
+          </li>
+          <li>
+            <img src="icons/globe.svg" alt="" width="32" height="32">
+            <div>
+              <h3><a href="https://filian.rip/" rel="noopener">filian.rip</a> <span class="muted">The Daily Snacker</span></h3>
+              <p data-l="ru">Фанатская газета о Filian, выходит выпусками. Только на английском, увы.</p>
+              <p data-l="en">A fan newspaper about Filian, published in issues. Only in English, sadly.</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+      <div class="statusbar"><span><span data-l="ru">Объектов: 2</span><span data-l="en">2 object(s)</span></span></div>
+    </section>
+
+    <!-- ============ Join: the last page of a Setup Wizard, which is where the final CTA belongs ============ -->
+    <section class="win" id="join" aria-labelledby="join-h">
+      <div class="titlebar">
+        <img src="icons/floppy.svg" alt="" width="16" height="16">
+        <span class="titlebar__text"><span data-l="ru">Мастер подключения</span><span data-l="en">Join Wizard</span></span>
+      </div>
+      <div class="win__body wizard">
+        <div class="wizard__art" aria-hidden="true">
+          <img src="icons/chat.svg" alt="" width="96" height="96">
+        </div>
+        <div class="wizard__text">
+          <h2 id="join-h"><span data-l="ru">Всё готово к подключению</span><span data-l="en">Ready to join</span></h2>
+          <p data-l="ru">Приглашение ведёт на сервер Snackers RU в Discord. Нужен только аккаунт Discord. Заходите, здоровайтесь, делитесь клипами и артами.</p>
+          <p data-l="en">The invite opens the Snackers RU server on Discord. All you need is a Discord account. Come in, say hi, share clips and art.</p>
+        </div>
+      </div>
+      <div class="wizard__buttons">
+        <a class="btn" href="#welcome"><span data-l="ru">&lt; Назад</span><span data-l="en">&lt; Back</span></a>
+        <a class="btn btn--default" href="https://discord.gg/Hw9SG2wrV3" rel="noopener"><span data-l="ru">Зайти в Discord</span><span data-l="en">Join on Discord</span></a>
+        <button type="button" class="btn js-only" data-open="dlg-cancel"><span data-l="ru">Отмена</span><span data-l="en">Cancel</span></button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- The footer is an MS-DOS Prompt window: the one place a Win95 desktop lets you
+       type commands, so the credits and contact details read like command output. -->
+  <footer class="foot">
+    <div class="dos">
+      <div class="titlebar dos__bar">
+        <span class="dos__glyph" aria-hidden="true">C:\</span>
+        <span class="titlebar__text"><span data-l="ru">Сеанс MS-DOS</span><span data-l="en">MS-DOS Prompt</span></span>
+      </div>
+      <div class="dos__screen">
+        <p class="dos__cmd">C:\FILIAN.RU&gt; ver</p>
+        <p data-l="ru">filian.ru, неофициальный фанатский сайт. Не связан с Filian и не одобрен ей. Подробнее в окне <a href="#about">«О сайте»</a>.</p>
+        <p data-l="en">filian.ru, an unofficial fan site. Not affiliated with or endorsed by Filian. More in the <a href="#about">About</a> window.</p>
+        <p class="dos__cmd">C:\FILIAN.RU&gt; whois VAI_PROG</p>
+        <p data-l="ru">VAI_PROG, он же Вадим Х. Сделал этот сайт. Отвечает на любой из своих адресов: лучше всего <a href="mailto:vadim@filian.ru">vadim@filian.ru</a>, но подойдёт и любой другой его ящик, например <a href="mailto:vadim@filian.wiki">vadim@filian.wiki</a>. Сайт автора: <a href="https://vai-rice.space" rel="noopener">vai-rice.space</a>.</p>
+        <p data-l="en">VAI_PROG, also known as Vadim Kh. Made this site. Reachable at any of his addresses: best of all <a href="mailto:vadim@filian.ru">vadim@filian.ru</a>, but any other inbox of his works too, for example <a href="mailto:vadim@filian.wiki">vadim@filian.wiki</a>. Author's site: <a href="https://vai-rice.space" rel="noopener">vai-rice.space</a>.</p>
+        <p class="dos__cmd">C:\FILIAN.RU&gt; dir snacks</p>
+        <p data-l="ru">Файл не найден. Мармеладки закончились, приходите в Discord за новыми.</p>
+        <p data-l="en">File not found. The fruit snacks ran out, come get more on Discord.</p>
+        <p class="dos__cmd">C:\FILIAN.RU&gt; <span class="dos__cursor" aria-hidden="true"></span></p>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<!-- ============ Taskbar ============ -->
+<div class="taskbar">
+  <!-- <details> gives a Start menu that opens with JavaScript off and is keyboard operable. -->
+  <details class="start" id="start">
+    <summary class="btn start__btn"><img src="icons/snack.svg" alt="" width="16" height="16"><b><span data-l="ru">Пуск</span><span data-l="en">Start</span></b></summary>
+    <nav class="start__menu" aria-label="Пуск">
+      <div class="start__band" aria-hidden="true"><span>Snackers<b>95</b></span></div>
+      <ul>
+        <li><a href="https://discord.gg/Hw9SG2wrV3" rel="noopener"><img src="icons/chat.svg" alt="" width="24" height="24"><span data-l="ru">Snackers RU в Discord</span><span data-l="en">Snackers RU on Discord</span></a></li>
+        <li class="sep" role="separator"></li>
+        <li><a href="#filian"><img src="icons/notepad.svg" alt="" width="24" height="24"><span data-l="ru">Кто такая Filian</span><span data-l="en">Who is Filian</span></a></li>
+        <li><a href="#snackers"><img src="icons/chat.svg" alt="" width="24" height="24"><span data-l="ru">Про Snackers RU</span><span data-l="en">About Snackers RU</span></a></li>
+        <li><a href="#watch"><img src="icons/folder.svg" alt="" width="24" height="24"><span data-l="ru">Где смотреть</span><span data-l="en">Where to watch</span></a></li>
+        <li><a href="#projects"><img src="icons/computer.svg" alt="" width="24" height="24"><span data-l="ru">Фанатские проекты</span><span data-l="en">Fan projects</span></a></li>
+        <li><a href="#fansites"><img src="icons/globe.svg" alt="" width="24" height="24"><span data-l="ru">Сайты других фанатов</span><span data-l="en">Sites by other fans</span></a></li>
+        <li><a href="#about"><img src="icons/info.svg" alt="" width="24" height="24"><span data-l="ru">О сайте</span><span data-l="en">About this site</span></a></li>
+        <li class="js-only"><button type="button" data-open-log><img src="icons/log.svg" alt="" width="24" height="24"><span>filianIsLost.log</span></button></li>
+        <li class="sep" role="separator"></li>
+        <!-- A real checkbox, like a Win95 checked menu item, so the CRT effect can be
+             switched off even with JavaScript disabled. app.js only remembers it. -->
+        <li><label class="menu-check"><input type="checkbox" id="crt-on" checked><span class="menu-check__box" aria-hidden="true"></span><span data-l="ru">Эффект старого монитора</span><span data-l="en">Old monitor effect</span></label></li>
+        <li class="js-only"><button type="button" id="theme-btn"><img src="icons/computer.svg" alt="" width="24" height="24"><span data-l="ru">Сменить оформление</span><span data-l="en">Switch colour scheme</span></button></li>
+        <li class="js-only"><button type="button" id="shutdown-btn"><img src="icons/floppy.svg" alt="" width="24" height="24"><span data-l="ru">Завершение работы...</span><span data-l="en">Shut Down...</span></button></li>
+      </ul>
+    </nav>
+  </details>
+
+  <nav class="tasks" aria-label="Окна">
+    <a href="#welcome" data-task="welcome"><img src="icons/snack.svg" alt="" width="16" height="16"><span data-l="ru">Добро пожаловать</span><span data-l="en">Welcome</span></a>
+    <a href="#filian" data-task="filian"><img src="icons/notepad.svg" alt="" width="16" height="16">FILIAN.TXT</a>
+    <a href="#snackers" data-task="snackers"><img src="icons/chat.svg" alt="" width="16" height="16">Snackers RU</a>
+    <a href="#watch" data-task="watch"><img src="icons/folder.svg" alt="" width="16" height="16"><span data-l="ru">На русском</span><span data-l="en">In Russian</span></a>
+    <a href="#projects" data-task="projects"><img src="icons/computer.svg" alt="" width="16" height="16"><span data-l="ru">Мой компьютер</span><span data-l="en">My Computer</span></a>
+    <a href="#fansites" data-task="fansites"><img src="icons/globe.svg" alt="" width="16" height="16"><span data-l="ru">Избранное</span><span data-l="en">Favorites</span></a>
+    <a href="#about" data-task="about"><img src="icons/info.svg" alt="" width="16" height="16"><span data-l="ru">О сайте</span><span data-l="en">About</span></a>
+  </nav>
+
+  <div class="tray">
+    <label for="lang-en" class="lang-ind" title="Язык / Language"><span data-l="ru">RU</span><span data-l="en">EN</span></label>
+    <span class="clock js-only" id="clock" aria-hidden="true"></span>
+  </div>
+</div>
+
+<!-- ============ Dialogs and jokes. All of these only open with JavaScript. ============ -->
+<dialog class="win dlg" id="dlg-bin" aria-labelledby="bin-h">
+  <div class="titlebar">
+    <img src="icons/bin.svg" alt="" width="16" height="16">
+    <span class="titlebar__text" id="bin-h"><span data-l="ru">Корзина</span><span data-l="en">Recycle Bin</span></span>
+    <button type="button" class="tbtn tbtn--close" data-close aria-label="Закрыть / Close"></button>
+  </div>
+  <div class="win__body">
+    <div class="dlg__msg">
+      <img src="icons/bin.svg" alt="" width="32" height="32">
+      <div class="bin-full">
+        <p data-l="ru">Здесь лежат числа, которые не удалось проверить: сколько людей на сервере, когда всё началось и прочее. Поэтому на сайте нет счётчиков.</p>
+        <p data-l="en">This is where the numbers we could not verify ended up: how many people are on the server, when it all started, and so on. That is why this site has no counters.</p>
+      </div>
+      <div class="bin-empty" hidden>
+        <p data-l="ru">Корзина пуста. Так и должно быть.</p>
+        <p data-l="en">The Recycle Bin is empty. As it should be.</p>
+      </div>
+    </div>
+    <div class="dlg__buttons">
+      <button type="button" class="btn btn--default" id="bin-clear"><span data-l="ru">Очистить корзину</span><span data-l="en">Empty Recycle Bin</span></button>
+      <button type="button" class="btn" data-close><span data-l="ru">Закрыть</span><span data-l="en">Close</span></button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="win dlg" id="dlg-cancel" aria-labelledby="cancel-h">
+  <div class="titlebar">
+    <img src="icons/floppy.svg" alt="" width="16" height="16">
+    <span class="titlebar__text" id="cancel-h"><span data-l="ru">Мастер подключения</span><span data-l="en">Join Wizard</span></span>
+    <button type="button" class="tbtn tbtn--close" data-close aria-label="Закрыть / Close"></button>
+  </div>
+  <div class="win__body">
+    <div class="dlg__msg">
+      <img src="icons/info.svg" alt="" width="32" height="32">
+      <p data-l="ru">Хорошо, не сегодня. Сервер никуда не денется, приглашение ждёт в меню «Пуск».</p>
+      <p data-l="en">Fine, not today. The server is not going anywhere, and the invite waits in the Start menu.</p>
+    </div>
+    <div class="dlg__buttons"><button type="button" class="btn btn--default" data-close>OK</button></div>
+  </div>
+</dialog>
+
+<dialog class="win dlg dlg--log" id="dlg-log" aria-labelledby="log-h">
+  <div class="titlebar log__bar">
+    <img src="icons/log.svg" alt="" width="16" height="16">
+    <span class="titlebar__text" id="log-h">filianIsLost.log</span>
+    <button type="button" class="tbtn tbtn--close" data-close aria-label="Закрыть / Close"></button>
+  </div>
+  <p class="sr-only" id="log-sr"></p>
+  <div class="log__screen" id="log-screen"></div>
+  <p class="term__note"><span data-l="ru">Фанатская отсылка. Это не часть ARG и не слова Filian.</span><span data-l="en">A fan nod. Not part of any ARG, and not Filian's words.</span></p>
+  <div class="dlg__buttons log__buttons">
+    <button type="button" class="btn" id="log-replay"><span data-l="ru">Ещё раз</span><span data-l="en">Play again</span></button>
+    <button type="button" class="btn btn--default" data-close><span data-l="ru">Закрыть</span><span data-l="en">Close</span></button>
+  </div>
+</dialog>
+
+<dialog class="bsod" id="dlg-bsod" aria-labelledby="bsod-h">
+  <p class="bsod__tag" id="bsod-h">Snackers 95</p>
+  <p data-l="ru">Произошла фатальная ошибка 0E: SNACKS_EMPTY в модуле FRUIT.VXD. Мармеладки закончились.</p>
+  <p data-l="en">A fatal exception 0E has occurred: SNACKS_EMPTY in module FRUIT.VXD. The fruit snacks ran out.</p>
+  <p data-l="ru">Это шутка, ничего не сломалось. Вы ввели код Konami.</p>
+  <p data-l="en">This is a joke, nothing is broken. You typed the Konami code.</p>
+  <p data-l="ru">* Нажмите любую клавишу, чтобы вернуться.<br>* Нажмите CTRL+ALT+DEL, и вы тоже вернётесь.</p>
+  <p data-l="en">* Press any key to go back.<br>* Press CTRL+ALT+DEL and you will also go back.</p>
+  <p class="bsod__cta"><button type="button" data-close><span data-l="ru">Вернуться</span><span data-l="en">Go back</span></button></p>
+</dialog>
+
+<dialog class="shutdown" id="dlg-shutdown" aria-labelledby="shutdown-h">
+  <p id="shutdown-h"><span data-l="ru">Теперь компьютер можно выключить.</span><span data-l="en">It's now safe to turn off your computer.</span></p>
+  <button type="button" data-close><span data-l="ru">Нет, вернуться</span><span data-l="en">No, take me back</span></button>
+</dialog>
+
+<script src="app.js" defer></script>
+</body>
+</html>

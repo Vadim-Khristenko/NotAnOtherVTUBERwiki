@@ -1,0 +1,506 @@
+/* filian.ru, a Windows 95 desktop for Snackers RU.
+
+   House rules, so a later edit does not quietly undo them:
+   - Chrome is Win95 (bevels, solid navy title bars, etched lines). Win95 title bars
+     were solid; the gradient arrived with Win98, so there is none here.
+   - Body text is PT Sans at a real reading size. The pixel face is only for the
+     wordmark, because readability beats nostalgia.
+   - No em dashes or en dashes anywhere a reader can see.
+   - Everything must work with JavaScript off. Anything that needs JS carries
+     .js-only and stays hidden until app.js marks <html class="js">. */
+
+:root {
+  --desk: #008080;
+  --face: #c0c0c0;
+  --hi: #ffffff;
+  --lt: #dfdfdf;
+  --sh: #808080;
+  --dk: #0a0a0a;
+  --text: #0a0a0a;
+  --muted: #3a3a3a;
+  --well: #ffffff;
+  --well-text: #0a0a0a;
+  --title: #000080;
+  --title-text: #ffffff;
+  --title-off: #6e6e6e;
+  --link: #000080;
+  --select: #000080;
+  --select-text: #ffffff;
+  --desk-text: #ffffff;
+  --focus: #000080;
+  --notice: #ffffe1;
+
+  --font: "PT Sans", "Segoe UI", Tahoma, sans-serif;
+  --mono: "PT Mono", "Courier New", monospace;
+  --pixel: "Pixelify Sans", "PT Mono", monospace;
+
+  --bevel-out: inset -1px -1px var(--dk), inset 1px 1px var(--hi), inset -2px -2px var(--sh), inset 2px 2px var(--lt);
+  --bevel-win: inset -1px -1px var(--dk), inset 1px 1px var(--lt), inset -2px -2px var(--sh), inset 2px 2px var(--hi);
+  --bevel-in: inset 1px 1px var(--sh), inset -1px -1px var(--hi), inset 2px 2px var(--dk), inset -2px -2px var(--lt);
+  --bevel-pressed: inset 1px 1px var(--dk), inset -1px -1px var(--hi), inset 2px 2px var(--sh), inset -2px -2px var(--lt);
+  --bevel-thin: inset 1px 1px var(--sh), inset -1px -1px var(--hi);
+
+  --taskbar-h: 44px;
+  color-scheme: light;
+}
+
+/* A dark scheme in the spirit of the Win95 Appearance schemes. It follows the
+   system unless the visitor picked one from the Start menu. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --desk: #0f3a3a; --face: #3b3b42; --hi: #74747e; --lt: #56565e; --sh: #222228; --dk: #070709;
+    --text: #ececec; --muted: #c4c4c4; --well: #1c1c21; --well-text: #ececec;
+    --title: #26339c; --title-off: #55555c; --link: #a9bcff; --select: #26339c;
+    --focus: #ffd34d; --notice: #2c2b20; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --desk: #0f3a3a; --face: #3b3b42; --hi: #74747e; --lt: #56565e; --sh: #222228; --dk: #070709;
+  --text: #ececec; --muted: #c4c4c4; --well: #1c1c21; --well-text: #ececec;
+  --title: #26339c; --title-off: #55555c; --link: #a9bcff; --select: #26339c;
+  --focus: #ffd34d; --notice: #2c2b20; color-scheme: dark;
+}
+
+/* ---------- Language switch ----------
+   Only ever hide the other language, never force-show one, so each element keeps
+   its own display value. Browsers without :has() show both, which is readable. */
+body:not(:has(#lang-en:checked)) [data-l="en"] { display: none !important; }
+body:has(#lang-en:checked) [data-l="ru"] { display: none !important; }
+
+.js-only { display: none !important; }
+.js .js-only { display: revert !important; }
+.js li.js-only { display: list-item !important; }
+.js .btn.js-only { display: inline-flex !important; }
+.js .dicon.js-only, .js .clock.js-only { display: flex !important; }
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-bottom: calc(var(--taskbar-h) + 16px); scroll-padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--desk);
+  color: var(--text);
+  font: 400 17px/1.55 var(--font);
+  padding-bottom: calc(var(--taskbar-h) + env(safe-area-inset-bottom));
+  -webkit-text-size-adjust: 100%;
+}
+img { display: block; image-rendering: pixelated; }
+h1, h2, h3, p, ul, ol, dl, dd, figure, blockquote { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+a { color: var(--link); text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.skip { position: absolute; left: 8px; top: -60px; z-index: 50; background: var(--face); color: var(--text); padding: 8px 14px; box-shadow: var(--bevel-out); }
+.skip:focus { top: 8px; }
+.muted { color: var(--muted); }
+
+/* ---------- Desktop layout ---------- */
+.desktop {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 20px 16px 24px;
+  display: grid;
+  gap: 20px;
+}
+.windows { display: grid; gap: 20px; align-items: start; min-width: 0; }
+
+/* Desktop icons. On a phone they sit after the welcome window as a tidy grid. */
+.icons ul { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 4px; }
+.dicon {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  width: 100%; padding: 6px 2px; border: 0; background: none; cursor: pointer;
+  color: var(--desk-text); text-decoration: none; font-size: 14px; line-height: 1.25; text-align: center;
+}
+.dicon img { width: 32px; height: 32px; }
+.dicon span { padding: 1px 4px; border: 1px dotted transparent; }
+.dicon:hover span { text-decoration: underline; }
+.dicon:focus-visible { outline: none; }
+.dicon:focus-visible span, .dicon:active span { background: var(--select); color: var(--select-text); border-color: var(--hi); }
+.dicon:focus-visible img, .dicon:active img { filter: brightness(.6) sepia(1) hue-rotate(190deg) saturate(3); }
+
+/* ---------- Windows ---------- */
+.win {
+  background: var(--face);
+  color: var(--text);
+  padding: 3px;
+  box-shadow: var(--bevel-win);
+  min-width: 0;
+  position: relative;
+  scroll-margin-top: 16px;
+}
+.titlebar {
+  display: flex; align-items: center; gap: 6px;
+  min-height: 26px; padding: 2px 3px 2px 5px;
+  background: var(--title); color: var(--title-text);
+  font-weight: 700; font-size: 15px; line-height: 1.2;
+  user-select: none;
+}
+.titlebar img { width: 16px; height: 16px; flex: none; }
+.titlebar__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.win.is-inactive > .titlebar { background: var(--title-off); }
+.titlebar__ctrl { display: flex; gap: 2px; margin-left: 4px; }
+
+/* Title bar buttons, drawn with CSS so they stay crisp at any zoom. */
+.tbtn {
+  width: 22px; height: 20px; padding: 0; border: 0; flex: none; cursor: pointer;
+  background: var(--face); box-shadow: var(--bevel-out); position: relative;
+}
+.tbtn:active { box-shadow: var(--bevel-pressed); }
+.tbtn:focus-visible { outline: 1px dotted var(--title-text); outline-offset: 1px; }
+.tbtn--min::before { content: ""; position: absolute; left: 6px; bottom: 5px; width: 8px; height: 2px; background: var(--text); }
+.tbtn--close::before, .tbtn--close::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 11px; height: 2px; background: var(--text);
+}
+.tbtn--close::before { transform: translate(-50%, -50%) rotate(45deg); }
+.tbtn--close::after { transform: translate(-50%, -50%) rotate(-45deg); }
+
+.win__body { padding: 16px 14px 14px; display: grid; gap: 12px; }
+.win h2 { font-size: 22px; line-height: 1.2; font-weight: 700; }
+.win h3 { font-size: 18px; line-height: 1.3; }
+.win p { max-width: 64ch; }
+
+.menubar { display: flex; gap: 2px; padding: 2px 2px 3px; font-size: 15px; }
+.menubar > span { padding: 1px 8px; }
+.addressbar { display: flex; align-items: center; gap: 8px; padding: 4px 4px 5px; font-size: 15px; border-bottom: 1px solid var(--sh); box-shadow: 0 1px 0 var(--hi); }
+.field { flex: 1; min-width: 0; background: var(--well); color: var(--well-text); box-shadow: var(--bevel-in); padding: 3px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.well {
+  background: var(--well); color: var(--well-text);
+  box-shadow: var(--bevel-in);
+  padding: 18px 18px 20px;
+}
+.prose { display: grid; gap: 12px; }
+.prose a { color: var(--link); }
+
+.etched { border: 0; border-top: 1px solid var(--sh); border-bottom: 1px solid var(--hi); margin: 2px 0; }
+
+.statusbar { display: flex; gap: 2px; padding: 2px 0 0; font-size: 14px; }
+.statusbar > span { flex: 1; padding: 2px 8px; box-shadow: var(--bevel-thin); }
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 36px; padding: 6px 18px;
+  background: var(--face); color: var(--text);
+  border: 0; box-shadow: var(--bevel-out);
+  font: 400 16px/1.2 var(--font); text-decoration: none; white-space: nowrap;
+  cursor: pointer; position: relative;
+}
+.btn:hover { text-decoration: none; }
+.btn:active { box-shadow: var(--bevel-pressed); padding: 7px 17px 5px 19px; }
+/* Win95 shows keyboard focus as a dotted rectangle inside the button. We keep it,
+   and add the outer ring so focus is still obvious to people who need it. */
+.btn:focus-visible::after { content: ""; position: absolute; inset: 4px; border: 1px dotted var(--text); pointer-events: none; }
+/* The default button has an extra black frame in Win95. That frame, not a
+   colour, is how this page marks its one primary action. */
+.btn--default { outline: 1px solid var(--dk); outline-offset: 0; font-weight: 700; }
+.btn--default:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; cursor: pointer; }
+.check input { appearance: none; width: 16px; height: 16px; margin: 0; background: var(--well); box-shadow: var(--bevel-in); display: grid; place-items: center; cursor: pointer; }
+.check input:checked::before { content: ""; width: 7px; height: 4px; border-left: 2px solid var(--well-text); border-bottom: 2px solid var(--well-text); transform: translate(0, -1px) rotate(-45deg); }
+
+/* ---------- Welcome (hero) ---------- */
+.welcome { grid-template-columns: 1fr; gap: 16px; }
+.welcome__main { display: grid; gap: 14px; min-width: 0; }
+.welcome__h { display: grid; gap: 2px; font-weight: 400; }
+.welcome__pre { font-size: 18px; color: var(--muted); }
+.wordmark { font: 700 clamp(44px, 12vw, 76px)/1 var(--pixel); letter-spacing: -0.01em; color: var(--text); }
+.wordmark__ru { color: var(--title); }
+:root[data-theme="dark"] .wordmark__ru { color: var(--link); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wordmark__ru { color: var(--link); } }
+.lede { font-size: 19px; line-height: 1.5; max-width: 46ch; }
+
+.tip { display: grid; grid-template-columns: 32px 1fr; gap: 12px; align-items: start; background: var(--well); color: var(--well-text); box-shadow: var(--bevel-in); padding: 14px; }
+.tip__h { font-weight: 700; margin-bottom: 4px; }
+.tips li { display: none; }
+.tips li.is-current { display: block; }
+.welcome__actions { display: grid; gap: 8px; align-content: start; }
+.welcome__foot { padding: 0 14px 12px; }
+
+/* ---------- Properties ---------- */
+.props__head { display: flex; align-items: center; gap: 14px; }
+.props__head img { width: 32px; height: 32px; flex: none; }
+.props { display: grid; gap: 8px; }
+.props > div { display: grid; grid-template-columns: 6.5em 1fr; gap: 12px; }
+.links { display: grid; gap: 10px; }
+.links li { display: grid; }
+.links li > span { color: var(--muted); font-size: 16px; }
+.props dt { color: var(--muted); }
+.group { margin: 0; padding: 10px 12px 12px; border: 0; box-shadow: inset 1px 1px var(--sh), inset -1px -1px var(--hi), inset 2px 2px var(--hi), inset -2px -2px var(--sh); }
+.group legend { padding: 0 4px; font-size: 15px; }
+.log { display: grid; gap: 10px; }
+.log li { display: grid; gap: 2px; }
+.log time { font-weight: 700; font-size: 15px; }
+
+/* ---------- Explorer details view ---------- */
+.details { background: var(--well); color: var(--well-text); box-shadow: var(--bevel-in); padding: 2px; }
+.details__head { display: none; }
+.details__row { display: grid; gap: 4px; padding: 12px 12px; align-items: start; }
+.details__row + .details__row { border-top: 1px dotted var(--sh); }
+.details__name { display: flex; align-items: center; gap: 8px; }
+.details__name img { width: 16px; height: 16px; flex: none; }
+.details__where { font-size: 16px; }
+.details__what { color: var(--well-text); }
+.note { font-size: 16px; }
+
+/* ---------- My Computer ---------- */
+.drives { display: grid; gap: 16px; }
+.drive { display: grid; grid-template-columns: 32px 1fr; gap: 14px; align-items: start; }
+.drive h3 { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-bottom: 4px; }
+.drive h3 .muted { font-size: 15px; font-weight: 400; }
+.favs { display: grid; gap: 14px; }
+.favs li { display: grid; grid-template-columns: 32px 1fr; gap: 14px; align-items: start; }
+.favs h3 { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-bottom: 2px; }
+.favs h3 .muted { font-size: 15px; font-weight: 400; }
+
+/* ---------- About ---------- */
+.notice { display: grid; grid-template-columns: 32px 1fr; gap: 12px; background: var(--notice); color: var(--well-text); box-shadow: var(--bevel-in); padding: 14px; }
+.motto { padding: 12px 14px; border-left: 3px solid var(--title); }
+.motto blockquote { font-style: italic; font-size: 18px; }
+.motto figcaption { font-size: 15px; color: var(--muted); margin-top: 4px; }
+
+/* ---------- Wizard ---------- */
+.wizard { grid-template-columns: 1fr; }
+.wizard__art { display: none; }
+.wizard__text { display: grid; gap: 12px; align-content: center; }
+.wizard__buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 14px 12px; border-top: 1px solid var(--sh); box-shadow: inset 0 1px 0 var(--hi); }
+
+/* ---------- Footer on the desktop ---------- */
+.foot { min-width: 0; }
+.dos { background: var(--face); padding: 3px; box-shadow: var(--bevel-win); max-width: 760px; }
+.dos__glyph { font: 700 12px/1 var(--mono); background: var(--face); color: var(--text); padding: 2px 3px; }
+.dos__screen { background: #0c0c0c; color: #c8c8c8; font: 400 15px/1.55 var(--mono); padding: 12px 14px 14px; display: grid; gap: 4px; }
+.dos__screen p { max-width: 80ch; overflow-wrap: anywhere; }
+.dos__screen p:not(.dos__cmd) { margin-bottom: 8px; }
+.dos__cmd { color: #f2f2f2; }
+.dos__screen a { color: #7fe3e3; }
+.dos__screen a:focus-visible { outline-color: #ffd34d; }
+.dos__cursor { display: inline-block; width: .6em; height: 2px; background: #f2f2f2; vertical-align: -2px; animation: dos-blink 1.06s steps(1) infinite; }
+@keyframes dos-blink { 50% { opacity: 0; } }
+
+/* ---------- Taskbar ---------- */
+.taskbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  height: calc(var(--taskbar-h) + env(safe-area-inset-bottom));
+  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  display: flex; align-items: stretch; gap: 4px;
+  background: var(--face);
+  box-shadow: inset 0 1px 0 var(--lt), inset 0 2px 0 var(--hi);
+}
+.start { position: relative; flex: none; }
+.start__btn { height: 100%; min-height: 0; padding: 2px 10px 2px 6px; gap: 6px; list-style: none; font-size: 16px; }
+.start__btn::-webkit-details-marker { display: none; }
+.start__btn::marker { content: ""; }
+.start[open] > .start__btn { box-shadow: var(--bevel-pressed); }
+.start__menu {
+  position: absolute; left: -2px; bottom: calc(100% + 6px);
+  display: flex; min-width: 260px;
+  background: var(--face); padding: 3px; box-shadow: var(--bevel-win);
+}
+.start__band { width: 30px; background: var(--sh); display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; flex: none; }
+.start__band span { writing-mode: vertical-rl; transform: rotate(180deg); color: var(--face); font: 700 20px/1 var(--font); letter-spacing: .02em; }
+.start__band b { color: var(--hi); font-weight: 400; }
+.start__menu ul { flex: 1; display: grid; padding: 2px 0; }
+.start__menu a, .start__menu button {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: 42px; padding: 4px 16px 4px 8px; border: 0; background: none; cursor: pointer;
+  color: var(--text); text-decoration: none; font-size: 16px; text-align: left;
+}
+.start__menu img { width: 24px; height: 24px; flex: none; }
+.start__menu a:hover, .start__menu a:focus-visible, .start__menu button:hover, .start__menu button:focus-visible {
+  background: var(--select); color: var(--select-text); outline: none;
+}
+/* A Win95 checked menu item: the tick sits in the icon column. */
+.menu-check { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 4px 16px 4px 8px; cursor: pointer; font-size: 16px; }
+.menu-check input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.menu-check__box { width: 24px; height: 24px; flex: none; display: grid; place-items: center; }
+.menu-check input:checked + .menu-check__box::before { content: ""; width: 9px; height: 5px; border-left: 3px solid currentColor; border-bottom: 3px solid currentColor; transform: translateY(-2px) rotate(-45deg); }
+.menu-check:hover, .menu-check:has(input:focus-visible) { background: var(--select); color: var(--select-text); }
+.start__menu .sep { height: 0; margin: 3px 2px; border-top: 1px solid var(--sh); border-bottom: 1px solid var(--hi); }
+
+.tasks { display: none; flex: 1; min-width: 0; gap: 4px; }
+.tasks a {
+  flex: 0 1 170px; min-width: 0; display: flex; align-items: center; gap: 6px;
+  padding: 2px 8px; background: var(--face); box-shadow: var(--bevel-out);
+  color: var(--text); text-decoration: none; font-size: 15px; white-space: nowrap; overflow: hidden;
+}
+.tasks a > span, .tasks a { text-overflow: ellipsis; }
+.tasks img { width: 16px; height: 16px; flex: none; }
+/* The active task in Win95 looks pressed with a checkerboard dither. */
+.tasks a[aria-current="true"] {
+  box-shadow: var(--bevel-pressed); font-weight: 700;
+  background: repeating-conic-gradient(var(--hi) 0 25%, var(--face) 0 50%) 0 0 / 2px 2px;
+}
+.tasks a.is-min { font-style: italic; }
+.tasks a.is-closed { font-style: italic; color: var(--muted); }
+.tasks a.is-closed img { opacity: .55; }
+
+.tray { margin-left: auto; display: flex; align-items: center; gap: 8px; padding: 0 10px; box-shadow: var(--bevel-thin); font-size: 15px; flex: none; }
+.lang-ind { display: grid; place-items: center; min-width: 34px; height: 26px; padding: 0 6px; background: var(--title); color: var(--title-text); font-weight: 700; font-size: 14px; cursor: pointer; }
+body:has(#lang-en:focus-visible) .lang-ind { outline: 2px solid var(--focus); outline-offset: 2px; }
+.clock { font-variant-numeric: tabular-nums; }
+
+/* ---------- Dialogs ---------- */
+dialog { border: 0; padding: 0; }
+.dlg { width: min(440px, calc(100vw - 32px)); padding: 3px; }
+.dlg::backdrop { background: transparent; }
+.dlg__msg { display: grid; grid-template-columns: 32px 1fr; gap: 14px; align-items: start; }
+.dlg__buttons { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+
+.bsod, .shutdown {
+  width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; inset: 0;
+  padding: clamp(24px, 8vw, 96px);
+}
+.bsod { background: #0000aa; color: #ffffff; font: 400 18px/1.6 var(--mono); }
+.bsod > * { max-width: 62ch; margin: 0 auto 1.1em; }
+.bsod__tag { width: max-content; background: #aaaaaa; color: #0000aa; padding: 0 8px; font-weight: 700; }
+.bsod button { font: inherit; background: #ffffff; color: #0000aa; border: 0; padding: 4px 14px; cursor: pointer; }
+.bsod button:focus-visible { outline: 2px solid #ffff55; outline-offset: 3px; }
+.bsod::backdrop, .shutdown::backdrop { background: #000; }
+.shutdown { background: #050505; color: #ff9a2e; display: none; place-items: center; align-content: center; gap: 28px; text-align: center; font: 700 clamp(22px, 4vw, 34px)/1.3 var(--font); }
+.shutdown[open] { display: grid; }
+.shutdown button { font: 400 16px var(--font); background: none; border: 1px solid #ff9a2e; color: #ff9a2e; padding: 8px 16px; cursor: pointer; }
+
+/* ---------- CRT effect ----------
+   Two fixed layers that never take pointer events: a static one for the vignette
+   and the rounded glass edge, and one for scanlines that flickers very slightly.
+   Scanline alpha stays low so body text keeps its contrast. */
+body::before, body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 110; }
+body::before {
+  border-radius: 14px;
+  box-shadow: 0 0 0 30px #050505, inset 0 0 90px rgba(0, 0, 0, .32), inset 0 0 12px rgba(0, 0, 0, .45);
+  background: radial-gradient(ellipse at center, transparent 62%, rgba(0, 0, 0, .22) 100%);
+}
+body::after {
+  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, .075) 0 1px, transparent 1px 3px);
+  animation: crt-flicker 5s steps(1) infinite;
+}
+@keyframes crt-flicker { 0%, 100% { opacity: 1; } 31% { opacity: .82; } 32% { opacity: 1; } 67% { opacity: .9; } 68% { opacity: 1; } }
+body:has(#crt-on:not(:checked))::before, body:has(#crt-on:not(:checked))::after,
+.crt-off body::before, .crt-off body::after { display: none; }
+@media (forced-colors: active) { body::before, body::after { display: none; } }
+@media print { body::before, body::after { display: none; } }
+
+/* Boot screen, created by app.js only. .booting is set by the head script so the
+   desktop never flashes before the boot screen mounts. */
+.booting body { background: #050505; }
+.booting .desktop, .booting .taskbar { visibility: hidden; }
+.boot { position: fixed; inset: 0; z-index: 100; background: #050505; color: #c8c8c8; font: 400 16px/1.6 var(--mono); padding: 28px; cursor: pointer; }
+.boot p { margin: 0; }
+.boot__skip { position: absolute; left: 20px; right: 20px; bottom: 20px; text-align: right; color: #8a8a8a; font-size: 14px; }
+.boot.is-leaving { opacity: 0; transition: opacity .2s; }
+/* ---------- filianIsLost terminal ----------
+   Shared by the boot screen and the replay dialog. The purple is our own pick for
+   the nod, not an official brand colour. */
+.term-win {
+  position: absolute; left: 50%; top: 46%; translate: -50% -50%;
+  width: min(580px, calc(100vw - 32px));
+  background: #1a0f2b; padding: 3px;
+  box-shadow: inset -1px -1px #0a0512, inset 1px 1px #b58cff, inset -2px -2px #3b2466, inset 2px 2px #8a5cf0, 0 0 0 1px #000;
+  animation: term-in .18s steps(3);
+}
+.term-win.is-leaving { opacity: 0; transition: opacity .25s; }
+@keyframes term-in { from { opacity: 0; } }
+.log__bar, .term-win .titlebar { background: #6d34d6; }
+.log__screen, .term {
+  background: #120a1f; color: #e6dcf7;
+  font: 400 16px/1.65 var(--mono);
+  padding: 14px 16px 16px; min-height: 17.5em;
+}
+.term__note { margin: 0; padding: 6px 16px 8px; background: #120a1f; border-top: 1px solid #3b2466; color: #b9a3ff; font: 400 13px/1.4 var(--mono); }
+.term__line { display: flex; gap: .6ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.term__who { flex: none; font-weight: 700; }
+.term__who--filian { color: #ff9ad5; }
+.term__who--someone { color: #9b9bb0; }
+.term__who--snacker { color: #b9a3ff; }
+.term__cursor { display: inline-block; width: .6em; height: 1.05em; background: #e6dcf7; vertical-align: -.18em; animation: dos-blink 1s steps(1) infinite; }
+/* The corrupted line: a two-colour split and a nervous shake, then it corrects. */
+.term__line.is-glitch .term__text { color: #ffb3e0; text-shadow: 2px 0 #3dd9ff, -2px 0 #ff3d8b; animation: term-shake .09s steps(2) infinite; }
+@keyframes term-shake { 0% { translate: 1px 0; } 50% { translate: -1px 1px; } 100% { translate: 0 -1px; } }
+.dlg--log { width: min(620px, calc(100vw - 24px)); background: #1a0f2b; box-shadow: inset -1px -1px #0a0512, inset 1px 1px #b58cff, inset -2px -2px #3b2466, inset 2px 2px #8a5cf0; }
+.dlg--log::backdrop { background: rgba(10, 5, 18, .55); }
+.log__buttons { padding: 10px 12px 12px; background: var(--face); }
+/* Tap-to-skip hint: a Win95 tooltip that appears after the first tap. */
+.boot__hint {
+  position: absolute; left: 50%; bottom: 64px; translate: -50% 0;
+  background: #ffffe1; color: #0a0a0a; font: 400 15px/1.3 var(--font);
+  padding: 6px 10px; border: 1px solid #0a0a0a; box-shadow: 2px 2px 0 rgba(0, 0, 0, .5);
+  white-space: nowrap;
+}
+
+/* Minimise animation: the Win95 outline that flies to the taskbar. */
+.zoom-rect { position: fixed; z-index: 90; border: 2px dotted var(--text); pointer-events: none; }
+
+/* ---------- Tablet and up ---------- */
+@media (min-width: 640px) {
+  .desktop { padding: 24px 24px 28px; }
+  .icons ul { grid-template-columns: repeat(6, 1fr); }
+  .welcome { grid-template-columns: minmax(0, 1fr) 200px; grid-template-areas: "main actions" "tip actions"; gap: 18px 22px; }
+  .welcome__main { grid-area: main; }
+  .welcome__actions { grid-area: actions; }
+  .tip { grid-area: tip; }
+  .welcome__actions .btn { width: 100%; }
+  .details__head {
+    display: grid; grid-template-columns: 12em 10em 1fr; gap: 0;
+    font-size: 15px; position: sticky; top: 0;
+  }
+  .details__head > span { padding: 3px 10px; background: var(--face); color: var(--text); box-shadow: var(--bevel-out); }
+  .details__row { grid-template-columns: 12em 10em 1fr; gap: 0; padding: 10px 0; }
+  .details__row > span { padding: 0 10px; }
+  .wizard { grid-template-columns: 150px 1fr; gap: 20px; }
+  .wizard__art { display: grid; place-items: center; background: var(--desk); box-shadow: var(--bevel-in); min-height: 170px; }
+  .wizard__art img { width: 96px; height: 96px; }
+}
+
+@media (min-width: 900px) {
+  .tasks { display: flex; }
+}
+
+/* ---------- Desktop: icons in a column, windows placed by hand ---------- */
+@media (min-width: 1100px) {
+  .desktop { padding: 24px 28px 32px; }
+  .windows { grid-template-columns: 92px repeat(12, minmax(0, 1fr)); column-gap: 28px; row-gap: 32px; }
+  .icons { grid-column: 1; grid-row: 1 / span 5; align-self: stretch; }
+  .icons ul { grid-template-columns: 1fr; gap: 14px; position: sticky; top: 24px; }
+  .foot { padding-left: 120px; }
+  /* The offsets are deliberate: a desktop someone actually uses is never a grid of
+     equal cards. Margins, not transforms, so dragging can use `translate` freely. */
+  #welcome { grid-column: 2 / 10; grid-row: 1; }
+  #filian { grid-column: 10 / 14; grid-row: 1 / span 2; margin-top: 44px; }
+  #snackers { grid-column: 3 / 10; grid-row: 2; }
+  #watch { grid-column: 2 / 10; grid-row: 3; }
+  #about { grid-column: 10 / 14; grid-row: 3 / span 2; margin-top: 36px; }
+  #projects { grid-column: 3 / 10; grid-row: 4; }
+  #join { grid-column: 3 / 10; grid-row: 5; }
+  #fansites { grid-column: 10 / 14; grid-row: 5; margin-top: 24px; }
+  .js .win.is-draggable > .titlebar { cursor: move; }
+}
+
+/* Below desktop width the welcome window comes first, then the icon grid. */
+@media (max-width: 1099px) {
+  .desktop { max-width: 820px; }
+  .windows > * { order: 3; }
+  .windows > #welcome { order: 1; }
+  .windows > .icons { order: 2; }
+}
+
+@media (max-width: 639px) {
+  :root { --taskbar-h: 50px; }
+  body { font-size: 17px; }
+  .win__body { padding: 14px 12px 12px; }
+  .well { padding: 14px 14px 16px; }
+  .props > div { grid-template-columns: 1fr; gap: 0; }
+  .welcome__actions .btn { width: 100%; min-height: 44px; }
+  .wizard__buttons .btn { flex: 1 1 auto; min-height: 44px; }
+  .start__menu { min-width: min(300px, calc(100vw - 8px)); }
+  .lang-ind { min-width: 40px; height: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
