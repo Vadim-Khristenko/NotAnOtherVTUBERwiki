@@ -9,16 +9,27 @@ If you want to know why the technology is what it is, read [STACK.md](STACK.md).
 
 ## Where we are
 
-**Pre-alpha.** There is no release and no running server. What exists is a design that has
-survived one full review, a database schema, and a set of decisions written down with their
-reasons.
+**Pre-alpha.** There is no public release yet. What exists, as of 2026-09-20:
 
-That is not nothing. Editing a design document costs an afternoon. Editing a database
-schema after a thousand wikis depend on it costs a year.
+- A design that has survived one full review, a database schema, and the decisions written
+  down with their reasons. This is still the most valuable part.
+- A running engine, locally. Pages render and serve from cache, the editor works, the
+  wiki resolver serves several wikis from one install, and skins apply.
+- Sign-in through GitHub, Discord and Telegram OIDC, with sessions, an identity store and
+  an audit trail. Password login and email verification are not built yet.
+- `filian.wiki` and `snackers.wiki` are live, both pointing at a landing page rather than
+  at the engine. Cloudflare is DNS only on both, deliberately: its proxy ranges are blocked
+  in Russia, and a large part of this community reads from there.
+
+Editing a design document costs an afternoon. Editing a database schema after a thousand
+wikis depend on it costs a year. That is why the order below looks slow at the start.
 
 The first wiki built on this engine is **FilianWIKI**, for the Snackers, the community
 around Filian. Some of its content currently lives on FANDOM and will be migrated later,
 while the new wiki grows.
+
+This is a fan project. It is not affiliated with Filian, not endorsed by her, and not part
+of any ARG.
 
 ---
 
@@ -35,7 +46,7 @@ Four things have to be true for that to work, and they shape the whole roadmap:
    database, not in files. Editing an infobox is editing a page.
 3. **It must work with JavaScript off.** Reading and editing both. Every component is
    server rendered first and enhanced second.
-4. **Migration must not costeverything.** Wikitext importer, MediaWiki API compatibility,
+4. **Migration must not cost everything.** Wikitext importer, MediaWiki API compatibility,
    and an open export format.
 
 ---
@@ -85,16 +96,28 @@ estimated table in the stack document.
 
 The skeleton everything else hangs on.
 
-- Cargo workspace: `naw-core`, `naw-web`, `naw-cli`, `naw-markdown`
-- Shared error type and shared application state
-- Configuration from file and environment, secrets never logged
-- Migrations, and the SQLx offline workflow wired into CI
-- Authentication: registration, Argon2id, email verification, sessions in Valkey
-- Role based access control, namespace aware
-- The wiki resolver, so one install can serve many wikis
-- The Markdown pipeline with raw HTML disabled at the parser
-- The render job pipeline: queue, worker loop, and the cache it writes
-- Default skin, health check, structured logging
+- [x] Cargo workspace: `naw-core`, `naw-web`, `naw-cli`, `naw-markdown`
+- [x] Shared error type and shared application state
+- [x] Configuration from file and environment, secrets never logged
+- [x] Migrations, and the SQLx offline workflow wired into CI
+- [ ] Authentication, partly landed. Sessions, the identity store and sign-in
+      with GitHub, Discord and Telegram OIDC all work. Password login with
+      Argon2id and email verification do not exist yet.
+      **Deviation from this plan, on purpose:** sessions live in the Postgres
+      `sessions` table, not in Valkey. The cookie carries a random UUID and the
+      server owns the lookup, so a session survives a cache flush and can be
+      revoked from one place. Valkey holds the short lived OAuth state and PKCE
+      verifiers instead, where a TTL is the whole point.
+- [ ] Role based access control, namespace aware. Enforced since 2026-09-22:
+      capabilities over a per-install and a per-wiki role, guests read only by
+      default, switches per wiki. Namespace awareness is not in yet.
+- [x] The wiki resolver, so one install can serve many wikis
+- [x] The Markdown pipeline with raw HTML disabled at the parser
+- [ ] The render job pipeline. The cache and the render-on-miss path work; the
+      queue and the worker loop do not exist, so a miss renders inline.
+- [x] Default skin, health check, structured logging. `NAW_LOG_TRACE=1` adds
+      per-request detail with an `x-request-id` on every response, and
+      credentials are redacted from the header dump.
 
 **Done when:** a page can be saved as Markdown, rendered, and served from cache, and a
 second request for it does not touch the renderer.
@@ -105,16 +128,16 @@ second request for it does not touch the renderer.
 
 The part that makes it a wiki rather than a blog.
 
-- Page create, read, update, delete with full revision history
-- Diff viewer and one click undo
+- [x] Page create, read, update, and archive with full revision history
+- [x] Diff viewer and one click undo
 - **Namespaces and transclusion**, with depth limits and cycle detection
 - `Template:` editing, with a preview of affected pages before publishing
 - Dependency graph, so a template edit invalidates exactly the pages that use it
 - Categories, redirects, and slug normalisation that handles Japanese and Cyrillic
 - Media upload behind a swappable storage backend
-- Recent changes, patrolling, watchlists
-- Audit log with a retention policy
-- Search behind a swappable backend, PostgreSQL full text first
+- [ ] Recent changes, patrolling, watchlists. Patrolling works; the other two do not exist yet
+- [ ] Audit log with a retention policy. The log is written and browsable; retention is not in
+- [x] Search behind a swappable backend, PostgreSQL full text first
 
 **Done when:** an editor can create a template, use it on fifty pages, edit it once, and
 see all fifty update without a deploy and without a full cache flush.
