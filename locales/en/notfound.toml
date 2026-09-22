@@ -1,0 +1,7 @@
+# English interface messages: notfound.
+#
+# Keys here are asked for as notfound.<key>. The file name is the prefix.
+
+title = "Page not found"
+body = "There is no page at this address on {wiki}."
+home = "Go to the front page"

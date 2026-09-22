@@ -1,2 +1,33 @@
 {% extends "layout.html" %}
-{% block body %}{% if summary %}<p class="page-summary">{{ summary }}</p>{% endif %}{{ body | safe }}{% endblock %}
+{#
+  One article. The body arrives already rendered and sanitized, from the render
+  cache when there is a row for this revision.
+
+  The page tools are bound to `can_edit_this`, which the server computed from the
+  capability and the lock together. Binding them to `signed_in` would offer an
+  Edit button on a locked page to somebody who cannot use it.
+
+  `content_lang` is the wiki's language and `lang` is the reader's. When they
+  differ the article gets its own lang attribute, so a screen reader switches
+  voice for the content and not for the chrome around it.
+#}
+{% block body %}
+{% if content_lang is defined and content_lang != lang %}
+<div lang="{{ content_lang }}">{{ body | safe }}</div>
+{% else %}
+{{ body | safe }}
+{% endif %}
+{% if slug is defined %}
+<nav class="page-tools" aria-label="{{ t('page.tools') }}">
+  {% if can_edit_this is defined and can_edit_this %}
+    <a href="/{{ slug }}/edit">{{ t("page.edit") }}</a>
+  {% elif locked is defined and locked %}
+    <span class="muted-cell" title="{{ t('page.locked_hint') }}">{{ t("page.locked") }}</span>
+  {% endif %}
+  <a href="/{{ slug }}/history">{{ t("nav.history") }}</a>
+  {% if updated_at is defined %}
+    <span class="muted-cell">{{ t("page.last_edited", when=updated_at) }}</span>
+  {% endif %}
+</nav>
+{% endif %}
+{% endblock %}

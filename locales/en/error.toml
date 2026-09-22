@@ -1,0 +1,17 @@
+# English interface messages: error.
+#
+# Keys here are asked for as error.<key>. The file name is the prefix.
+
+not_allowed = "Not allowed"
+back_to_wiki = "Back to the wiki"
+no_create = "This wiki does not accept new pages from your account."
+no_edit = "This wiki does not accept edits from your account."
+page_locked = "This page is locked. Only moderators can edit it."
+conflict_title = "Somebody edited this first"
+conflict_body = "This page changed while you were writing. Your text was not saved. Open the page again, compare it with what you wrote, and re-apply your changes."
+conflict_link = "See what changed"
+taken_title = "Address taken"
+taken_live = "A page with this address already exists."
+taken_archived = "A page with this address existed and was archived. An administrator can restore it."
+taken_link = "Look at that page"
+

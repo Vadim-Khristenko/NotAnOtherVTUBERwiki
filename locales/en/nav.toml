@@ -1,0 +1,24 @@
+# English interface messages: nav.
+#
+# Keys here are asked for as nav.<key>. The file name is the prefix.
+
+search = "Search"
+search_placeholder = "Search"
+search_this = "Search {wiki}"
+new_page = "New page"
+admin = "Admin"
+about = "About"
+sign_in = "Sign in"
+sign_out = "Sign out"
+signed_in_as = "Signed in as {name}"
+toggle_theme = "Toggle theme"
+read = "Read"
+history = "History"
+go = "Go"
+language = "Interface language"
+menu = "Menu"
+main = "Main"
+skip_to_content = "Skip to content"
+
+language_filter = "Find a language"
+language_none = "No language matches that."

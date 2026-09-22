@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM wiki_memberships WHERE user_id = $1 AND wiki_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7565e378f3397eb75bdc2869226342cdb02b53c30a2f7ca10ac544be6288537f"
+}

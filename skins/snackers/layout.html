@@ -233,8 +233,14 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
 </script>
 </head>
 <body>
+{# The icon sprite, inlined so <use> resolves in every browser and needs no
+   second request. A skin can ship its own icons.svg to replace the set. #}
+{% include "icons.svg" %}
 {% include "_header.html" %}
-<main class="content">{% block body %}{% endblock %}</main>
+{# `main_class` lets a page leave the prose measure. Articles keep the narrow
+   column that makes long text readable; the admin panel is a working surface
+   with tables and needs the width. #}
+<main class="{% block main_class %}content{% endblock %}" id="content">{% block body %}{% endblock %}</main>
 {% include "_footer.html" %}
 </body>
 </html>

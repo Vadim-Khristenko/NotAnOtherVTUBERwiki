@@ -1,19 +1,33 @@
-//! Page serving from the render cache. The reader never renders on a hit:
-//! a cache miss renders once, stores, and serves.
+//! Serving and editing pages.
+//!
+//! **What is cached and what is not.** The `render_cache` row holds the body
+//! fragment only, keyed on the revision's content hash. Assembling the
+//! document around it happens on every request, because the chrome carries who
+//! is signed in and what they are allowed to do. Putting that in a shared cache
+//! row would serve one reader's name and one reader's Edit button to everybody,
+//! and no cache key short of "per user" would fix it.
+//!
+//! The split costs one template render per request, in microseconds, and keeps
+//! the expensive half (Markdown, sanitising, and later components and diagrams)
+//! running exactly once per revision.
 
 use axum::body::Body;
-use axum::extract::{Form, Path, Query, State};
+use axum::extract::{Extension, Form, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::response::{IntoResponse, Response};
+use serde_json::json;
 use tracing::instrument;
 use uuid::Uuid;
 
 use naw_core::error::AppError;
 use naw_core::state::AppState;
 
-use crate::resolve::{WikiRef, load_wikis, request_host, resolve_wiki};
+use crate::audit;
+use crate::auth::session::CurrentUser;
+use crate::perm::Capability;
+use crate::resolve::{Ctx, context};
 
-fn template_error(err: minijinja::Error) -> AppError {
+pub(crate) fn template_error(err: minijinja::Error) -> AppError {
     tracing::error!(error = %err, "template error");
     AppError::Internal
 }
@@ -21,19 +35,271 @@ fn template_error(err: minijinja::Error) -> AppError {
 /// Engine version shown in the footer. Tracks the workspace release.
 pub(crate) const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn etag_for(hash: &[u8]) -> String {
-    format!("\"{}\"", hex::encode(hash))
+const TITLE_MAX: usize = 200;
+const SUMMARY_MAX: usize = 200;
+const BODY_MAX: usize = 500_000;
+const SLUG_MAX: usize = 100;
+
+const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; charset=utf-8");
+
+/// Anything that matched no route. Declared as the router fallback so it runs
+/// through the middleware stack and comes out as a themed 404.
+pub async fn fallback() -> Response {
+    crate::errors::not_found()
 }
 
-fn cached_response(html: String, etag: &str, headers: &HeaderMap) -> Response {
-    let mut response = ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response();
-    if let Ok(value) = axum::http::HeaderValue::from_str(etag) {
-        response.headers_mut().insert(header::ETAG, value);
+/// Renders `message.html`, the shared page for "we will not do that".
+fn notice(
+    ctx: &Ctx,
+    status: StatusCode,
+    heading: &str,
+    message: &str,
+    back_href: &str,
+    back_label: &str,
+) -> Result<Response, AppError> {
+    let template = ctx
+        .skin
+        .env
+        .get_template("message.html")
+        .map_err(template_error)?;
+    let html = template
+        .render(minijinja::context! {
+            ..ctx.chrome_context(),
+            ..minijinja::context! {
+                title => heading,
+                version => ENGINE_VERSION,
+                heading => heading,
+                tone => "error",
+                message => message,
+                back_href => back_href,
+                back_label => back_label,
+            }
+        })
+        .map_err(template_error)?;
+    Ok((status, [HTML], html).into_response())
+}
+
+/// The answer to "you may not do this".
+///
+/// A guest gets sent to sign in, because the honest reason is that they are not
+/// signed in and the fix is one click. Somebody already signed in gets a 403:
+/// signing in again would change nothing, and bouncing them to a login form
+/// they have already completed is the most confusing possible response.
+fn refuse(
+    ctx: &Ctx,
+    return_to: &str,
+    refused: Capability,
+    explanation: &str,
+) -> Result<Response, AppError> {
+    // Which capability was missing, at debug level. "Why can this account not
+    // edit" is otherwise answerable only by reading the rules and the
+    // membership table by hand.
+    tracing::debug!(
+        capability = refused.as_str(),
+        signed_in = ctx.actor.is_signed_in(),
+        role = ?ctx.actor.effective_role(),
+        wiki = %ctx.wiki.slug,
+        "refused"
+    );
+    if !ctx.actor.is_signed_in() {
+        let target = format!("/login?next={}", urlencode(return_to));
+        if let Some(response) = redirect_response(StatusCode::SEE_OTHER, &target) {
+            return Ok(response);
+        }
     }
+    notice(
+        ctx,
+        StatusCode::FORBIDDEN,
+        &ctx.t("error.not_allowed"),
+        explanation,
+        "/",
+        &ctx.t("error.back_to_wiki"),
+    )
+}
+
+/// Percent-encodes a value for one query parameter.
+///
+/// Small on purpose: the only values that reach it are internal paths built
+/// from validated slugs, so the unreserved set plus the path characters we
+/// generate is the whole requirement, and anything else is escaped rather than
+/// passed through.
+fn urlencode(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// Slugs are lowercase ASCII, digits and dashes. Anything else is a 404 or a
+/// 422. Unicode slugs come with the i18n pass, not with the launch slice.
+pub(crate) fn slug_is_valid(slug: &str) -> bool {
+    !slug.is_empty()
+        && slug.len() <= SLUG_MAX
+        && slug
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+fn bad_request(message: &str) -> Response {
+    (StatusCode::UNPROCESSABLE_ENTITY, message.to_string()).into_response()
+}
+
+/// Builds a redirect only when the target is a valid header value. Axum turns
+/// an invalid `Location` into a 500 that leaks the http crate error text, so
+/// every redirect target derived from a slug, a setting or a query string goes
+/// through here. `None` means render or 404 instead of redirecting.
+pub(crate) fn redirect_response(status: StatusCode, target: &str) -> Option<Response> {
+    let location = axum::http::HeaderValue::from_str(target).ok()?;
+    Response::builder()
+        .status(status)
+        .header(header::LOCATION, location)
+        .body(Body::empty())
+        .ok()
+}
+
+/// Everything the document shell needs around a rendered body.
+///
+/// No summary field, deliberately. `revisions.summary` is the **edit summary**:
+/// a note from the editor about what they changed, the thing every wiki shows
+/// in the history list. It used to be rendered as the article's opening
+/// paragraph as well, so the first revert put "Restored the revision from
+/// 2026-09-20 20:16 UTC" at the top of the front page as if it were prose.
+///
+/// A real page description, for a meta tag and for search snippets, has to come
+/// from the article itself. It is not this column.
+pub(crate) struct Shell<'a> {
+    pub title: &'a str,
+    pub body_html: &'a str,
+    /// Footer note: `None` when the body came from cache.
+    pub render_ms: Option<u64>,
+    /// Extra bindings for the specific template. Merged last.
+    pub extra: minijinja::Value,
+    pub template: &'a str,
+}
+
+/// Assembles a document from a body fragment plus this request's chrome.
+pub(crate) fn render_shell(ctx: &Ctx, shell: &Shell<'_>) -> Result<String, AppError> {
+    // Built here rather than in the template because only the handler knows
+    // whether the body came from cache, and translated here rather than
+    // hard-coded because the footer is as visible as anything else on the page.
+    let footer_note = match shell.render_ms {
+        Some(ms) => ctx.skin.messages.render(
+            &ctx.lang,
+            "footer.rendered_in",
+            &[("ms".to_string(), ms.to_string())],
+        ),
+        None => ctx
+            .skin
+            .messages
+            .render(&ctx.lang, "footer.served_from_cache", &[]),
+    };
+    let template = ctx
+        .skin
+        .env
+        .get_template(shell.template)
+        .map_err(template_error)?;
+    template
+        .render(minijinja::context! {
+            ..ctx.chrome_context(),
+            ..minijinja::context! {
+                title => shell.title,
+                body => shell.body_html,
+                version => ENGINE_VERSION,
+                footer_note => footer_note,
+            },
+            ..shell.extra.clone()
+        })
+        .map_err(template_error)
+}
+
+/// The rendered body for one revision, from cache when possible.
+///
+/// On a miss it renders once and stores the row. `ON CONFLICT DO NOTHING`
+/// covers the race where two readers miss the same revision at the same moment:
+/// both render, one insert wins, and the output is identical either way.
+async fn cached_body(
+    state: &AppState,
+    wiki_id: Uuid,
+    body_md: &str,
+) -> Result<(String, Option<u64>), AppError> {
+    let key = naw_markdown::content_hash(body_md);
+    if let Some(row) = sqlx::query!(
+        "SELECT html FROM render_cache WHERE wiki_id = $1 AND content_hash = $2 AND renderer_version = $3",
+        wiki_id,
+        key,
+        naw_markdown::RENDERER_VERSION
+    )
+    .fetch_optional(&state.db)
+    .await?
+    {
+        return Ok((row.html, None));
+    }
+    let rendered = naw_markdown::render_body(body_md);
+    sqlx::query!(
+        "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html)
+         VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        wiki_id,
+        rendered.content_hash,
+        naw_markdown::RENDERER_VERSION,
+        rendered.html
+    )
+    .execute(&state.db)
+    .await?;
+    Ok((rendered.html, Some(rendered.render_ms)))
+}
+
+/// Stores the rendering for a body that was just saved, so the author's
+/// redirect lands on a cache hit instead of rendering again.
+async fn warm_cache(state: &AppState, wiki_id: Uuid, body_md: &str) {
+    let rendered = naw_markdown::render_body(body_md);
+    let result = sqlx::query!(
+        "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html)
+         VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        wiki_id,
+        rendered.content_hash,
+        naw_markdown::RENDERER_VERSION,
+        rendered.html
+    )
+    .execute(&state.db)
+    .await;
+    // A cold cache costs one render on the next read. Not worth failing a save
+    // that already committed.
+    if let Err(err) = result {
+        tracing::warn!(error = %err, "could not warm the render cache");
+    }
+}
+
+/// Serves an assembled document with an ETag and a conditional-GET check.
+///
+/// The ETag is the hash of the finished HTML rather than of the body alone.
+/// The document varies by visitor now, so a key built from the body would tell
+/// a browser that a signed-out page and a signed-in one are the same resource.
+/// Hashing the output cannot drift from what the output actually is.
+///
+/// `Cache-Control: private` is the other half: the document can carry a
+/// username, so a shared proxy must never keep a copy to hand to the next
+/// person.
+fn html_response(html: String, headers: &HeaderMap) -> Response {
+    use sha2::{Digest, Sha256};
+    let etag = format!("\"{}\"", hex::encode(Sha256::digest(html.as_bytes())));
     let fresh = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|v| v.to_str().ok())
-        == Some(etag);
+        == Some(etag.as_str());
+    let mut response = ([HTML], html).into_response();
+    if let Ok(value) = axum::http::HeaderValue::from_str(&etag) {
+        response.headers_mut().insert(header::ETAG, value);
+    }
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("private, must-revalidate"),
+    );
     if fresh {
         *response.status_mut() = StatusCode::NOT_MODIFIED;
         *response.body_mut() = Body::empty();
@@ -41,72 +307,56 @@ fn cached_response(html: String, etag: &str, headers: &HeaderMap) -> Response {
     response
 }
 
-async fn not_found(state: &AppState, lang: &str, wiki_name: &str) -> Result<Response, AppError> {
-    let template = state
-        .templates
-        .get_template("404.html")
-        .map_err(template_error)?;
-    let html = template
-        .render(minijinja::context! { lang => lang, wiki_name => wiki_name })
-        .map_err(template_error)?;
-    Ok((
-        StatusCode::NOT_FOUND,
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        html,
-    )
-        .into_response())
+/// One page as the handlers need it.
+pub(crate) struct FoundPage {
+    pub id: Uuid,
+    pub title: String,
+    pub locked: bool,
+    pub revision_id: Uuid,
+    pub body_md: String,
+    pub summary: Option<String>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-async fn render_or_cached(
-    state: &AppState,
-    wiki: &WikiRef,
-    title: &str,
+/// Loads a live page and its current revision. An archived page reads as
+/// absent: a soft delete has to look like a delete to a reader.
+pub(crate) async fn find_page(
+    db: &sqlx::PgPool,
+    wiki_id: Uuid,
+    slug: &str,
     locale: &str,
-    body_md: String,
-    summary: &str,
-    headers: &HeaderMap,
-) -> Result<Response, AppError> {
-    let key = naw_markdown::page_hash(title, locale, &body_md, summary, &state.config.skin_dir);
-    let etag = etag_for(&key);
-    if let Some(row) = sqlx::query!(
-        "SELECT html FROM render_cache WHERE wiki_id = $1 AND content_hash = $2 AND renderer_version = $3",
-        wiki.id,
-        key,
-        naw_markdown::RENDERER_VERSION
+) -> Result<Option<FoundPage>, AppError> {
+    let row = sqlx::query!(
+        r#"
+        SELECT p.id, p.title, p.is_locked, p.updated_at,
+               r.id AS revision_id, r.body_md, r.summary
+        FROM pages p
+        JOIN revisions r ON r.id = p.current_revision_id
+        WHERE p.wiki_id = $1
+          AND p.namespace = 'main'
+          AND p.slug = $2
+          AND COALESCE(p.locale, '') = COALESCE($3, '')
+          AND p.deleted_at IS NULL
+        "#,
+        wiki_id,
+        slug,
+        locale
     )
-    .fetch_optional(&state.db)
-    .await?
-    {
-        return Ok(cached_response(row.html, &etag, headers));
-    }
-    let rendered = naw_markdown::render_page(
-        &state.templates,
-        &naw_markdown::PageInput {
-            title,
-            body_md: &body_md,
-            wiki_name: &wiki.name,
-            lang: locale,
-            version: ENGINE_VERSION,
-            served_from_cache: false,
-            summary,
-            skin: &state.config.skin_dir,
-        },
-    )?;
-    let rendered_etag = etag_for(&rendered.content_hash);
-    sqlx::query!(
-        "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-        wiki.id,
-        rendered.content_hash.clone(),
-        naw_markdown::RENDERER_VERSION,
-        rendered.html.clone()
-    )
-    .execute(&state.db)
+    .fetch_optional(db)
     .await?;
-    Ok(cached_response(rendered.html, &rendered_etag, headers))
+    Ok(row.map(|row| FoundPage {
+        id: row.id,
+        title: row.title,
+        locked: row.is_locked,
+        revision_id: row.revision_id,
+        body_md: row.body_md,
+        summary: row.summary,
+        updated_at: row.updated_at,
+    }))
 }
 
-/// Display flags readers can append to any page URL. `?jump_to=` scrolls
-/// to a heading anchor through a temporary redirect. Needs no JavaScript.
+/// Display flags readers can append to any page URL. `?jump_to=` scrolls to a
+/// heading anchor through a temporary redirect. Needs no JavaScript.
 fn jump_target(slug: &str, query: &PageQuery) -> Option<String> {
     let frag = query.jump_to.as_deref()?;
     if frag.is_empty()
@@ -120,185 +370,66 @@ fn jump_target(slug: &str, query: &PageQuery) -> Option<String> {
     Some(format!("/{slug}#{frag}"))
 }
 
-const TITLE_MAX: usize = 200;
-const BODY_MAX: usize = 500_000;
-const SLUG_MAX: usize = 100;
-
 #[derive(Debug, serde::Deserialize)]
-pub(crate) struct EditForm {
-    title: String,
-    #[serde(default)]
-    summary: String,
-    body_md: String,
-}
-
-#[derive(Debug, serde::Deserialize)]
-pub(crate) struct NewForm {
-    slug: String,
-    title: String,
-    #[serde(default)]
-    summary: String,
-    body_md: String,
-}
-
-/// Slugs are lowercase ASCII, digits and dashes. Anything else is a 422.
-/// Unicode slugs come with the i18n pass, not with the launch slice.
-fn is_valid_slug(slug: &str) -> bool {
-    !slug.is_empty()
-        && slug.len() <= SLUG_MAX
-        && slug
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-}
-
-fn bad_request(message: &str) -> Response {
-    (StatusCode::UNPROCESSABLE_ENTITY, message.to_string()).into_response()
-}
-
-// Nine coherent template bindings for one form render; grouping them
-// would hide the mapping. Same reason as the seed orchestrator.
-#[allow(clippy::too_many_arguments)]
-fn render_form(
-    state: &AppState,
-    wiki_name: &str,
-    lang: &str,
-    form_title: &str,
-    form_action: &str,
-    show_slug: bool,
-    slug: &str,
-    title_value: &str,
-    body_md: &str,
-) -> Result<Response, AppError> {
-    let template = state
-        .templates
-        .get_template("edit.html")
-        .map_err(template_error)?;
-    let html = template
-        .render(minijinja::context! {
-            title => form_title,
-            wiki_name => wiki_name,
-            lang => lang,
-            version => ENGINE_VERSION,
-            form_title => form_title,
-            form_action => form_action,
-            show_slug => show_slug,
-            slug => slug,
-            title_value => title_value,
-            body_md => body_md,
-        })
-        .map_err(template_error)?;
-    Ok(([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response())
-}
-
-#[derive(Debug, serde::Deserialize)]
-pub(crate) struct PageQuery {
+pub struct PageQuery {
     #[serde(default)]
     jump_to: Option<String>,
 }
 
-struct FoundPage {
-    id: Uuid,
-    title: String,
-    locked: bool,
-    body_md: String,
-    summary: Option<String>,
-}
-
-async fn find_page(
-    db: &sqlx::PgPool,
-    wiki: &WikiRef,
-    slug: &str,
-    locale: &str,
-) -> Result<Option<FoundPage>, AppError> {
-    let page_row = sqlx::query!(
-        "SELECT id, title, is_locked, current_revision_id FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2 AND COALESCE(locale, '') = COALESCE($3, '')",
-        wiki.id,
-        slug,
-        locale
-    )
-    .fetch_optional(db)
-    .await?;
-    let Some(prow) = page_row else {
-        return Ok(None);
-    };
-    let Some(revision_id) = prow.current_revision_id else {
-        return Ok(None);
-    };
-    let revision = sqlx::query!(
-        "SELECT body_md, summary FROM revisions WHERE id = $1",
-        revision_id
-    )
-    .fetch_optional(db)
-    .await?;
-    Ok(revision.map(|rev| FoundPage {
-        id: prow.id,
-        title: prow.title,
-        locked: prow.is_locked,
-        body_md: rev.body_md,
-        summary: rev.summary,
-    }))
-}
-
-/// Builds a redirect only when the target is a valid header value. Axum
-/// turns an invalid `Location` into a 500 that leaks the http crate error
-/// text, so every redirect target from slugs, settings or query strings
-/// goes through here. `None` means render or 404 instead of redirecting.
-fn redirect_response(status: StatusCode, target: &str) -> Option<Response> {
-    let location = axum::http::HeaderValue::from_str(target).ok()?;
-    axum::response::Response::builder()
-        .status(status)
-        .header(header::LOCATION, location)
-        .body(Body::empty())
-        .ok()
-}
+// ---------------------------------------------------------------------------
+// Reading
+// ---------------------------------------------------------------------------
 
 /// Redirects `/` to the wiki home page.
-#[instrument(skip(state))]
-pub async fn home(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, AppError> {
-    let wikis = load_wikis(&state.db).await?;
-    let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
-        return not_found(&state, "en", "NotAnotherWiki").await;
+#[instrument(skip(state, user))]
+pub async fn home(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
+        return Ok(crate::errors::not_found());
     };
-    let slug = wiki
+    let slug = ctx
+        .wiki
         .settings
         .get("home_slug")
         .and_then(|v| v.as_str())
         .unwrap_or("home");
     // A broken home_slug in settings must not become a 500: fall back to a
-    // plain 404 page instead of a redirect with an invalid Location.
-    if !is_valid_slug(slug) {
-        return not_found(&state, &wiki.default_locale, &wiki.name).await;
+    // plain 404 instead of a redirect with an invalid Location.
+    if !slug_is_valid(slug) {
+        return Ok(crate::errors::not_found());
     }
     let target = format!("/{slug}");
     match redirect_response(StatusCode::PERMANENT_REDIRECT, &target) {
         Some(response) => Ok(response),
-        None => not_found(&state, &wiki.default_locale, &wiki.name).await,
+        None => Ok(crate::errors::not_found()),
     }
 }
 
-/// Serves one page from the render cache. Main namespace only for launch.
-#[instrument(skip(state))]
+/// Serves one page. Main namespace only for launch.
+#[instrument(skip(state, user))]
 pub async fn page(
     State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
     Path(slug): Path<String>,
     Query(query): Query<PageQuery>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let slug = slug.trim().to_lowercase();
-    // Reject malformed path input before it reaches PostgreSQL text parameters.
-    // PostgreSQL rejects embedded NUL bytes, which would otherwise turn a
+    // Reject malformed path input before it reaches PostgreSQL text
+    // parameters: an embedded NUL byte would otherwise turn a
     // client-controlled path into an internal 500.
-    if !is_valid_slug(&slug) {
-        return not_found(&state, "en", "NotAnotherWiki").await;
+    if !slug_is_valid(&slug) {
+        return Ok(crate::errors::not_found());
     }
-    let wikis = load_wikis(&state.db).await?;
-    let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
-        return not_found(&state, "en", "NotAnotherWiki").await;
+    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
+        return Ok(crate::errors::not_found());
     };
-    let locale = wiki.default_locale.clone();
-    let found = find_page(&state.db, wiki, &slug, &locale).await?;
-    let Some(found) = found else {
-        return not_found(&state, &locale, &wiki.name).await;
+    let locale = ctx.wiki.default_locale.clone();
+    let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
+        return Ok(crate::errors::not_found());
     };
     if let Some(target) = jump_target(&slug, &query) {
         // jump_target pins the fragment charset, so this is Some in practice.
@@ -307,178 +438,334 @@ pub async fn page(
             return Ok(response);
         }
     }
-    render_or_cached(
-        &state,
-        wiki,
-        &found.title,
-        &locale,
-        found.body_md,
-        found.summary.as_deref().unwrap_or(""),
-        &headers,
-    )
-    .await
+    let (body_html, render_ms) = cached_body(&state, ctx.wiki.id, &found.body_md).await?;
+    let html = render_shell(
+        &ctx,
+        &Shell {
+            title: &found.title,
+            body_html: &body_html,
+            render_ms,
+            template: "page.html",
+            extra: minijinja::context! {
+                slug => slug.clone(),
+                locked => found.locked,
+                updated_at => found.updated_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+                can_edit_this => ctx.actor.can_edit_page(found.locked),
+            },
+        },
+    )?;
+    Ok(html_response(html, &headers))
 }
 
-/// Blank creation form.
-#[instrument(skip(state))]
+// ---------------------------------------------------------------------------
+// Editing
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Deserialize)]
+pub struct EditForm {
+    title: String,
+    #[serde(default)]
+    summary: String,
+    body_md: String,
+    /// The revision the editor started from. Empty when a skin has not been
+    /// updated to send it, which degrades to the old last-write-wins behaviour
+    /// rather than refusing the save.
+    #[serde(default)]
+    base_revision: String,
+    #[serde(default)]
+    minor: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct NewForm {
+    slug: String,
+    title: String,
+    #[serde(default)]
+    summary: String,
+    body_md: String,
+}
+
+/// Validated form values, shared by create and save.
+struct Draft {
+    title: String,
+    summary: Option<String>,
+    body_md: String,
+}
+
+/// Returns the reason as plain text rather than a built response: validation
+/// has no business knowing about HTTP status codes, and the caller turns the
+/// reason into one.
+fn validate(title: &str, summary: &str, body_md: &str) -> Result<Draft, &'static str> {
+    let title = title.trim().to_string();
+    if title.is_empty() || title.chars().count() > TITLE_MAX {
+        return Err("title: 1 to 200 characters");
+    }
+    let summary = summary.trim().to_string();
+    if summary.chars().count() > SUMMARY_MAX {
+        return Err("summary: up to 200 characters");
+    }
+    if body_md.is_empty() || body_md.len() > BODY_MAX {
+        return Err("body: 1 to 500000 characters");
+    }
+    Ok(Draft {
+        title,
+        summary: (!summary.is_empty()).then_some(summary),
+        body_md: body_md.to_string(),
+    })
+}
+
+/// Renders the editor.
+struct FormView<'a> {
+    heading: &'a str,
+    action: &'a str,
+    show_slug: bool,
+    slug: &'a str,
+    title_value: &'a str,
+    summary_value: &'a str,
+    body_md: &'a str,
+    base_revision: &'a str,
+    locked: bool,
+}
+
+fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, AppError> {
+    let template = ctx
+        .skin
+        .env
+        .get_template("edit.html")
+        .map_err(template_error)?;
+    let html = template
+        .render(minijinja::context! {
+            ..ctx.chrome_context(),
+            ..minijinja::context! {
+                title => view.heading,
+                version => ENGINE_VERSION,
+                form_title => view.heading,
+                form_action => view.action,
+                show_slug => view.show_slug,
+                slug => view.slug,
+                title_value => view.title_value,
+                summary_value => view.summary_value,
+                body_md => view.body_md,
+                base_revision => view.base_revision,
+                locked => view.locked,
+            }
+        })
+        .map_err(template_error)?;
+    Ok(([HTML], html).into_response())
+}
+
+/// Blank creation form. Refused outright for anyone without `PageCreate`,
+/// which by default means every guest.
+#[instrument(skip(state, user))]
 pub async fn new_page(
     State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let wikis = load_wikis(&state.db).await?;
-    let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
-        return not_found(&state, "en", "NotAnotherWiki").await;
+    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
+        return Ok(crate::errors::not_found());
     };
+    if !ctx.actor.can(Capability::PageCreate) {
+        return refuse(
+            &ctx,
+            "/new",
+            Capability::PageCreate,
+            &ctx.t("error.no_create"),
+        );
+    }
     render_form(
-        &state,
-        &wiki.name,
-        &wiki.default_locale,
-        "New page",
-        "/new",
-        true,
-        "",
-        "",
-        "",
+        &ctx,
+        &FormView {
+            heading: &ctx.t("editor.new_page"),
+            action: "/new",
+            show_slug: true,
+            slug: "",
+            title_value: "",
+            summary_value: "",
+            body_md: "",
+            base_revision: "",
+            locked: false,
+        },
     )
 }
 
-/// Creates the page, its first revision and its cache row, then redirects.
-#[instrument(skip(state))]
+/// Creates the page, its first revision and its search index entry.
+#[instrument(skip(state, user))]
 pub async fn create_page(
     State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
     Form(form): Form<NewForm>,
 ) -> Result<Response, AppError> {
+    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
+        return Ok(crate::errors::not_found());
+    };
+    if !ctx.actor.can(Capability::PageCreate) {
+        return refuse(
+            &ctx,
+            "/new",
+            Capability::PageCreate,
+            &ctx.t("error.no_create"),
+        );
+    }
     let slug = form.slug.trim().to_lowercase();
-    let title = form.title.trim().to_string();
-    if !is_valid_slug(&slug) {
+    if !slug_is_valid(&slug) {
         return Ok(bad_request(
-            "slug: lowercase letters, digits and dashes, up to 100 chars",
+            "slug: lowercase letters, digits and dashes, up to 100 characters",
         ));
     }
-    if title.is_empty() || title.len() > TITLE_MAX {
-        return Ok(bad_request("title: 1 to 200 chars"));
-    }
-    if form.body_md.is_empty() || form.body_md.len() > BODY_MAX {
-        return Ok(bad_request("body: 1 to 500000 chars"));
-    }
-    let wikis = load_wikis(&state.db).await?;
-    let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
-        return not_found(&state, "en", "NotAnotherWiki").await;
+    let draft = match validate(&form.title, &form.summary, &form.body_md) {
+        Ok(draft) => draft,
+        Err(reason) => return Ok(bad_request(reason)),
     };
-    let locale = wiki.default_locale.clone();
+    let locale = ctx.wiki.default_locale.clone();
+
+    // The unique index on (wiki_id, namespace, locale, slug) is the real
+    // guard. This check exists to turn the race loser's error into a 409 with
+    // an explanation instead of a 500, and it covers archived pages too: a
+    // deleted slug stays taken so a restore lands back on its own address.
     let taken = sqlx::query!(
-        "SELECT id FROM pages WHERE wiki_id = $1 AND slug = $2",
-        wiki.id,
+        "SELECT deleted_at FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2",
+        ctx.wiki.id,
         slug
     )
     .fetch_optional(&state.db)
-    .await?
-    .is_some();
-    if taken {
-        return Ok((StatusCode::CONFLICT, "a page with this slug already exists").into_response());
+    .await?;
+    if let Some(row) = taken {
+        let message = ctx.t(if row.deleted_at.is_some() {
+            "error.taken_archived"
+        } else {
+            "error.taken_live"
+        });
+        return notice(
+            &ctx,
+            StatusCode::CONFLICT,
+            &ctx.t("error.taken_title"),
+            &message,
+            &format!("/{slug}"),
+            &ctx.t("error.taken_link"),
+        );
     }
-    let summary = form.summary.trim().to_string();
-    let summary = if summary.is_empty() {
-        None
-    } else {
-        Some(summary)
-    };
+
     let page_id = Uuid::new_v4();
     let revision_id = Uuid::new_v4();
+    let mut tx = state.db.begin().await?;
     sqlx::query!(
-        "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale) VALUES ($1, $2, 'main', $3, $4, $5)",
+        "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale)
+         VALUES ($1, $2, 'main', $3, $4, $5)",
         page_id,
-        wiki.id,
-        slug.clone(),
-        title.clone(),
-        locale.clone()
+        ctx.wiki.id,
+        slug,
+        draft.title,
+        locale
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
     sqlx::query!(
-        "INSERT INTO revisions (id, page_id, author_id, body_md, content_hash, summary) VALUES ($1, $2, NULL, $3, $4, $5)",
+        "INSERT INTO revisions (id, page_id, author_id, body_md, content_hash, summary)
+         VALUES ($1, $2, $3, $4, $5, $6)",
         revision_id,
         page_id,
-        form.body_md.clone(),
-        naw_markdown::content_hash(&form.body_md),
-        summary
+        ctx.actor.user_id,
+        draft.body_md,
+        naw_markdown::content_hash(&draft.body_md),
+        draft.summary
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
     sqlx::query!(
         "UPDATE pages SET current_revision_id = $1, updated_at = now() WHERE id = $2",
         revision_id,
         page_id
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
-    let rendered = naw_markdown::render_page(
-        &state.templates,
-        &naw_markdown::PageInput {
-            title: &title,
-            body_md: &form.body_md,
-            wiki_name: &wiki.name,
-            lang: &locale,
-            version: ENGINE_VERSION,
-            served_from_cache: false,
-            summary: summary.as_deref().unwrap_or(""),
-            skin: &state.config.skin_dir,
-        },
-    )?;
-    sqlx::query!(
-        "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-        wiki.id,
-        rendered.content_hash,
-        naw_markdown::RENDERER_VERSION,
-        rendered.html
+    naw_core::search::index_page(
+        &mut tx,
+        page_id,
+        &locale,
+        &draft.title,
+        draft.summary.as_deref(),
+        &draft.body_md,
     )
-    .execute(&state.db)
     .await?;
-    // The slug passed validation above, so "/{slug}" is ASCII only and
-    // the redirect cannot fail. "/" is the belt and braces fallback.
-    let target = format!("/{slug}");
-    Ok(redirect_response(StatusCode::SEE_OTHER, &target)
-        .unwrap_or_else(|| Redirect::to("/").into_response()))
+    tx.commit().await?;
+
+    warm_cache(&state, ctx.wiki.id, &draft.body_md).await;
+    audit::record_or_log(
+        &state.db,
+        audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action: "page.create",
+            entity_type: "page",
+            entity_id: Some(page_id),
+            meta: json!({ "slug": slug, "revision": revision_id }),
+        },
+    )
+    .await;
+    Ok(see_other(&format!("/{slug}")))
+}
+
+/// 303 to an internal path, falling back to the wiki root.
+pub(crate) fn see_other(target: &str) -> Response {
+    redirect_response(StatusCode::SEE_OTHER, target)
+        .unwrap_or_else(|| axum::response::Redirect::to("/").into_response())
 }
 
 /// Edit form prefilled with the current revision.
-#[instrument(skip(state))]
+#[instrument(skip(state, user))]
 pub async fn edit_page(
     State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
     Path(slug): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let slug = slug.trim().to_lowercase();
-    if !is_valid_slug(&slug) {
-        return not_found(&state, "en", "NotAnotherWiki").await;
+    if !slug_is_valid(&slug) {
+        return Ok(crate::errors::not_found());
     }
-    let wikis = load_wikis(&state.db).await?;
-    let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
-        return not_found(&state, "en", "NotAnotherWiki").await;
+    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
+        return Ok(crate::errors::not_found());
     };
-    let locale = wiki.default_locale.clone();
-    let found = find_page(&state.db, wiki, &slug, &locale).await?;
-    let Some(found) = found else {
-        return not_found(&state, &locale, &wiki.name).await;
+    let locale = ctx.wiki.default_locale.clone();
+    let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
+        return Ok(crate::errors::not_found());
     };
+    if !ctx.actor.can_edit_page(found.locked) {
+        let explanation = ctx.t(if found.locked {
+            "error.page_locked"
+        } else {
+            "error.no_edit"
+        });
+        return refuse(
+            &ctx,
+            &format!("/{slug}/edit"),
+            Capability::PageEdit,
+            &explanation,
+        );
+    }
     render_form(
-        &state,
-        &wiki.name,
-        &locale,
-        &format!("Editing {}", found.title),
-        &format!("/{slug}/edit"),
-        false,
-        &slug,
-        &found.title,
-        &found.body_md,
+        &ctx,
+        &FormView {
+            heading: &ctx.t_with("editor.editing", &[("page", &found.title)]),
+            action: &format!("/{slug}/edit"),
+            show_slug: false,
+            slug: &slug,
+            title_value: &found.title,
+            summary_value: found.summary.as_deref().unwrap_or(""),
+            body_md: &found.body_md,
+            base_revision: &found.revision_id.to_string(),
+            locked: found.locked,
+        },
     )
 }
 
-/// Saves a new revision over an existing page and re-renders it.
-#[instrument(skip(state))]
+/// Saves a new revision over an existing page.
+#[instrument(skip(state, user))]
 pub async fn save_page(
     State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
     Path(slug): Path<String>,
     headers: HeaderMap,
     Form(form): Form<EditForm>,
@@ -486,88 +773,207 @@ pub async fn save_page(
     let slug = slug.trim().to_lowercase();
     // Anything outside the slug charset can never match a stored page, and
     // must never reach the success redirect as a Location value.
-    if !is_valid_slug(&slug) {
-        let wikis = load_wikis(&state.db).await?;
-        let wiki = resolve_wiki(request_host(&headers), &wikis);
-        let (lang, name) = wiki
-            .as_ref()
-            .map(|w| (w.default_locale.as_str(), w.name.as_str()))
-            .unwrap_or(("en", "NotAnotherWiki"));
-        return not_found(&state, lang, name).await;
+    if !slug_is_valid(&slug) {
+        return Ok(crate::errors::not_found());
     }
-    let title = form.title.trim().to_string();
-    if title.is_empty() || title.len() > TITLE_MAX {
-        return Ok(bad_request("title: 1 to 200 chars"));
-    }
-    if form.body_md.is_empty() || form.body_md.len() > BODY_MAX {
-        return Ok(bad_request("body: 1 to 500000 chars"));
-    }
-    let wikis = load_wikis(&state.db).await?;
-    let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
-        return not_found(&state, "en", "NotAnotherWiki").await;
+    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
+        return Ok(crate::errors::not_found());
     };
-    let locale = wiki.default_locale.clone();
-    let found = find_page(&state.db, wiki, &slug, &locale).await?;
-    let Some(found) = found else {
-        return not_found(&state, &locale, &wiki.name).await;
+    let locale = ctx.wiki.default_locale.clone();
+    let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
+        return Ok(crate::errors::not_found());
     };
-    if found.locked {
-        return Ok((StatusCode::FORBIDDEN, "this page is locked").into_response());
+    if !ctx.actor.can_edit_page(found.locked) {
+        let explanation = ctx.t(if found.locked {
+            "error.page_locked"
+        } else {
+            "error.no_edit"
+        });
+        return refuse(
+            &ctx,
+            &format!("/{slug}/edit"),
+            Capability::PageEdit,
+            &explanation,
+        );
     }
-    let summary = form.summary.trim().to_string();
-    let summary = if summary.is_empty() {
-        None
-    } else {
-        Some(summary)
+    let draft = match validate(&form.title, &form.summary, &form.body_md) {
+        Ok(draft) => draft,
+        Err(reason) => return Ok(bad_request(reason)),
     };
+
+    // Lost update check. The editor carries the revision it loaded; if the
+    // current one is different, somebody saved in between and blindly writing
+    // would erase their work without either author noticing.
+    if let Some(base) = parse_uuid(&form.base_revision)
+        && base != found.revision_id
+    {
+        return notice(
+            &ctx,
+            StatusCode::CONFLICT,
+            &ctx.t("error.conflict_title"),
+            "This page changed while you were writing. Your text was not saved. \
+             Open the page again, compare it with what you wrote, and re-apply your changes.",
+            &format!("/{slug}/history"),
+            &ctx.t("error.conflict_link"),
+        );
+    }
+
+    // An edit that changes nothing is not a revision. Without this every
+    // accidental double submit adds a row to the history.
+    if draft.body_md == found.body_md
+        && draft.title == found.title
+        && draft.summary.as_deref().unwrap_or("") == found.summary.as_deref().unwrap_or("")
+    {
+        return Ok(see_other(&format!("/{slug}")));
+    }
+
     let revision_id = Uuid::new_v4();
+    let mut tx = state.db.begin().await?;
     sqlx::query!(
-        "INSERT INTO revisions (id, page_id, author_id, body_md, content_hash, summary) VALUES ($1, $2, NULL, $3, $4, $5)",
+        "INSERT INTO revisions (id, page_id, author_id, body_md, content_hash, summary, is_minor)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
         revision_id,
         found.id,
-        form.body_md.clone(),
-        naw_markdown::content_hash(&form.body_md),
-        summary
+        ctx.actor.user_id,
+        draft.body_md,
+        naw_markdown::content_hash(&draft.body_md),
+        draft.summary,
+        form.minor.is_some()
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
     sqlx::query!(
         "UPDATE pages SET title = $1, current_revision_id = $2, updated_at = now() WHERE id = $3",
-        title.clone(),
+        draft.title,
         revision_id,
         found.id
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
-    let rendered = naw_markdown::render_page(
-        &state.templates,
-        &naw_markdown::PageInput {
-            title: &title,
-            body_md: &form.body_md,
-            wiki_name: &wiki.name,
-            lang: &locale,
-            version: ENGINE_VERSION,
-            served_from_cache: false,
-            summary: summary.as_deref().unwrap_or(""),
-            skin: &state.config.skin_dir,
-        },
-    )?;
-    sqlx::query!(
-        "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-        wiki.id,
-        rendered.content_hash,
-        naw_markdown::RENDERER_VERSION,
-        rendered.html
+    naw_core::search::index_page(
+        &mut tx,
+        found.id,
+        &locale,
+        &draft.title,
+        draft.summary.as_deref(),
+        &draft.body_md,
     )
-    .execute(&state.db)
     .await?;
-    let target = format!("/{slug}");
-    Ok(redirect_response(StatusCode::SEE_OTHER, &target)
-        .unwrap_or_else(|| Redirect::to("/").into_response()))
+    tx.commit().await?;
+
+    warm_cache(&state, ctx.wiki.id, &draft.body_md).await;
+    audit::record_or_log(
+        &state.db,
+        audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action: "page.edit",
+            entity_type: "page",
+            entity_id: Some(found.id),
+            meta: json!({
+                "slug": slug,
+                "revision": revision_id,
+                "minor": form.minor.is_some(),
+            }),
+        },
+    )
+    .await;
+    Ok(see_other(&format!("/{slug}")))
 }
 
+/// Parses a UUID that arrived in a form field. An empty or malformed value is
+/// `None`, never an error: a skin that does not send the field yet must keep
+/// working.
+pub(crate) fn parse_uuid(raw: &str) -> Option<Uuid> {
+    raw.trim().parse::<Uuid>().ok()
+}
+
+// ---------------------------------------------------------------------------
+// Language choice
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, serde::Deserialize)]
-pub(crate) struct PreviewForm {
+pub struct LangForm {
+    lang: String,
+    #[serde(default)]
+    next: String,
+}
+
+/// Whether a `next` value is a path on this site.
+///
+/// Rejects anything that could leave the site. `//evil.example` is the one worth
+/// naming: it starts with a slash, so a naive check passes it, and a browser
+/// reads it as a protocol-relative URL and navigates away. A backslash is
+/// rejected too, because some clients normalise it to a slash.
+fn local_path(next: &str) -> Option<&str> {
+    if !next.starts_with('/') || next.starts_with("//") || next.starts_with("/\\") {
+        return None;
+    }
+    if next.contains('\\') || next.contains('\n') || next.contains('\r') {
+        return None;
+    }
+    Some(next)
+}
+
+/// Pulls the path out of a Referer header.
+///
+/// The language picker sits in the shared chrome, which does not know the
+/// current path, so the return address comes from the referrer instead of being
+/// threaded through every handler. Only the path is taken and it goes through
+/// `local_path`, so a crafted referrer cannot send anybody off the site.
+///
+/// A browser that suppresses the referrer lands on the front page, which is a
+/// worse experience than a redirect and a better one than a broken feature.
+fn path_from_referer(headers: &HeaderMap) -> Option<String> {
+    let raw = headers.get(header::REFERER)?.to_str().ok()?;
+    let after_scheme = raw.split_once("://").map(|(_, rest)| rest).unwrap_or(raw);
+    let path = match after_scheme.find('/') {
+        Some(at) => &after_scheme[at..],
+        // A referrer of exactly "http://host" means the front page.
+        None => "/",
+    };
+    local_path(path).map(str::to_string)
+}
+
+/// POST /lang
+///
+/// The form equivalent of `?lang=`. The header picker uses the link, because a
+/// switcher should be one click; this exists for a settings form, where saving
+/// a preference alongside other fields is a POST like everything else.
+///
+/// Both paths build the cookie through `lang::cookie_for`, so its attributes
+/// are defined once.
+#[instrument(skip(state, user))]
+pub async fn set_language(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    Form(form): Form<LangForm>,
+) -> Result<Response, AppError> {
+    let referred = path_from_referer(&headers);
+    let target = local_path(&form.next)
+        .or(referred.as_deref())
+        .unwrap_or("/");
+    let mut response = see_other(target);
+    // Only a language the catalogue actually has. An unknown value would be
+    // stored, then ignored on every later request, which looks like the picker
+    // is broken rather than like the language is missing.
+    if state.skin.current().messages.has(&form.lang) {
+        let cookie = crate::lang::cookie_for(&form.lang);
+        if let Ok(value) = axum::http::HeaderValue::from_str(&cookie) {
+            response.headers_mut().insert(header::SET_COOKIE, value);
+        }
+    }
+    let _ = user;
+    Ok(response)
+}
+
+// ---------------------------------------------------------------------------
+// Preview
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Deserialize)]
+pub struct PreviewForm {
     #[serde(default)]
     title: String,
     #[serde(default)]
@@ -575,70 +981,72 @@ pub(crate) struct PreviewForm {
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub(crate) struct PreviewQuery {
+pub struct PreviewQuery {
     #[serde(default)]
     fragment: Option<u8>,
 }
 
-/// Renders the posted Markdown without saving anything. The editor opens
-/// it in a new tab, so authors see the real pipeline output. With
-/// `?fragment=1` only the sanitized body fragment is returned, so the live
-/// preview can inject it without parsing a full page. Same `render_html` in
-/// both cases: preview and save never disagree.
-#[instrument(skip(state))]
+/// Renders posted Markdown without saving. The editor opens it in a new tab
+/// and also calls it for the live preview, so authors see the real pipeline
+/// output. With `?fragment=1` only the sanitized body comes back, so the live
+/// preview can inject it without parsing a document. The same `render_html`
+/// runs in both cases: preview and save never disagree.
+///
+/// Gated on `PageEdit`. Preview renders arbitrary Markdown on demand with no
+/// cache row, which makes it the one uncached CPU path in the engine, and
+/// leaving it open to anonymous requests would be an invitation.
+#[instrument(skip(state, user))]
 pub async fn preview(
     State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
     Query(query): Query<PreviewQuery>,
     Form(form): Form<PreviewForm>,
 ) -> Result<Response, AppError> {
-    let wikis = load_wikis(&state.db).await?;
-    let Some(wiki) = resolve_wiki(request_host(&headers), &wikis) else {
-        return not_found(&state, "en", "NotAnotherWiki").await;
+    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
+        return Ok(crate::errors::not_found());
     };
-    // Preview renders on demand with no cache row, so it carries the same
-    // size contract as saving. Oversized input is 413, not a 500, and the
-    // global body limit layer stops anything far larger before this point.
-    if form.title.len() > TITLE_MAX {
-        return Ok(bad_request("title: 1 to 200 chars"));
+    if !ctx.actor.can(Capability::PageEdit) && !ctx.actor.can(Capability::PageCreate) {
+        return Ok((StatusCode::FORBIDDEN, "preview needs edit rights").into_response());
+    }
+    if form.title.chars().count() > TITLE_MAX {
+        return Ok(bad_request("title: 1 to 200 characters"));
     }
     if form.body_md.len() > BODY_MAX {
-        return Ok((StatusCode::PAYLOAD_TOO_LARGE, "body: up to 500000 chars").into_response());
-    }
-    let title = form.title.trim();
-    let title = if title.is_empty() { "Preview" } else { title };
-    if query.fragment.unwrap_or(0) == 1 {
-        let body_html = naw_markdown::render_html(&form.body_md);
         return Ok((
-            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-            body_html,
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "body: up to 500000 characters",
         )
             .into_response());
     }
-    let rendered = naw_markdown::render_page(
-        &state.templates,
-        &naw_markdown::PageInput {
+    if query.fragment.unwrap_or(0) == 1 {
+        let body_html = naw_markdown::render_html(&form.body_md);
+        return Ok(([HTML], body_html).into_response());
+    }
+    let title = form.title.trim();
+    let title = if title.is_empty() { "Preview" } else { title };
+    let rendered = naw_markdown::render_body(&form.body_md);
+    let html = render_shell(
+        &ctx,
+        &Shell {
             title,
-            body_md: &form.body_md,
-            wiki_name: &wiki.name,
-            lang: &wiki.default_locale,
-            version: ENGINE_VERSION,
-            served_from_cache: false,
-            summary: "",
-            skin: &state.config.skin_dir,
+            body_html: &rendered.html,
+            render_ms: Some(rendered.render_ms),
+            template: "page.html",
+            extra: minijinja::context! { preview => true },
         },
     )?;
-    Ok((
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        rendered.html,
-    )
-        .into_response())
+    Ok(([HTML], html).into_response())
 }
 
-/// Skin brand files served from `{skin_dir}/favicon/`. The allowlist below
-/// is the whole surface: no request value ever reaches the filesystem, so
-/// traversal is impossible by construction. Missing files are 404, never
-/// 500, which also keeps the default skin (no favicon shipped) quiet.
+// ---------------------------------------------------------------------------
+// Skin brand files
+// ---------------------------------------------------------------------------
+
+/// Served from `{skin_dir}/favicon/`. The allowlist below is the whole
+/// surface: no request value ever reaches the filesystem, so traversal is
+/// impossible by construction. A missing file is a 404, never a 500, which
+/// keeps the default skin quiet since it ships no favicon.
 const SKIN_ASSETS: &[(&str, &str)] = &[
     ("favicon.ico", "image/x-icon"),
     ("favicon-96x96.png", "image/png"),
@@ -650,11 +1058,11 @@ const SKIN_ASSETS: &[(&str, &str)] = &[
 
 async fn skin_asset(state: &AppState, file: &str) -> Result<Response, AppError> {
     let Some((_, content_type)) = SKIN_ASSETS.iter().find(|(name, _)| *name == file) else {
-        return not_found(state, "en", "NotAnotherWiki").await;
+        return Ok(crate::errors::not_found());
     };
     let path = format!("{}/favicon/{file}", state.config.skin_dir);
     let Ok(bytes) = std::fs::read(&path) else {
-        return not_found(state, "en", "NotAnotherWiki").await;
+        return Ok(crate::errors::not_found());
     };
     Ok((
         [
@@ -692,22 +1100,22 @@ pub async fn manifest_icon_512(State(state): State<AppState>) -> Result<Response
 
 #[cfg(test)]
 mod tests {
-    use super::{PageQuery, is_valid_slug, jump_target, redirect_response};
-    use axum::http::StatusCode;
+    use super::*;
 
     #[test]
     fn slugs_accept_plain_names() {
-        assert!(is_valid_slug("home"));
-        assert!(is_valid_slug("filian-lore-2"));
+        assert!(slug_is_valid("home"));
+        assert!(slug_is_valid("filian-lore-2"));
     }
 
     #[test]
     fn slugs_reject_paths_and_case() {
-        assert!(!is_valid_slug(""));
-        assert!(!is_valid_slug("Home"));
-        assert!(!is_valid_slug("a/b"));
-        assert!(!is_valid_slug("a b"));
-        assert!(!is_valid_slug("../home"));
+        assert!(!slug_is_valid(""));
+        assert!(!slug_is_valid("Home"));
+        assert!(!slug_is_valid("a/b"));
+        assert!(!slug_is_valid("a b"));
+        assert!(!slug_is_valid("../home"));
+        assert!(!slug_is_valid(&"x".repeat(101)));
     }
 
     fn query(jump_to: Option<&str>) -> PageQuery {
@@ -740,5 +1148,75 @@ mod tests {
             redirect_response(StatusCode::SEE_OTHER, "/home#lore").expect("plain target is fine");
         assert_eq!(ok.status(), StatusCode::SEE_OTHER);
         assert!(redirect_response(StatusCode::SEE_OTHER, "/ho\nme").is_none());
+    }
+
+    #[test]
+    fn a_return_path_survives_the_login_round_trip_intact() {
+        assert_eq!(urlencode("/filian/edit"), "/filian/edit");
+        // The characters that would end the parameter or start a new one.
+        assert_eq!(urlencode("/a?b=c&d"), "/a%3Fb%3Dc%26d");
+        assert_eq!(urlencode("/a b"), "/a%20b");
+        assert_eq!(urlencode("//evil.example"), "//evil.example");
+    }
+
+    #[test]
+    fn validation_counts_characters_not_bytes() {
+        // A 200 character Cyrillic title is 400 bytes. Counting bytes would
+        // refuse a title that is well inside the limit, and the wiki this
+        // engine was built for is half Russian.
+        let cyrillic = "я".repeat(TITLE_MAX);
+        assert!(validate(&cyrillic, "", "body").is_ok());
+        assert!(validate(&"я".repeat(TITLE_MAX + 1), "", "body").is_err());
+    }
+
+    #[test]
+    fn an_empty_title_or_body_is_refused() {
+        assert!(validate("", "", "body").is_err());
+        assert!(validate("   ", "", "body").is_err());
+        assert!(validate("Title", "", "").is_err());
+    }
+
+    #[test]
+    fn a_blank_summary_becomes_null_rather_than_an_empty_string() {
+        // The column is nullable and the history view distinguishes "no
+        // summary given" from "summary was an empty string".
+        assert_eq!(validate("T", "", "b").expect("valid").summary, None);
+        assert_eq!(validate("T", "   ", "b").expect("valid").summary, None);
+        assert_eq!(
+            validate("T", " note ", "b").expect("valid").summary,
+            Some("note".to_string())
+        );
+    }
+
+    #[test]
+    fn a_language_switch_can_only_return_somewhere_on_this_site() {
+        assert_eq!(local_path("/home"), Some("/home"));
+        assert_eq!(
+            local_path("/home/history?page=2"),
+            Some("/home/history?page=2")
+        );
+        // The one that matters: a browser reads this as a host, not a path.
+        assert_eq!(local_path("//evil.example"), None);
+        assert_eq!(local_path("/\\evil.example"), None);
+        assert_eq!(local_path("https://evil.example"), None);
+        assert_eq!(local_path("http://evil.example"), None);
+        assert_eq!(local_path("evil.example"), None);
+        assert_eq!(local_path(""), None);
+        // Header splitting, in case this ever reaches a Location directly.
+        assert_eq!(local_path("/home\nLocation: /elsewhere"), None);
+        assert_eq!(local_path("/home\r\nSet-Cookie: x=1"), None);
+        assert_eq!(local_path("/a\\b"), None);
+    }
+
+    #[test]
+    fn a_missing_base_revision_does_not_look_like_a_conflict() {
+        // A skin that has not been updated sends nothing. That has to fall
+        // back to saving, not to refusing every edit on that skin.
+        assert_eq!(parse_uuid(""), None);
+        assert_eq!(parse_uuid("   "), None);
+        assert_eq!(parse_uuid("not-a-uuid"), None);
+        let id = Uuid::new_v4();
+        assert_eq!(parse_uuid(&id.to_string()), Some(id));
+        assert_eq!(parse_uuid(&format!("  {id}  ")), Some(id));
     }
 }

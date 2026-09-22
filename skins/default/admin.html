@@ -1,0 +1,404 @@
+{% extends "layout.html" %}
+{#
+  The whole admin panel, one template, sections selected by `section`. The panel
+  navigation then exists once instead of five times and cannot drift.
+
+  Every state-changing control here is a POST form. That is load bearing: the
+  session cookie is SameSite=Lax, which is what stops a link in a chat message
+  from acting as the admin who clicks it. A GET link that changes something
+  would defeat it. See the module comment in admin.rs.
+
+  Role names and audit actions are shown as the database spells them, on purpose.
+  They are identifiers an operator greps for, not prose, so translating them
+  would make a bug report harder to act on.
+#}
+{% block main_class %}content content-wide{% endblock %}
+{% block body %}
+{#
+  Two columns: a grouped sidebar and a wide working area. The sidebar is a list
+  of plain links, so it works with no script; under 52rem it turns into a row
+  that scrolls sideways above the content.
+#}
+{% macro nav_item(href, id, icon, label) %}
+  <a class="admin-nav-item" href="{{ href }}" {% if section == id %}aria-current="page"{% endif %}>
+    <svg class="icon" aria-hidden="true"><use href="#i-{{ icon }}" /></svg>
+    <span>{{ label }}</span>
+  </a>
+{% endmacro %}
+<div class="admin-shell">
+  <aside class="admin-side" aria-label="{{ t('admin.nav_label') }}">
+    <div class="admin-side-head">
+      <p class="admin-side-wiki">{{ wiki_name }}</p>
+      <p class="admin-who">
+        {{ username }}{% if my_role %} · {{ my_role }}{% endif %}
+        {%- if is_root %} <span class="tag tag-root">{{ t("admin.operator") }}</span>{% endif -%}
+      </p>
+    </div>
+    <nav class="admin-nav">
+      <p class="admin-nav-group">{{ t("admin.group_wiki") }}</p>
+      {{ nav_item("/admin", "overview", "clipboard-check", t("admin.overview")) }}
+      {{ nav_item("/admin/pages", "pages", "file-text", t("admin.pages")) }}
+      {{ nav_item("/admin/audit", "audit", "history", t("admin.audit")) }}
+      <p class="admin-nav-group">{{ t("admin.group_people") }}</p>
+      {{ nav_item("/admin/users", "users", "users", t("admin.accounts")) }}
+      <p class="admin-nav-group">{{ t("admin.group_look") }}</p>
+      {{ nav_item("/admin/languages", "languages", "language", t("admin.languages")) }}
+      {{ nav_item("/admin/errors", "errors", "alert-triangle", t("admin.errors")) }}
+      <p class="admin-nav-group">{{ t("admin.group_setup") }}</p>
+      {{ nav_item("/admin/wiki", "wiki", "settings", t("admin.settings")) }}
+    </nav>
+    <script>
+      /* On narrow screens the list is a scrolling row; keep the current section in view. */
+      (function () {
+        var cur = document.querySelector(".admin-nav [aria-current]");
+        var row = cur && cur.parentNode;
+        if (!row || row.scrollWidth <= row.clientWidth) return;
+        var off = cur.getBoundingClientRect().left - row.getBoundingClientRect().left;
+        row.scrollLeft += off - (row.clientWidth - cur.offsetWidth) / 2;
+      })();
+    </script>
+  </aside>
+
+  <div class="admin-main">
+    <h1 class="admin-title">{{ heading }}</h1>
+
+{% if section == "languages" %}
+  <section class="settings-section settings-first">
+    <h2>{{ t("admin.skin_state") }}</h2>
+    <dl class="kv">
+      <dt>{{ t("admin.skin_loaded_at") }}</dt><dd>{{ skin_loaded_at }}</dd>
+      <dt>{{ t("admin.skin_watcher") }}</dt>
+      <dd>{% if reload_interval > 0 %}{{ t("admin.skin_watcher_on", secs=reload_interval) }}{% else %}{{ t("admin.skin_watcher_off") }}{% endif %}</dd>
+    </dl>
+    {% if reload_error %}
+    <p class="notice notice-error" role="alert">{{ t("admin.reload_failed") }}<br /><code class="audit-meta">{{ reload_error }}</code></p>
+    {% endif %}
+    {% for problem in problems %}
+    <p class="notice notice-warn" role="status">{{ t("admin.pack_problem") }}<br /><code class="audit-meta">{{ problem }}</code></p>
+    {% endfor %}
+    <form method="post" action="/admin/reload">
+      <button class="button-preview" type="submit">
+        <svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("admin.reload_now") }}
+      </button>
+    </form>
+  </section>
+
+  <section class="settings-section">
+    <h2>{{ t("admin.language_packs") }}</h2>
+    <p class="field-note">{{ t("admin.language_packs_note") }}</p>
+    <form method="post" action="/admin/languages">
+      <div class="pack-list">
+        {% for pack in packs %}
+        <div class="pack{% if not pack.installed_enabled %} pack-off{% endif %}">
+          <label class="pack-toggle">
+            <input type="checkbox" name="offer" value="{{ pack.code }}"
+                   {% if pack.offered %}checked{% endif %}
+                   {% if pack.is_content_language or not pack.installed_enabled %}disabled{% endif %} />
+            <span class="pack-name" lang="{{ pack.code }}">{{ pack.native_name }}</span>
+            <span class="muted-cell">{{ pack.name }} · <code>{{ pack.code }}</code></span>
+          </label>
+          <div class="pack-meter" role="img" aria-label="{{ t('admin.pack_complete', percent=pack.percent) }}">
+            <span style="width: {{ pack.percent }}%"></span>
+          </div>
+          <p class="pack-meta">
+            {{ t("admin.pack_complete", percent=pack.percent) }}
+            {%- if pack.missing > 0 %} · {{ t("admin.pack_missing", n=pack.missing) }}{% endif %}
+            · v{{ pack.version }}{% if pack.engine %} · {{ t("admin.pack_engine", engine=pack.engine) }}{% endif %}
+            {%- if pack.direction == "rtl" %} · RTL{% endif %}
+          </p>
+          {% if pack.authors %}
+          <p class="pack-authors">
+            {% for author in pack.authors %}
+              {%- if author.url %}<a href="{{ author.url }}" rel="nofollow noopener">{{ author.name }}</a>{% else %}{{ author.name }}{% endif -%}
+              {%- if author.role %} <span class="muted-cell">({{ author.role }})</span>{% endif -%}
+              {%- if not loop.last %}, {% endif %}
+            {% endfor %}
+          </p>
+          {% endif %}
+          {% if pack.is_fallback %}<span class="tag">{{ t("admin.pack_fallback") }}</span>{% endif %}
+          {% if pack.is_content_language %}<span class="tag tag-current">{{ t("admin.pack_content") }}</span>{% endif %}
+          {% if not pack.installed_enabled %}<span class="tag tag-warn">{{ t("admin.pack_disabled") }}</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="form-actions">
+        <button class="button-save" type="submit">{{ t("admin.save_settings") }}</button>
+      </div>
+    </form>
+  </section>
+
+{% elif section == "errors" %}
+  <p class="field-note settings-first">{{ t("admin.errors_note") }}</p>
+  <div class="error-gallery">
+    {% for kind in kinds %}
+    <div class="error-card">
+      <div class="error-card-head">
+        <svg class="icon" aria-hidden="true"><use href="#i-{{ kind.icon }}" /></svg>
+        <code>{{ kind.id }}</code>
+        <span class="muted-cell">{{ kind.status }}</span>
+      </div>
+      <p class="error-card-title">{{ kind.title }}</p>
+      <p class="muted-cell">
+        {% if kind.own_template %}<code>errors/{{ kind.id }}.html</code>{% else %}{{ t("admin.errors_generic") }}{% endif %}
+      </p>
+      <p class="error-card-links">
+        <a href="/admin/errors/{{ kind.id }}" target="_blank" rel="noopener">{{ t("admin.errors_preview") }}</a>
+        {% for variant in kind.variants %}
+          · <a href="/admin/errors/{{ kind.id }}?variant={{ variant }}" target="_blank" rel="noopener">{{ variant }}</a>
+        {% endfor %}
+      </p>
+    </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if section == "overview" %}
+  <dl class="stat-grid">
+    <div class="stat"><dt>{{ t("admin.live_pages") }}</dt><dd>{{ live }}</dd></div>
+    <div class="stat"><dt>{{ t("admin.archived") }}</dt><dd>{{ archived }}</dd></div>
+    <div class="stat"><dt>{{ t("admin.locked") }}</dt><dd>{{ locked }}</dd></div>
+    <div class="stat"><dt>{{ t("admin.revisions") }}</dt><dd>{{ revisions }}</dd></div>
+    <div class="stat"><dt>{{ t("admin.members") }}</dt><dd>{{ members }}</dd></div>
+    <div class="stat"><dt>{{ t("admin.accounts") }}</dt><dd>{{ accounts }}</dd></div>
+  </dl>
+  {% if unindexed > 0 %}
+    <p class="notice notice-warn" role="status">
+      {{ tn("admin.unindexed_warning", unindexed) }}
+      <a href="/admin/wiki">{{ t("admin.reindex_submit") }}</a>
+    </p>
+  {% endif %}
+  <section class="settings-section">
+    <h2>{{ t("admin.this_wiki") }}</h2>
+    <dl class="kv">
+      <dt>{{ t("admin.slug") }}</dt><dd><code>{{ wiki_slug }}</code></dd>
+      <dt>{{ t("admin.domain") }}</dt>
+      <dd>{% if wiki_domain %}<code>{{ wiki_domain }}</code>{% else %}<span class="muted-cell">{{ t("admin.no_domain") }}</span>{% endif %}</dd>
+    </dl>
+  </section>
+  <section class="settings-section">
+    <h2>{{ t("admin.latest_activity") }}</h2>
+    {% if events %}
+    <ul class="event-list">
+      {% for event in events %}
+      <li>
+        <code class="event-action">{{ event.action }}</code>
+        <span class="muted-cell">{{ event.at }}</span>
+        {% if event.actor %}{{ event.actor }}{% else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <p><a href="/admin/audit">{{ t("admin.full_log") }}</a></p>
+    {% else %}
+    <p class="muted-cell">{{ t("admin.nothing_yet") }}</p>
+    {% endif %}
+  </section>
+
+{% elif section == "users" %}
+  <form class="filter-form" method="get" action="/admin/users">
+    <div class="search-row">
+      <input class="field-input" name="q" type="search" value="{{ query }}"
+             placeholder="{{ t('admin.filter_users') }}" maxlength="100" />
+      <button class="button-preview" type="submit">{{ t("admin.filter") }}</button>
+    </div>
+  </form>
+  <p class="muted-cell">{{ tn("admin.counts.accounts", total) }}</p>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th scope="col">{{ t("admin.accounts") }}</th>
+        <th scope="col">{{ t("admin.role_here") }}</th>
+        <th scope="col">{{ t("admin.install_role") }}</th>
+        <th scope="col">{{ t("admin.email") }}</th>
+        <th scope="col">{{ t("admin.logins") }}</th>
+        <th scope="col">{{ t("admin.joined") }}</th>
+        <th scope="col">{{ t("admin.change") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.username }}{% if u.is_me %} <span class="tag">{{ t("admin.you") }}</span>{% endif %}</td>
+        <td>
+          {%- if u.wiki_role %}{{ u.wiki_role }}
+          {%- else %}<span class="muted-cell">{{ t("admin.registered_no_membership") }}</span>{% endif -%}
+        </td>
+        <td>{% if u.global_role != "registered" %}<span class="tag tag-root">{{ u.global_role }}</span>{% else %}<span class="muted-cell">-</span>{% endif %}</td>
+        <td>{% if u.email_verified %}{{ t("admin.verified") }}{% else %}<span class="muted-cell">{{ t("admin.unverified") }}</span>{% endif %}</td>
+        <td>{{ u.identities }}</td>
+        <td>{{ u.created_at }}</td>
+        <td>
+          {% if u.is_me %}
+            <span class="muted-cell">{{ t("admin.not_your_own") }}</span>
+          {% elif grantable %}
+          <form method="post" action="/admin/users/role" class="inline-form">
+            <input type="hidden" name="user_id" value="{{ u.id }}" />
+            <label class="visually-hidden" for="role-{{ u.id }}">{{ t("admin.role_for", name=u.username) }}</label>
+            <select class="field-input" id="role-{{ u.id }}" name="role">
+              <option value="">{{ t("admin.no_membership") }}</option>
+              {% for role in grantable %}
+              <option value="{{ role }}" {% if u.wiki_role == role %}selected{% endif %}>{{ role }}</option>
+              {% endfor %}
+            </select>
+            <button class="button-preview" type="submit">{{ t("admin.apply") }}</button>
+          </form>
+          {% else %}
+            <span class="muted-cell">{{ t("admin.nothing_to_grant") }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <nav class="pager">
+    {% if has_prev %}<a href="/admin/users?q={{ query }}&amp;page={{ prev_page }}">{{ t("admin.previous") }}</a>{% endif %}
+    <span class="muted-cell">{{ t("history.page_no", n=page_no) }}</span>
+    {% if has_next %}<a href="/admin/users?q={{ query }}&amp;page={{ next_page }}">{{ t("admin.next") }}</a>{% endif %}
+  </nav>
+
+{% elif section == "pages" %}
+  <form class="filter-form" method="get" action="/admin/pages">
+    <div class="search-row">
+      <input class="field-input" name="q" type="search" value="{{ query }}"
+             placeholder="{{ t('admin.filter_pages') }}" maxlength="100" />
+      <button class="button-preview" type="submit">{{ t("admin.filter") }}</button>
+    </div>
+  </form>
+  <p class="muted-cell">{{ tn("admin.counts.pages", total) }}</p>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th scope="col">{{ t("admin.pages") }}</th>
+        <th scope="col">{{ t("admin.state") }}</th>
+        <th scope="col">{{ t("admin.revisions") }}</th>
+        <th scope="col">{{ t("admin.updated") }}</th>
+        <th scope="col">{{ t("admin.actions") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in pages %}
+      <tr{% if p.archived %} class="row-archived"{% endif %}>
+        <td>
+          {% if p.archived %}{{ p.title }}{% else %}<a href="/{{ p.slug }}">{{ p.title }}</a>{% endif %}
+          <br /><code class="muted-cell">/{{ p.slug }}</code>
+        </td>
+        <td>
+          {%- if p.archived %}<span class="tag tag-archived">{{ t("admin.archived") }}</span>
+          {%- elif p.locked %}<span class="tag tag-locked">{{ t("admin.locked") }}</span>
+          {%- else %}{{ t("admin.live") }}{% endif -%}
+          {%- if not p.indexed %} <span class="tag tag-warn" title="{{ t('admin.unindexed_title') }}">{{ t("admin.unindexed") }}</span>{% endif -%}
+        </td>
+        <td><a href="/{{ p.slug }}/history">{{ p.revisions }}</a></td>
+        <td>{{ p.updated_at }}</td>
+        <td class="action-cell">
+          {% if p.archived %}
+            <form method="post" action="/admin/pages/restore" class="inline-form">
+              <input type="hidden" name="page_id" value="{{ p.id }}" />
+              <button class="button-preview" type="submit">{{ t("admin.restore") }}</button>
+            </form>
+          {% else %}
+            <form method="post" action="/admin/pages/{% if p.locked %}unlock{% else %}lock{% endif %}" class="inline-form">
+              <input type="hidden" name="page_id" value="{{ p.id }}" />
+              <button class="button-preview" type="submit">{% if p.locked %}{{ t("admin.unlock") }}{% else %}{{ t("admin.lock") }}{% endif %}</button>
+            </form>
+            <form method="post" action="/admin/pages/archive" class="inline-form">
+              <input type="hidden" name="page_id" value="{{ p.id }}" />
+              <button class="button-preview" type="submit">{{ t("admin.archive") }}</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <nav class="pager">
+    {% if has_prev %}<a href="/admin/pages?q={{ query }}&amp;page={{ prev_page }}">{{ t("admin.previous") }}</a>{% endif %}
+    <span class="muted-cell">{{ t("history.page_no", n=page_no) }}</span>
+    {% if has_next %}<a href="/admin/pages?q={{ query }}&amp;page={{ next_page }}">{{ t("admin.next") }}</a>{% endif %}
+  </nav>
+
+{% elif section == "audit" %}
+  <form class="filter-form" method="get" action="/admin/audit">
+    <div class="search-row">
+      <input class="field-input" name="q" type="search" value="{{ query }}"
+             placeholder="{{ t('admin.filter_actions') }}" maxlength="100" />
+      <button class="button-preview" type="submit">{{ t("admin.filter") }}</button>
+    </div>
+  </form>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th scope="col">{{ t("admin.when") }}</th>
+        <th scope="col">{{ t("admin.action") }}</th>
+        <th scope="col">{{ t("admin.who_col") }}</th>
+        <th scope="col">{{ t("admin.subject") }}</th>
+        <th scope="col">{{ t("admin.detail") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr>
+        <td class="nowrap">{{ e.at }}</td>
+        <td><code>{{ e.action }}</code>{% if e.install_wide %} <span class="tag" title="{{ t('admin.install_scope_title') }}">{{ t("admin.install_scope") }}</span>{% endif %}</td>
+        <td>{% if e.actor %}{{ e.actor }}{% else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif %}</td>
+        <td>{{ e.entity_type }}</td>
+        <td><code class="audit-meta">{{ e.meta }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <nav class="pager">
+    {% if has_prev %}<a href="/admin/audit?q={{ query }}&amp;page={{ prev_page }}">{{ t("admin.previous") }}</a>{% endif %}
+    <span class="muted-cell">{{ t("history.page_no", n=page_no) }}</span>
+    {% if has_next %}<a href="/admin/audit?q={{ query }}&amp;page={{ next_page }}">{{ t("admin.next") }}</a>{% endif %}
+  </nav>
+
+{% elif section == "wiki" %}
+  <form method="post" action="/admin/wiki">
+    <label class="field">{{ t("admin.display_name") }}
+      <input class="field-input" name="name" value="{{ wiki_display_name }}" maxlength="120" required />
+    </label>
+    <label class="field">{{ t("admin.language") }}
+      <input class="field-input" name="default_locale" value="{{ wiki_locale }}" maxlength="20" required />
+      <span class="field-note">{{ t("admin.language_note", config=search_config) }}</span>
+    </label>
+    <label class="field">{{ t("admin.home_page") }}
+      <input class="field-input" name="home_slug" value="{{ home_slug }}" maxlength="100" required />
+      <span class="field-note">{{ t("admin.home_note") }}</span>
+    </label>
+
+    <fieldset class="perm-set">
+      <legend>{{ t("admin.who_may_write") }}</legend>
+      <p class="field-note">{{ t("admin.write_note") }}</p>
+      <label class="check"><input type="checkbox" name="registered_create" {% if registered_create %}checked{% endif %} /> {{ t("admin.registered_create") }}</label>
+      <label class="check"><input type="checkbox" name="registered_edit" {% if registered_edit %}checked{% endif %} /> {{ t("admin.registered_edit") }}</label>
+      <label class="check"><input type="checkbox" name="anonymous_create" {% if anonymous_create %}checked{% endif %} /> {{ t("admin.anonymous_create") }}</label>
+      <label class="check"><input type="checkbox" name="anonymous_edit" {% if anonymous_edit %}checked{% endif %} /> {{ t("admin.anonymous_edit") }}</label>
+      <label class="check"><input type="checkbox" name="require_verified_email" {% if require_verified_email %}checked{% endif %} /> {{ t("admin.require_verified") }}</label>
+      <p class="field-note">{{ t("admin.verified_note") }}</p>
+    </fieldset>
+
+    <div class="form-actions">
+      <button class="button-save" type="submit">{{ t("admin.save_settings") }}</button>
+    </div>
+  </form>
+
+  <section class="settings-section">
+    <h2>{{ t("admin.search_index") }}</h2>
+    <p class="field-note">{{ t("admin.reindex_note") }}</p>
+    <form method="post" action="/admin/reindex">
+      <label class="check"><input type="checkbox" name="confirm" value="yes" /> {{ t("admin.reindex_confirm") }}</label>
+      <div class="form-actions">
+        <button class="button-preview" type="submit">{{ t("admin.reindex_submit") }}</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="settings-section">
+    <h2>{{ t("admin.stored_settings") }}</h2>
+    <p class="field-note">{{ t("admin.stored_note") }}</p>
+    <pre class="settings-dump">{{ raw_settings }}</pre>
+  </section>
+{% endif %}
+  </div>
+</div>
+{% endblock %}

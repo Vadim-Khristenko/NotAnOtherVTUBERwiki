@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+{#
+  One old revision, rendered through the same pipeline as the live page so an
+  author can see exactly what it looked like.
+
+  The banner is not decoration. Without it, somebody arriving from a search
+  engine reads an outdated article as current, which is how wikis spread stale
+  claims. `rel=canonical` points at the live page for the same reason.
+#}
+{% block head_extra %}<link rel="canonical" href="/{{ slug }}" />{% endblock %}
+{% block body %}
+<aside class="revision-banner" role="note">
+  <p>{{ t("revision.old_banner", slug=slug, page=page_title, when=created_at,
+          who=author if author else t("revision.anonymous_editor")) }}</p>
+  {% if edit_summary %}
+  <p class="revision-summary">{{ t("revision.edit_summary", summary=edit_summary) }}</p>
+  {% endif %}
+  <p class="revision-banner-links">
+    <a href="/{{ slug }}">{{ t("revision.read_current") }}</a> ·
+    <a href="/{{ slug }}/diff?from={{ revision_id }}">{{ t("revision.what_changed") }}</a> ·
+    <a href="/{{ slug }}/history">{{ t("revision.all_revisions") }}</a>
+  </p>
+</aside>
+{% if content_lang is defined and content_lang != lang %}
+<div lang="{{ content_lang }}">{{ body | safe }}</div>
+{% else %}
+{{ body | safe }}
+{% endif %}
+{% endblock %}

@@ -1,2 +1,25 @@
 {% extends "layout.html" %}
-{% block body %}{% if summary %}<p class="page-summary">{{ summary }}</p>{% endif %}{{ body | safe }}{% endblock %}
+{#
+  The edit summary is not the article lede. It used to be rendered here, so the
+  first revert put "Restored the revision from ..." at the top of the page.
+#}
+{% block body %}
+{% if content_lang is defined and content_lang != lang %}
+<div lang="{{ content_lang }}">{{ body | safe }}</div>
+{% else %}
+{{ body | safe }}
+{% endif %}
+{% if slug is defined %}
+<nav class="page-tools" aria-label="{{ t('page.tools') }}">
+  {% if can_edit_this is defined and can_edit_this %}
+    <a href="/{{ slug }}/edit">{{ t("page.edit") }}</a>
+  {% elif locked is defined and locked %}
+    <span class="muted-cell" title="{{ t('page.locked_hint') }}">{{ t("page.locked") }}</span>
+  {% endif %}
+  <a href="/{{ slug }}/history">{{ t("nav.history") }}</a>
+  {% if updated_at is defined %}
+    <span class="muted-cell">{{ t("page.last_edited", when=updated_at) }}</span>
+  {% endif %}
+</nav>
+{% endif %}
+{% endblock %}

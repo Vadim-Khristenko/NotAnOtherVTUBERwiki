@@ -1,0 +1,96 @@
+# English interface messages: errors.
+#
+# Keys here are asked for as errors.<key>. The file name is the prefix.
+#
+# One table per kind of failure. `title` and `body` are required, `hint` is
+# optional and only shown when present. The kinds are fixed in the engine
+# (crates/naw-web/src/errors.rs); a skin picks the look for each one with an
+# errors/<kind>.html template.
+
+back_home = "Back to the front page"
+back_to_sign_in = "Back to sign in"
+retry = "Try again"
+status = "Error {status}"
+request_id = "Request id: {id}"
+request_id_hint = "Quote this if you report the problem. It points at the exact line in our logs."
+detail = "What the server said"
+
+[not_found]
+title = "Nothing lives at this address"
+body = "The page may have been renamed or archived, or the link had a typo in it."
+hint = "Search usually finds what a broken link was pointing at."
+
+[forbidden]
+title = "You can see this door, but it is locked"
+body = "Your account is signed in, but it does not have permission to do this here."
+hint = "If you think it should, ask one of this wiki's moderators."
+
+[unauthorized]
+title = "Sign in first"
+body = "This part of the wiki is only for signed-in accounts."
+
+[conflict]
+title = "Somebody got there first"
+body = "What you were changing was changed by someone else in the meantime, so we did not overwrite it."
+hint = "Open it again, compare, and re-apply your part."
+
+[invalid]
+title = "That did not quite fit"
+body = "Something in the form or the link was not in a shape we can use."
+hint = "The detail below says which part. Go back, fix it, and send it again."
+
+[method_not_allowed]
+title = "Right address, wrong kind of request"
+body = "This address exists, but it does not answer this way. Usually that means a link where a button was expected."
+
+[too_large]
+title = "That is a bit too much"
+body = "What you sent is larger than this wiki accepts in one go."
+hint = "Split a very long page into several, or send a smaller file."
+
+[rate_limited]
+title = "Slow down, snacker"
+body = "That was a lot of requests in a short time, so we are pausing yours for a moment."
+hint = "Wait a minute and try again."
+
+[auth_failed]
+title = "Sign-in did not go through"
+body = "The sign-in provider did not confirm who you are, or the sign-in link had already been used or had expired."
+hint = "Start again from the sign-in page. Each attempt gets a fresh link."
+
+[auth_disabled]
+title = "Sign-in is switched off right now"
+body = "The people running this wiki have paused signing in. Reading still works as usual."
+
+[manual_login]
+title = "One more step to sign in"
+body = "You are signing in without JavaScript, so this takes a small manual step. Follow the instructions on this page, and do it within a few minutes."
+
+[maintenance]
+title = "Back in a moment"
+body = "The wiki is being worked on right now. Everything you wrote is safe."
+hint = "Check back in a few minutes."
+
+[unavailable]
+title = "Something we depend on is not answering"
+body = "The wiki is up, but one of the services behind it is not responding. This is usually brief."
+
+[internal]
+title = "That one is on us"
+body = "Something broke on our side while handling your request. It has been logged."
+
+[auth_failed.bad_request]
+title = "Sign-in could not start"
+body = "That sign-in link was not quite right. Start again from the sign-in page and it should work."
+
+[auth_failed.cancelled]
+title = "Sign-in cancelled"
+body = "You cancelled signing in, and nothing was created. Come back whenever you like."
+
+[auth_failed.expired]
+title = "That sign-in link expired"
+body = "Sign-in links last ten minutes, and this one ran out. Start again and you will get a fresh one."
+
+[auth_failed.upstream]
+title = "The sign-in service is having trouble"
+body = "The service you chose to sign in with did not answer properly. Wait a little and try again, or pick another one."

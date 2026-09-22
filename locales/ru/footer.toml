@@ -1,0 +1,12 @@
+# Russian interface messages: footer.
+#
+# Keys here are asked for as footer.<key>. The file name is the prefix.
+
+engine = "Движок NotAnotherWiki v{version}"
+served_from_cache = "из кэша"
+rendered_in = "отрендерено за {ms} мс"
+about = "О проекте"
+privacy = "Конфиденциальность"
+terms = "Условия"
+license = "Лицензия"
+

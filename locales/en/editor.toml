@@ -1,0 +1,18 @@
+# English interface messages: editor.
+#
+# Keys here are asked for as editor.<key>. The file name is the prefix.
+
+new_page = "New page"
+editing = "Editing {page}"
+slug = "Slug"
+title = "Title"
+summary = "Edit summary (optional)"
+minor = "Minor edit"
+body = "Body (Markdown)"
+save = "Save"
+preview = "Preview"
+locked_note = "This page is locked. You can edit it because you are a moderator."
+cheatsheet = "Markdown cheatsheet"
+live_preview = "Live preview"
+live_preview_hint = "Start typing to see the real render."
+

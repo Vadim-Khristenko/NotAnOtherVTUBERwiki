@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND deleted_at IS NULL) AS \"live!\",\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND deleted_at IS NOT NULL) AS \"archived!\",\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND is_locked) AS \"locked!\",\n          (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id\n             WHERE p.wiki_id = $1) AS \"revisions!\",\n          (SELECT count(*) FROM wiki_memberships WHERE wiki_id = $1) AS \"members!\",\n          (SELECT count(*) FROM users) AS \"accounts!\",\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND deleted_at IS NULL\n             AND search_vector IS NULL) AS \"unindexed!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "live!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "archived!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "locked!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "revisions!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "members!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "accounts!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "unindexed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "a29b56b4b61b3f8492649cf1830c9c93d5f57e736a713ec1421e0b43dfe1adbf"
+}

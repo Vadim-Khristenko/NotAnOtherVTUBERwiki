@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"count!\" FROM pages p WHERE p.wiki_id = $1\n           AND ($2::text IS NULL OR lower(p.slug) LIKE $2 OR lower(p.title) LIKE $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "424eff977ac2e1f9845ce5a58f4d62c51f58d37ce901422eae21f210b493a4a5"
+}

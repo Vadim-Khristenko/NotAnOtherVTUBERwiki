@@ -1,0 +1,42 @@
+# Russian interface messages: history.
+#
+# Keys here are asked for as history.<key>. The file name is the prefix.
+
+title = "История страницы {page}"
+crumb = "История"
+compare = "Сравнить выбранные версии"
+column_old = "Старая"
+column_new = "Новая"
+column_when = "Когда"
+column_who = "Кто"
+column_size = "Размер"
+column_summary = "Описание правки"
+column_checked = "Проверено"
+compare_from = "Сравнивать от этой версии"
+compare_to = "Сравнивать с этой версией"
+anonymous = "анонимно"
+no_summary = "без описания"
+minor = "м"
+minor_title = "Помечено как мелкая правка"
+patrolled_title = "Проверено модератором"
+current = "текущая"
+checked = "проверено"
+mark_checked = "Отметить проверенной"
+restored = "(восстановлена <a href=\"/{slug}/rev/{revision}\">более ранняя версия</a>)"
+restore_heading = "Восстановить более раннюю версию"
+restore_hint = "Восстановление создаёт новую версию со старым текстом. Ничего не удаляется, и само восстановление тоже можно отменить."
+restore_pick = "Какую версию восстановить"
+restore_submit = "Восстановить"
+restore_summary = "Восстановлена версия от {when}"
+nothing_to_restore = "У страницы всего одна версия, возвращаться пока не к чему."
+empty = "У этой страницы нет ни одной версии, чего быть не должно. Сообщите об этом, пожалуйста."
+newer = "Новее"
+older = "Старее"
+page_no = "страница {n}"
+
+
+[revisions]
+one = "{n} версия"
+few = "{n} версии"
+many = "{n} версий"
+

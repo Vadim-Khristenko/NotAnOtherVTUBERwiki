@@ -1,0 +1,12 @@
+# English interface messages: footer.
+#
+# Keys here are asked for as footer.<key>. The file name is the prefix.
+
+engine = "NotAnotherWiki engine v{version}"
+served_from_cache = "served from cache"
+rendered_in = "rendered in {ms} ms"
+about = "About"
+privacy = "Privacy"
+terms = "Terms"
+license = "License"
+

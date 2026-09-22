@@ -1,0 +1,7 @@
+# Russian interface messages: notfound.
+#
+# Keys here are asked for as notfound.<key>. The file name is the prefix.
+
+title = "Страница не найдена"
+body = "На {wiki} нет страницы по этому адресу."
+home = "На главную"

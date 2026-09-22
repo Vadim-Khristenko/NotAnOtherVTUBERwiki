@@ -1,21 +1,223 @@
+{#
+  Site chrome. Rendered per request, never cached: it carries who is signed in.
+
+  Wide screens: one row, brand, search, actions.
+  Narrow screens: brand on the left, then a search icon and a menu icon on the
+  right. Each icon opens its own panel, sliding down from under the header.
+
+  **Everything here works with JavaScript off.** The two narrow-screen panels
+  are driven by visually hidden checkboxes and their labels, so they open and
+  close by CSS alone, and the checkboxes stay keyboard focusable. The language
+  menu is a `<details>`, which is a native disclosure. The script at the bottom
+  only adds what a script is good for: Escape to close, focus moved into the
+  panel that opened, one panel at a time, and filtering the language list.
+
+  Capability flags come from the same `Actor` the handlers gate on, so this
+  template cannot offer a control the server will refuse. Bind new links to the
+  matching flag, never to `signed_in`.
+#}
+<a class="skip-link" href="#content">{{ t("nav.skip_to_content") }}</a>
 <header class="site-header">
   <div class="site-header-inner">
-    <a class="site-brand" href="/">{{ wiki_name }}</a>
-    <nav class="site-nav">
-      <a class="nav-link" href="/about">About</a>
-      <button class="theme-toggle" id="theme-toggle" type="button" title="Toggle theme">◑</button>
+    <a class="site-brand" href="/">
+      <span class="site-brand-mark" aria-hidden="true"></span>
+      <span class="site-brand-name">{{ wiki_name }}</span>
+    </a>
+
+    {# The toggles must precede the panels they control: CSS can only reach
+       later siblings. #}
+    <input class="panel-toggle" type="checkbox" id="search-toggle"
+           aria-controls="site-search" />
+    <label class="icon-button search-button" for="search-toggle"
+           title="{{ t('nav.search') }}">
+      <svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>
+      <span class="visually-hidden">{{ t("nav.search") }}</span>
+    </label>
+
+    <input class="panel-toggle" type="checkbox" id="menu-toggle"
+           aria-controls="site-nav" />
+    <label class="icon-button menu-button" for="menu-toggle"
+           title="{{ t('nav.menu') }}">
+      <svg class="icon icon-open" aria-hidden="true"><use href="#i-menu-2" /></svg>
+      <svg class="icon icon-close" aria-hidden="true"><use href="#i-x" /></svg>
+      <span class="visually-hidden">{{ t("nav.menu") }}</span>
+    </label>
+
+    <form class="header-search" id="site-search" method="get" action="/search" role="search">
+      <label class="visually-hidden" for="header-q">{{ t("nav.search_this", wiki=wiki_name) }}</label>
+      <svg class="icon header-search-icon" aria-hidden="true"><use href="#i-search" /></svg>
+      <input id="header-q" name="q" type="search" placeholder="{{ t('nav.search_placeholder') }}"
+             maxlength="200" autocomplete="off"
+             value="{% if query is defined %}{{ query }}{% endif %}" />
+      <button type="submit" class="header-search-go">{{ t("nav.search") }}</button>
+    </form>
+
+    <nav class="site-nav" id="site-nav" aria-label="{{ t('nav.main') }}">
+      {% if can_create is defined and can_create %}
+      <a class="nav-link" href="/new">
+        <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
+        <span>{{ t("nav.new_page") }}</span>
+      </a>
+      {% endif %}
+      {% if can_admin is defined and can_admin %}
+      <a class="nav-link" href="/admin">
+        <svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>
+        <span>{{ t("nav.admin") }}</span>
+      </a>
+      {% endif %}
+      <a class="nav-link" href="/about">
+        <svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>
+        <span>{{ t("nav.about") }}</span>
+      </a>
+
+      {% if language_options is defined and language_options | length > 1 %}
+      {#
+        Language menu. A dropdown rather than a row of codes, because a row of
+        codes stops working somewhere past five languages, and this engine is
+        meant to carry many more. Each entry is a plain link to `?lang=`, so a
+        choice is one click and needs no script. With a script and enough
+        languages, a filter field appears at the top of the list.
+      #}
+      <details class="lang-menu">
+        <summary class="nav-link lang-summary" title="{{ t('nav.language') }}">
+          <svg class="icon" aria-hidden="true"><use href="#i-world" /></svg>
+          {% for option in language_options %}{% if option.current %}<span>{{ option.native_name }}</span>{% endif %}{% endfor %}
+          <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron-down" /></svg>
+        </summary>
+        <div class="lang-panel">
+          <input class="lang-filter field-input" type="search" hidden
+                 placeholder="{{ t('nav.language_filter') }}"
+                 aria-label="{{ t('nav.language_filter') }}" />
+          <ul class="lang-list" role="list">
+            {% for option in language_options %}
+            <li>
+              {% if option.current %}
+              <span class="lang-option lang-option-current" aria-current="true" lang="{{ option.code }}">
+                {{ option.native_name }}
+                <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+              </span>
+              {% else %}
+              <a class="lang-option" href="?lang={{ option.code }}" lang="{{ option.code }}"
+                 hreflang="{{ option.code }}" rel="nofollow">{{ option.native_name }}</a>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          <p class="lang-empty muted-cell" hidden>{{ t("nav.language_none") }}</p>
+        </div>
+      </details>
+      {% endif %}
+
+      <button class="nav-link theme-toggle" id="theme-toggle" type="button"
+              title="{{ t('nav.toggle_theme') }}">
+        <svg class="icon icon-sun" aria-hidden="true"><use href="#i-sun" /></svg>
+        <svg class="icon icon-moon" aria-hidden="true"><use href="#i-moon" /></svg>
+        <span class="nav-drawer-label">{{ t("nav.toggle_theme") }}</span>
+      </button>
+
+      {% if signed_in is defined and signed_in %}
+      <div class="nav-account">
+        <a class="nav-link nav-user" href="/user/{{ username }}">
+          <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>
+          <span>{{ username }}</span>
+        </a>
+        {# Signing out changes state, so it is a POST, not a link. #}
+        <form class="inline-form" method="post" action="/logout">
+          <button class="nav-link nav-signout" type="submit" title="{{ t('nav.sign_out') }}">
+            <svg class="icon" aria-hidden="true"><use href="#i-logout" /></svg>
+            <span class="nav-drawer-label">{{ t("nav.sign_out") }}</span>
+          </button>
+        </form>
+      </div>
+      {% else %}
+      <a class="nav-link nav-signin" href="/login">
+        <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>
+        <span>{{ t("nav.sign_in") }}</span>
+      </a>
+      {% endif %}
     </nav>
   </div>
 </header>
 <script>
 (function () {
-  var btn = document.getElementById("theme-toggle");
-  if (!btn) return;
-  btn.addEventListener("click", function () {
-    var root = document.documentElement;
-    var next = root.dataset.theme === "dark" ? "light" : "dark";
-    root.dataset.theme = next;
-    try { localStorage.setItem("naw-theme", next); } catch (e) {}
+  var root = document.documentElement;
+
+  // Theme. `auto` follows the system, so the first press resolves it to the
+  // opposite of what is on screen rather than to the opposite of "auto".
+  var themeBtn = document.getElementById("theme-toggle");
+  if (themeBtn) {
+    themeBtn.addEventListener("click", function () {
+      var current = root.dataset.theme;
+      if (current !== "dark" && current !== "light") {
+        current = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      }
+      var next = current === "dark" ? "light" : "dark";
+      root.dataset.theme = next;
+      try { localStorage.setItem("naw-theme", next); } catch (e) {}
+    });
+  }
+
+  // Narrow-screen panels. The checkboxes already open and close them; this only
+  // keeps one open at a time, moves focus in, and closes on Escape.
+  var search = document.getElementById("search-toggle");
+  var menu = document.getElementById("menu-toggle");
+  function sync(box) {
+    if (box) box.setAttribute("aria-expanded", box.checked ? "true" : "false");
+  }
+  [search, menu].forEach(function (box) {
+    if (!box) return;
+    sync(box);
+    box.addEventListener("change", function () {
+      var other = box === search ? menu : search;
+      if (box.checked && other && other.checked) { other.checked = false; sync(other); }
+      sync(box);
+      if (box === search && box.checked) {
+        var field = document.getElementById("header-q");
+        if (field) setTimeout(function () { field.focus(); }, 60);
+      }
+    });
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape") return;
+    [search, menu].forEach(function (box) {
+      if (box && box.checked) { box.checked = false; sync(box); box.focus(); }
+    });
+    document.querySelectorAll("details.lang-menu[open]").forEach(function (d) {
+      d.open = false;
+      var s = d.querySelector("summary");
+      if (s) s.focus();
+    });
+  });
+
+  // Language menu: close when clicking elsewhere, and filter long lists.
+  document.addEventListener("click", function (ev) {
+    document.querySelectorAll("details.lang-menu[open]").forEach(function (d) {
+      if (!d.contains(ev.target)) d.open = false;
+    });
+  });
+  document.querySelectorAll("details.lang-menu").forEach(function (d) {
+    var filter = d.querySelector(".lang-filter");
+    var items = Array.prototype.slice.call(d.querySelectorAll(".lang-list li"));
+    var empty = d.querySelector(".lang-empty");
+    // A filter over five entries is ceremony. Past that it is the only sane way
+    // to find one language among forty.
+    if (!filter || items.length <= 5) return;
+    filter.hidden = false;
+    d.addEventListener("toggle", function () {
+      if (d.open) setTimeout(function () { filter.focus(); }, 30);
+    });
+    filter.addEventListener("input", function () {
+      var q = filter.value.trim().toLowerCase();
+      var shown = 0;
+      items.forEach(function (li) {
+        var text = li.textContent.toLowerCase();
+        var code = (li.firstElementChild && li.firstElementChild.getAttribute("lang")) || "";
+        var hit = !q || text.indexOf(q) !== -1 || code.indexOf(q) === 0;
+        li.hidden = !hit;
+        if (hit) shown++;
+      });
+      if (empty) empty.hidden = shown !== 0;
+    });
   });
 })();
 </script>

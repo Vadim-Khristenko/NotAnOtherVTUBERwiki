@@ -1,0 +1,22 @@
+# Russian interface messages: diff.
+#
+# Keys here are asked for as diff.<key>. The file name is the prefix.
+
+title = "Изменения страницы {page}"
+crumb = "Изменения"
+old = "Старая"
+new = "Новая"
+current_suffix = " · текущая"
+identical = "У этих двух версий одинаковый текст."
+too_large = "Изменение слишком большое, чтобы показать целиком. Ниже его начало, а числа выше относятся ко всему изменению."
+column_line = "Строка"
+back = "Назад к истории"
+edit_page = "Править страницу"
+unchanged = "{n} строк без изменений"
+
+
+[lines]
+one = "строка"
+few = "строки"
+many = "строк"
+

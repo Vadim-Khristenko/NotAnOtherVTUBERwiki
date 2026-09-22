@@ -1,24 +1,32 @@
 //! NotAnotherWiki Engine command line entry point.
 
+mod grant;
 mod seed;
 
 use std::process::ExitCode;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "naw=info,tower_http=info".into()),
-        )
-        .init();
+    // .env before logging so NAW_LOG_* can live there, and logging before
+    // config so a broken config.toml is reported through the log rather than
+    // silently losing the reason.
+    dotenvy::dotenv().ok();
+    let log = naw_core::logging::init();
+    if log.trace {
+        tracing::warn!(
+            "NAW_LOG_TRACE is on: request headers are written to the log. \
+             Credentials are redacted, but the log is still more sensitive than usual."
+        );
+    }
 
     match std::env::args().nth(1).as_deref() {
         Some("serve") => serve().await,
         Some("migrate") => migrate().await,
         Some("seed") => seed_command(std::env::args().skip(2).collect()).await,
+        Some("grant") => grant_command(std::env::args().skip(2).collect()).await,
+        Some("reindex") => reindex_command(std::env::args().skip(2).collect()).await,
         _ => {
-            eprintln!("usage: naw <serve|migrate|seed>");
+            eprintln!("usage: naw <serve|migrate|seed|grant|reindex>");
             ExitCode::FAILURE
         }
     }
@@ -153,13 +161,119 @@ async fn seed_command(raw: Vec<String>) -> ExitCode {
         community,
         aliases,
     };
-    match seed::run(&pool, &config.skin_dir, &seed_dir, &opts).await {
+    match seed::run(&pool, &seed_dir, &opts).await {
         Ok(()) => {
             tracing::info!("seed applied");
             ExitCode::SUCCESS
         }
         Err(err) => {
             eprintln!("seed error: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Opens the pool, or prints why it could not and returns the failure code.
+/// Every non-serve command needs the same six lines otherwise.
+async fn pool_or_exit() -> Result<sqlx::PgPool, ExitCode> {
+    let config = match load_config() {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("config error: {err}");
+            return Err(ExitCode::FAILURE);
+        }
+    };
+    match naw_core::db::connect(&config.database_url).await {
+        Ok(pool) => Ok(pool),
+        Err(err) => {
+            eprintln!("database error: {err}");
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
+async fn grant_command(raw: Vec<String>) -> ExitCode {
+    let args = match grant::parse(&raw) {
+        Ok(args) => args,
+        Err(err) => {
+            eprintln!("{err}\n\n{}", grant::USAGE);
+            return ExitCode::FAILURE;
+        }
+    };
+    let pool = match pool_or_exit().await {
+        Ok(pool) => pool,
+        Err(code) => return code,
+    };
+    match grant::run(&pool, &args).await {
+        Ok(message) => {
+            // Printed rather than logged: somebody typed this at a prompt and
+            // is waiting to read the answer.
+            println!("{message}");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("grant error: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+const REINDEX_USAGE: &str =
+    "usage: naw reindex [--wiki SLUG]\n  with no --wiki, rebuilds the search index for every wiki";
+
+/// Rebuilds the search index. Needed after a bulk import, after a locale
+/// change, and after any change to the weights in `naw_core::search`.
+async fn reindex_command(raw: Vec<String>) -> ExitCode {
+    let mut slug: Option<String> = None;
+    let mut i = 0;
+    while i < raw.len() {
+        match raw[i].as_str() {
+            "--wiki" => match raw.get(i + 1) {
+                Some(value) if !value.starts_with("--") => {
+                    slug = Some(value.clone());
+                    i += 2;
+                }
+                _ => {
+                    eprintln!("--wiki needs a value\n\n{REINDEX_USAGE}");
+                    return ExitCode::FAILURE;
+                }
+            },
+            other => {
+                eprintln!("unknown flag {other}\n\n{REINDEX_USAGE}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    let pool = match pool_or_exit().await {
+        Ok(pool) => pool,
+        Err(code) => return code,
+    };
+    let wiki_id = match &slug {
+        Some(slug) => {
+            match sqlx::query!("SELECT id FROM wikis WHERE slug = $1", slug)
+                .fetch_optional(&pool)
+                .await
+            {
+                Ok(Some(row)) => Some(row.id),
+                Ok(None) => {
+                    eprintln!("no wiki with slug {slug}");
+                    return ExitCode::FAILURE;
+                }
+                Err(err) => {
+                    eprintln!("database error: {err}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+        None => None,
+    };
+    match naw_core::search::reindex(&pool, wiki_id).await {
+        Ok(count) => {
+            println!("reindexed {count} page(s)");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("reindex error: {err}");
             ExitCode::FAILURE
         }
     }

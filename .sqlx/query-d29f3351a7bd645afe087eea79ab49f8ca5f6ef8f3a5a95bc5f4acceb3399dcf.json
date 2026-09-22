@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE wikis SET name = $2, default_locale = $3, settings = $4 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d29f3351a7bd645afe087eea79ab49f8ca5f6ef8f3a5a95bc5f4acceb3399dcf"
+}

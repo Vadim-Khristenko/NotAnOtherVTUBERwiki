@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE revisions SET is_patrolled = true\n         WHERE id = $1 AND page_id = $2 AND NOT is_patrolled",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "29612a5309d4f5bfaa1ba4b51098c1e8f845059c8b811cfffa76451838046c83"
+}

@@ -1,0 +1,21 @@
+# Russian interface messages: search.
+#
+# Keys here are asked for as search.<key>. The file name is the prefix.
+
+heading = "Поиск"
+label = "Что вы ищете?"
+placeholder = "Филиан, лор, архив стримов…"
+submit = "Искать"
+hint = "Слова приводятся к основе, поэтому <code>стримы</code> находит <code>стрим</code>. Фразу в кавычках ищем целиком, <code>or</code> между словами ищет любое из них, а <code>-</code> перед словом его исключает. Заголовки ещё и сопоставляются по похожести, так что опечатка обычно всё равно попадает."
+nothing = "По запросу <strong>{query}</strong> ничего не нашлось."
+try_again = "Попробуйте меньше слов или слово из заголовка."
+write_it = "Ничего подходящего нет? <a href=\"/new\">Напишите страницу</a>."
+title_for = "Поиск: {query}"
+best_only = ", показаны самые подходящие"
+
+
+[results]
+one = "{n} результат по запросу <strong>{query}</strong>"
+few = "{n} результата по запросу <strong>{query}</strong>"
+many = "{n} результатов по запросу <strong>{query}</strong>"
+

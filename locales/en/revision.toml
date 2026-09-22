@@ -1,0 +1,12 @@
+# English interface messages: revision.
+#
+# Keys here are asked for as revision.<key>. The file name is the prefix.
+
+old_banner = "<strong>This is an old revision</strong> of <a href=\"/{slug}\">{page}</a>, saved {when} by {who}."
+anonymous_editor = "an anonymous editor"
+read_current = "Read the current version"
+what_changed = "See what changed since"
+all_revisions = "All revisions"
+suffix = "{page} (old revision)"
+edit_summary = "The editor noted: {summary}"
+

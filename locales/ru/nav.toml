@@ -1,0 +1,24 @@
+# Russian interface messages: nav.
+#
+# Keys here are asked for as nav.<key>. The file name is the prefix.
+
+search = "Поиск"
+search_placeholder = "Поиск"
+search_this = "Поиск по {wiki}"
+new_page = "Новая страница"
+admin = "Админка"
+about = "О проекте"
+sign_in = "Войти"
+sign_out = "Выйти"
+signed_in_as = "Вы вошли как {name}"
+toggle_theme = "Сменить тему"
+read = "Читать"
+history = "История"
+go = "Найти"
+language = "Язык интерфейса"
+menu = "Меню"
+main = "Основная навигация"
+skip_to_content = "Перейти к содержимому"
+
+language_filter = "Найти язык"
+language_none = "Такого языка нет."

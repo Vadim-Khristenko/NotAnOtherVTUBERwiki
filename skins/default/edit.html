@@ -1,18 +1,34 @@
 {% extends "layout.html" %}
 {% block body %}
 <h1>{{ form_title }}</h1>
+{% if not show_slug and slug %}
+<nav class="crumbs"><a href="/{{ slug }}">{{ t("nav.read") }}</a> ·
+  <a href="/{{ slug }}/history">{{ t("nav.history") }}</a></nav>
+{% endif %}
+{% if locked is defined and locked %}
+<p class="notice notice-warn" role="status">
+  {{ t("editor.locked_note") }}
+</p>
+{% endif %}
 <form method="post" action="{{ form_action }}">
+{#
+  The revision this form was built from. The server compares it with the
+  current one and refuses the save if somebody else got there first, which is
+  the difference between two people editing and one person's work vanishing.
+#}
+<input type="hidden" name="base_revision" value="{{ base_revision }}" />
 {% if show_slug %}
-<label class="field">Slug
+<label class="field">{{ t("editor.slug") }}
 <input class="field-input" name="slug" value="{{ slug }}" maxlength="100" required />
 </label>
 {% endif %}
-<label class="field">Title
+<label class="field">{{ t("editor.title") }}
 <input class="field-input" name="title" value="{{ title_value }}" maxlength="200" required />
 </label>
-<label class="field">Summary (optional)
-<input class="field-input" name="summary" value="" maxlength="200" />
+<label class="field">{{ t("editor.summary") }}
+<input class="field-input" name="summary" value="{{ summary_value }}" maxlength="200" />
 </label>
+<label class="check"><input type="checkbox" name="minor" value="1" /> {{ t("editor.minor") }}</label>
 <div class="toolbar" role="toolbar" aria-label="Formatting">
 <button type="button" data-wrap="**" title="Bold"><b>B</b></button>
 <button type="button" data-wrap="*" title="Italic"><i>I</i></button>
@@ -34,12 +50,12 @@
 <button type="button" data-prefix="- " title="List">&bull;</button>
 <button type="button" data-footnote title="Footnote">[^]</button>
 </div>
-<label class="field">Body (Markdown)
+<label class="field">{{ t("editor.body") }}
 <textarea class="field-body" id="body-md" name="body_md" rows="20" required>{{ body_md }}</textarea>
 </label>
 <div class="form-actions">
-<button class="button-save" type="submit">Save</button>
-<button class="button-preview" type="submit" formaction="/preview" formtarget="_blank">Preview</button>
+<button class="button-save" type="submit">{{ t("editor.save") }}</button>
+<button class="button-preview" type="submit" formaction="/preview" formtarget="_blank">{{ t("editor.preview") }}</button>
 </div>
 </form>
 <div class="selbar" id="selbar" hidden>
@@ -49,11 +65,11 @@
 <button type="button" data-link title="Link">link</button>
 </div>
 <div class="live-preview">
-<h2>Live preview</h2>
-<div id="live-preview" class="preview-body"><p>Start typing to see the real render.</p></div>
+<h2>{{ t("editor.live_preview") }}</h2>
+<div id="live-preview" class="preview-body"><p>{{ t("editor.live_preview_hint") }}</p></div>
 </div>
 <details class="syntax-help">
-<summary>Markdown cheatsheet</summary>
+<summary>{{ t("editor.cheatsheet") }}</summary>
 <ul>
 <li><code># H1</code> … <code>###### H6</code>, optional attrs at the end: <code>## Title {id="x" class="y"}</code></li>
 <li><code>**bold**</code>, <code>*italic*</code>, <code>__italic__</code>, <code>~~strike~~</code>, <code>++underline++</code>, <code>==mark==</code>, <code>==red|hot==</code> (red orange yellow green blue violet pink gray), <code>||spoiler||</code>, <code>`code`</code></li>

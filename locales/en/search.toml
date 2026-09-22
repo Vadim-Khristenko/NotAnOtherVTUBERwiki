@@ -1,0 +1,20 @@
+# English interface messages: search.
+#
+# Keys here are asked for as search.<key>. The file name is the prefix.
+
+heading = "Search"
+label = "What are you looking for?"
+placeholder = "Filian, lore, stream archive…"
+submit = "Search"
+hint = "Whole words are stemmed, so <code>streaming</code> finds <code>stream</code>. Quote a phrase to keep it together, put <code>or</code> between alternatives, and prefix a word with <code>-</code> to exclude it. Titles also match on resemblance, so a typo usually still lands."
+nothing = "Nothing matched <strong>{query}</strong>."
+try_again = "Try fewer words, or a word from the title."
+write_it = "Nothing here covers it yet? <a href=\"/new\">Write the page</a>."
+title_for = "Search: {query}"
+best_only = ", showing the best ones"
+
+
+[results]
+one = "{n} result for <strong>{query}</strong>"
+other = "{n} results for <strong>{query}</strong>"
+

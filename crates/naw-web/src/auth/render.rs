@@ -39,122 +39,33 @@ fn html(status: StatusCode, body: String) -> Response {
         .into_response()
 }
 
-/// How a system page reads: which colour the notice takes.
-#[derive(Clone, Copy)]
-pub enum Tone {
-    /// Used by the email verification and settings confirmations, which land
-    /// with the settings pages. No auth failure is ever an `Ok`.
-    #[allow(dead_code)]
-    Ok,
-    Warn,
-    Error,
-}
-
-impl Tone {
-    fn as_str(self) -> &'static str {
-        match self {
-            Tone::Ok => "ok",
-            Tone::Warn => "warn",
-            Tone::Error => "error",
-        }
-    }
-}
-
-pub struct Message<'a> {
-    pub status: StatusCode,
-    pub heading: &'a str,
-    pub body: &'a str,
-    pub tone: Tone,
-    pub back_href: &'a str,
-    pub back_label: &'a str,
-}
-
-/// A skinned system page. Used for auth failures, verification results and
-/// anything else that is one sentence and a way out.
-pub fn message(state: &AppState, chrome: &Chrome, msg: &Message<'_>) -> Response {
-    let render = || -> Result<String, AppError> {
-        let template = state
-            .templates
-            .get_template("message.html")
-            .map_err(template_error)?;
-        template
-            .render(minijinja::context! {
-                lang => &chrome.lang,
-                wiki_name => &chrome.wiki_name,
-                title => msg.heading,
-                version => ENGINE_VERSION,
-                heading => msg.heading,
-                message => msg.body,
-                tone => msg.tone.as_str(),
-                back_href => msg.back_href,
-                back_label => msg.back_label,
-            })
-            .map_err(template_error)
-    };
-    match render() {
-        Ok(body) => html(msg.status, body),
-        // A broken template must not swallow the status the caller chose, so
-        // fall back to plain text rather than to a 500 page.
-        Err(_) => (
-            msg.status,
-            [(header::CACHE_CONTROL, "no-store")],
-            msg.body.to_string(),
-        )
-            .into_response(),
-    }
-}
-
-/// Turns an `AuthError` into a skinned page.
+/// Turns an `AuthError` into a response the error middleware renders as the
+/// `auth_failed` page, in the reader's language and the active skin.
 ///
-/// `AuthError` also implements `IntoResponse` on its own, which stays as the
-/// unskinned fallback for the few places that have no `AppState` in reach.
-/// Prefer this whenever a handler can supply one.
-pub fn auth_error(state: &AppState, chrome: &Chrome, err: &AuthError) -> Response {
-    let (status, heading, body, tone) = match err {
+/// Each failure keeps its own wording through a variant: a cancelled flow is not
+/// an outage, and telling somebody who pressed Cancel that a service is down
+/// would be both wrong and alarming. The page says something safe; the log keeps
+/// what actually failed.
+///
+/// A cancelled sign-in stays a 200, because nothing went wrong. The marker is
+/// what makes it a page anyway.
+pub fn auth_error(err: &AuthError) -> Response {
+    use crate::errors::{Kind, MarkExt};
+    let (status, variant) = match err {
         AuthError::BadRequest(reason) => {
             tracing::warn!(reason, "auth bad request");
-            (
-                StatusCode::BAD_REQUEST,
-                "Sign-in could not start",
-                "That link wasn't right. Start sign-in over and you should be good.",
-                Tone::Error,
-            )
+            (StatusCode::BAD_REQUEST, "bad_request")
         }
-        AuthError::Cancelled => (
-            StatusCode::OK,
-            "Sign-in cancelled",
-            "You cancelled sign-in, no harm done. Come back whenever you're ready.",
-            Tone::Warn,
-        ),
-        AuthError::StateExpired => (
-            StatusCode::BAD_REQUEST,
-            "That sign-in expired",
-            "That took too long. Sign-in links only last ten minutes, so start over and it should work.",
-            Tone::Warn,
-        ),
+        AuthError::Cancelled => (StatusCode::OK, "cancelled"),
+        AuthError::StateExpired => (StatusCode::BAD_REQUEST, "expired"),
         AuthError::Upstream(detail) => {
             tracing::error!(detail = %detail, "auth upstream failure");
-            (
-                StatusCode::BAD_GATEWAY,
-                // "identity provider" is our word, not a reader's.
-                "That sign-in service is down",
-                "They're having trouble right now. Wait a bit and try again.",
-                Tone::Error,
-            )
+            (StatusCode::BAD_GATEWAY, "upstream")
         }
     };
-    message(
-        state,
-        chrome,
-        &Message {
-            status,
-            heading,
-            body,
-            tone,
-            back_href: "/login",
-            back_label: "Back to sign in",
-        },
-    )
+    // No body: the reason shown to the reader comes from the language pack, and
+    // an upstream detail is exactly the kind of text that must not reach the page.
+    status.marked_as(Kind::AuthFailed, variant)
 }
 
 /// The `/login` page, with one button per configured provider.
@@ -169,8 +80,9 @@ pub fn login(state: &AppState, chrome: &Chrome, next: &str, error: Option<&str>)
         })
         .collect();
     let render = || -> Result<String, AppError> {
-        let template = state
-            .templates
+        let skin = state.skin.current();
+        let template = skin
+            .env
             .get_template("login.html")
             .map_err(template_error)?;
         template
@@ -192,59 +104,57 @@ pub fn login(state: &AppState, chrome: &Chrome, next: &str, error: Option<&str>)
     }
 }
 
-/// The 404 every auth route uses when it must not admit a route exists.
-pub fn not_found(state: &AppState, chrome: &Chrome) -> Response {
-    message(
-        state,
-        chrome,
-        &Message {
-            status: StatusCode::NOT_FOUND,
-            heading: "Not found",
-            body: "Nothing here. Check the link and try again.",
-            tone: Tone::Warn,
-            back_href: "/",
-            back_label: "Back to the wiki",
-        },
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::errors::{Kind, Marked};
 
-    #[test]
-    fn tones_match_the_css_class_names() {
-        // layout.html defines .notice-ok, .notice-warn and .notice-error.
-        assert_eq!(Tone::Ok.as_str(), "ok");
-        assert_eq!(Tone::Warn.as_str(), "warn");
-        assert_eq!(Tone::Error.as_str(), "error");
+    fn marker(response: &Response) -> Option<Marked> {
+        response.extensions().get::<Marked>().copied()
     }
 
     #[test]
-    fn cancelling_is_not_reported_as_a_failure() {
-        // A user who pressed cancel did nothing wrong, so the page must not
-        // read like an error and must not carry a 4xx.
-        let err = AuthError::Cancelled;
-        let status = match &err {
-            AuthError::Cancelled => StatusCode::OK,
-            _ => StatusCode::BAD_REQUEST,
-        };
-        assert_eq!(status, StatusCode::OK);
+    fn cancelling_is_a_page_and_not_a_failure() {
+        // A reader who pressed Cancel did nothing wrong: no 4xx, but still a page,
+        // which is what the marker is for.
+        let response = auth_error(&AuthError::Cancelled);
+        assert_eq!(response.status(), StatusCode::OK);
+        let mark = marker(&response).expect("marked");
+        assert_eq!(mark.kind, Kind::AuthFailed);
+        assert_eq!(mark.variant, Some("cancelled"));
     }
 
     #[test]
-    fn upstream_detail_never_becomes_page_copy() {
-        // The detail string is for the log. Whatever a provider says about its
-        // own internals must not end up rendered to a stranger.
+    fn each_failure_keeps_its_own_wording_and_status() {
+        let cases = [
+            (
+                AuthError::BadRequest("x"),
+                StatusCode::BAD_REQUEST,
+                "bad_request",
+            ),
+            (AuthError::StateExpired, StatusCode::BAD_REQUEST, "expired"),
+            (
+                AuthError::Upstream("down".to_string()),
+                StatusCode::BAD_GATEWAY,
+                "upstream",
+            ),
+        ];
+        for (err, status, variant) in cases {
+            let response = auth_error(&err);
+            assert_eq!(response.status(), status, "{variant}");
+            assert_eq!(marker(&response).and_then(|m| m.variant), Some(variant));
+        }
+    }
+
+    #[tokio::test]
+    async fn an_upstream_detail_never_reaches_the_body() {
+        // Whatever a provider says about its own internals is for the log. The
+        // response carries no body at all; the page text comes from the pack.
         let secretish = "token=abc123 leaked from provider";
-        let err = AuthError::Upstream(secretish.to_string());
-        let AuthError::Upstream(detail) = &err else {
-            panic!("shape changed");
-        };
-        assert_eq!(detail, secretish);
-        // The copy chosen for this variant is fixed and mentions nothing.
-        let page_copy = "They're having trouble right now. Wait a bit and try again.";
-        assert!(!page_copy.contains("token"));
-        assert!(!page_copy.contains(secretish));
+        let response = auth_error(&AuthError::Upstream(secretish.to_string()));
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .expect("body");
+        assert!(body.is_empty(), "{body:?}");
     }
 }

@@ -1,0 +1,41 @@
+# English interface messages: history.
+#
+# Keys here are asked for as history.<key>. The file name is the prefix.
+
+title = "History of {page}"
+crumb = "History"
+compare = "Compare the selected revisions"
+column_old = "Old"
+column_new = "New"
+column_when = "When"
+column_who = "Who"
+column_size = "Size"
+column_summary = "Edit summary"
+column_checked = "Checked"
+compare_from = "Compare from this revision"
+compare_to = "Compare to this revision"
+anonymous = "anonymous"
+no_summary = "no summary"
+minor = "m"
+minor_title = "Marked as a minor edit"
+patrolled_title = "Checked by a moderator"
+current = "current"
+checked = "checked"
+mark_checked = "Mark checked"
+restored = "(restored <a href=\"/{slug}/rev/{revision}\">an earlier revision</a>)"
+restore_heading = "Restore an earlier revision"
+restore_hint = "Restoring writes a new revision with the old text. Nothing is erased, and the restore can itself be undone."
+restore_pick = "Revision to restore"
+restore_submit = "Restore it"
+restore_summary = "Restored the revision from {when}"
+nothing_to_restore = "This page has only one revision, so there is nothing earlier to go back to."
+empty = "This page has no recorded revisions, which should be impossible. Please report it."
+newer = "Newer"
+older = "Older"
+page_no = "page {n}"
+
+
+[revisions]
+one = "{n} revision"
+other = "{n} revisions"
+

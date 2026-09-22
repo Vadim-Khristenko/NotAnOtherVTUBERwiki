@@ -1,0 +1,136 @@
+{% extends "layout.html" %}
+{#
+  Revision history. Two radio columns pick the pair to compare, which is the one
+  interaction pattern for this that works with no JavaScript at all: the radios
+  are plain form fields and the submit is a GET to /{slug}/diff.
+
+  Revert is a POST with the revision id, gated server side on edit rights.
+#}
+{% block body %}
+<nav class="crumbs"><a href="/{{ slug }}">{{ page_title }}</a> / {{ t("history.crumb") }}</nav>
+<h1>{{ t("history.title", page=page_title) }}</h1>
+<p class="history-meta">
+  {{ tn("history.revisions", total) }}
+  {%- if locked %} · <strong>{{ t("page.locked") }}</strong>{% endif %}
+</p>
+
+{% if revisions %}
+<form method="get" action="/{{ slug }}/diff">
+  {# Comparing needs two revisions. With one, the button could only fail. #}
+  {% if total > 1 %}
+  <div class="form-actions history-actions">
+    <button class="button-save" type="submit">
+      <svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>
+      {{ t("history.compare") }}
+    </button>
+  </div>
+  {% endif %}
+  <table class="history-table">
+    <thead>
+      <tr>
+        <th scope="col" class="history-pick">{{ t("history.column_old") }}</th>
+        <th scope="col" class="history-pick">{{ t("history.column_new") }}</th>
+        <th scope="col">{{ t("history.column_when") }}</th>
+        <th scope="col">{{ t("history.column_who") }}</th>
+        <th scope="col">{{ t("history.column_size") }}</th>
+        <th scope="col">{{ t("history.column_summary") }}</th>
+        {% if may_patrol %}<th scope="col">{{ t("history.column_checked") }}</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for rev in revisions %}
+      <tr{% if rev.is_current %} class="history-current"{% endif %}>
+        <td class="history-pick" data-label="{{ t('history.column_old') }}">
+          <input type="radio" name="from" value="{{ rev.id }}"
+                 aria-label="{{ t('history.compare_from') }}"
+                 {% if loop.index == 2 %}checked{% endif %} />
+        </td>
+        <td class="history-pick" data-label="{{ t('history.column_new') }}">
+          <input type="radio" name="to" value="{{ rev.id }}"
+                 aria-label="{{ t('history.compare_to') }}"
+                 {% if loop.first %}checked{% endif %} />
+        </td>
+        <td class="history-when" data-label="{{ t('history.column_when') }}"><a href="/{{ slug }}/rev/{{ rev.id }}">{{ rev.created_at }}</a></td>
+        <td class="history-who" data-label="{{ t('history.column_who') }}">
+          {%- if rev.author %}{{ rev.author }}{% else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif -%}
+        </td>
+        <td class="history-bytes" data-label="{{ t('history.column_size') }}">{{ rev.bytes }}</td>
+        <td class="history-summary" data-label="{{ t('history.column_summary') }}">
+          {%- if rev.is_minor %}<span class="tag tag-minor" title="{{ t('history.minor_title') }}">{{ t("history.minor") }}</span> {% endif -%}
+          {%- if rev.is_patrolled %}<span class="tag tag-patrolled" title="{{ t('history.patrolled_title') }}">✓</span> {% endif -%}
+          {%- if rev.summary %}{{ rev.summary }}{% else %}<span class="muted-cell">{{ t("history.no_summary") }}</span>{% endif -%}
+          {%- if rev.restored_from %}
+            <span class="muted-cell">{{ t("history.restored", slug=slug, revision=rev.restored_from) }}</span>
+          {%- endif -%}
+          {%- if rev.is_current %} <span class="tag tag-current">{{ t("history.current") }}</span>{% endif -%}
+        </td>
+        {% if may_patrol %}
+        <td class="history-patrol" data-label="{{ t('history.column_checked') }}">
+          {% if rev.is_patrolled %}
+            <span class="muted-cell">{{ t("history.checked") }}</span>
+          {% else %}
+          {# A nested form would be invalid HTML inside the compare form, so the
+             patrol button posts through the form attribute instead. #}
+          <button class="button-preview" type="submit"
+                  form="patrol-{{ rev.id }}">{{ t("history.mark_checked") }}</button>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</form>
+
+{% if may_patrol %}
+{#
+  One form per unchecked revision, outside the compare form because HTML forbids
+  nesting them. The buttons in the table above point here by id.
+#}
+{% for rev in revisions %}
+  {% if not rev.is_patrolled %}
+  <form id="patrol-{{ rev.id }}" method="post" action="/{{ slug }}/patrol" hidden>
+    <input type="hidden" name="revision" value="{{ rev.id }}" />
+  </form>
+  {% endif %}
+{% endfor %}
+{% endif %}
+
+{% if may_edit and not has_restorable %}
+<section class="settings-section">
+  <h2>{{ t("history.restore_heading") }}</h2>
+  <p class="notice">{{ t("history.nothing_to_restore") }}</p>
+</section>
+{% elif may_edit %}
+<section class="settings-section">
+  <h2>{{ t("history.restore_heading") }}</h2>
+  <p class="muted-cell">{{ t("history.restore_hint") }}</p>
+  <form method="post" action="/{{ slug }}/revert">
+    <label class="field" for="revert-pick">{{ t("history.restore_pick") }}
+      <select class="field-input" id="revert-pick" name="revision" required>
+        {% for rev in revisions %}
+          {% if not rev.is_current %}
+          <option value="{{ rev.id }}">{{ rev.created_at }} ·
+            {%- if rev.author %} {{ rev.author }}{% else %} {{ t("history.anonymous") }}{% endif -%}
+            {%- if rev.summary %} · {{ rev.summary }}{% endif -%}
+          </option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <div class="form-actions">
+      <button class="button-preview" type="submit">{{ t("history.restore_submit") }}</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<nav class="pager">
+  {% if has_prev %}<a href="/{{ slug }}/history?page={{ prev_page }}">{{ t("history.newer") }}</a>{% endif %}
+  <span class="muted-cell">{{ t("history.page_no", n=page_no) }}</span>
+  {% if has_next %}<a href="/{{ slug }}/history?page={{ next_page }}">{{ t("history.older") }}</a>{% endif %}
+</nav>
+{% else %}
+<p class="notice">{{ t("history.empty") }}</p>
+{% endif %}
+{% endblock %}

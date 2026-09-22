@@ -30,6 +30,10 @@ pub struct CurrentUser {
     pub email: Option<String>,
     pub email_verified: bool,
     pub global_role: String,
+    /// Preferred interface language. Outranks `Accept-Language`, because
+    /// somebody who picked a language in their settings means it, and their
+    /// browser may well be somebody else's browser.
+    pub locale: String,
 }
 
 /// Builds the session cookie attributes: Path=/, HttpOnly, SameSite=Lax,
@@ -86,7 +90,7 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
         SELECT s.expires_at, u.id AS user_id, u.username,
                u.email AS email_opt,
                (u.email_verified_at IS NOT NULL) AS email_verified,
-               u.global_role
+               u.global_role, u.locale
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.id = $1
@@ -109,6 +113,7 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
         email: row.email_opt,
         email_verified: row.email_verified.unwrap_or(false),
         global_role: row.global_role,
+        locale: row.locale,
     })
 }
 
@@ -158,6 +163,9 @@ pub async fn layer(State(app): State<AppState>, mut req: Request<Body>, next: Ne
         || path.starts_with("/settings")
         || path.starts_with("/auth")
         || path.starts_with("/verify-email")
+        // The admin panel lists accounts and audit rows. Nothing about it
+        // belongs in a disk cache or a back-button restore.
+        || path.starts_with("/admin")
     {
         response.headers_mut().insert(
             header::CACHE_CONTROL,

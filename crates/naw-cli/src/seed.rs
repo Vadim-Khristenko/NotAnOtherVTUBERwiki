@@ -13,9 +13,6 @@ use uuid::Uuid;
 
 use naw_core::error::AppError;
 
-/// Engine version baked into seeded footers. Tracks the workspace release.
-const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
-
 /// Everything `naw seed` needs beyond pools and directories.
 pub struct SeedOptions {
     pub flavor: String,
@@ -28,13 +25,14 @@ pub struct SeedOptions {
     pub aliases: Vec<String>,
 }
 
-pub async fn run(
-    pool: &PgPool,
-    skin_dir: &str,
-    seed_dir: &str,
-    opts: &SeedOptions,
-) -> Result<(), AppError> {
-    let templates = naw_core::templates::load_templates(skin_dir)?;
+/// Seeds or tops up one wiki.
+///
+/// No longer takes a skin directory or a template environment. The render cache
+/// holds the body fragment only, so the seeder produces something that is the
+/// same under every skin, and the wiki's display name is no longer baked into a
+/// cache row at all. That also retires an old bug: seeding an existing wiki with
+/// a bare `--slug` used to poison every cache row with the slug as the brand.
+pub async fn run(pool: &PgPool, seed_dir: &str, opts: &SeedOptions) -> Result<(), AppError> {
     let flavor_dir = format!("{seed_dir}/{}", opts.flavor);
     let wiki_id = match sqlx::query!("SELECT id FROM wikis WHERE slug = $1", opts.slug)
         .fetch_optional(pool)
@@ -43,13 +41,6 @@ pub async fn run(
         Some(row) => row.id,
         None => seed_wiki(pool, opts).await?,
     };
-    // Chrome renders under the wiki's stored name, never under the CLI
-    // flag default (which is the slug). Seeding an existing wiki with a bare
-    // --slug once poisoned every cache row with that slug as the brand.
-    let wiki_name: String = sqlx::query!("SELECT name FROM wikis WHERE id = $1", wiki_id)
-        .fetch_one(pool)
-        .await?
-        .name;
     sqlx::query!(
         "DELETE FROM render_cache WHERE wiki_id = $1 AND renderer_version <> $2",
         wiki_id,
@@ -90,20 +81,18 @@ pub async fn run(
             );
         }
         let title = first_heading(&body_md).unwrap_or_else(|| slug.clone());
-        ensure_page(
-            pool,
-            &templates,
-            wiki_id,
-            &wiki_name,
-            &opts.locale,
-            &slug,
-            &title,
-            &body_md,
-            skin_dir,
-        )
-        .await?;
+        ensure_page(pool, wiki_id, &opts.locale, &slug, &title, &body_md).await?;
     }
-    tracing::info!(slug = %opts.slug, flavor = %opts.flavor, "seed: wiki pages ready");
+    // Seeded pages have to be searchable. Skipping this is how a wiki ends up
+    // with a search box that finds nothing and no obvious reason why, and the
+    // admin overview counts unindexed pages precisely to catch it.
+    let indexed = naw_core::search::reindex(pool, Some(wiki_id)).await?;
+    tracing::info!(
+        slug = %opts.slug,
+        flavor = %opts.flavor,
+        indexed,
+        "seed: wiki pages ready"
+    );
     Ok(())
 }
 
@@ -162,19 +151,13 @@ async fn seed_wiki(pool: &PgPool, opts: &SeedOptions) -> Result<Uuid, AppError> 
     Ok(id)
 }
 
-// Eight coherent page coordinates; splitting them into a struct would hide
-// what ensure/seed/cache each need. Allowed until page writes grow further.
-#[allow(clippy::too_many_arguments)]
 async fn ensure_page(
     pool: &PgPool,
-    env: &minijinja::Environment<'_>,
     wiki_id: Uuid,
-    wiki_name: &str,
     locale: &str,
     slug: &str,
     title: &str,
     body_md: &str,
-    skin_dir: &str,
 ) -> Result<(), AppError> {
     if sqlx::query!(
         "SELECT id FROM pages WHERE wiki_id = $1 AND slug = $2",
@@ -187,10 +170,7 @@ async fn ensure_page(
     {
         seed_content(pool, wiki_id, locale, slug, title, body_md).await?;
     }
-    ensure_cache(
-        pool, env, wiki_id, wiki_name, locale, title, body_md, skin_dir,
-    )
-    .await
+    ensure_cache(pool, wiki_id, body_md).await
 }
 
 async fn seed_content(
@@ -232,23 +212,16 @@ async fn seed_content(
     Ok(())
 }
 
-/// Renders the page into the cache when the current renderer version has
-/// no row yet. This heals stale skins: bump the version, reseed, done.
-// Nine coherent page coordinates, same reason as ensure_page above.
-#[allow(clippy::too_many_arguments)]
-async fn ensure_cache(
-    pool: &PgPool,
-    env: &minijinja::Environment<'_>,
-    wiki_id: Uuid,
-    wiki_name: &str,
-    locale: &str,
-    title: &str,
-    body_md: &str,
-    skin_dir: &str,
-) -> Result<(), AppError> {
-    let key = naw_markdown::page_hash(title, locale, body_md, "", skin_dir);
+/// Renders the body into the cache when the current renderer version has no
+/// row for it yet. Bump `RENDERER_VERSION`, reseed, and every page heals.
+///
+/// Only the body is cached, so this no longer needs a template environment, a
+/// wiki name, a locale or a skin: the cache key is the body's content hash and
+/// nothing else. The chrome is assembled per request by the web layer.
+async fn ensure_cache(pool: &PgPool, wiki_id: Uuid, body_md: &str) -> Result<(), AppError> {
+    let key = naw_markdown::content_hash(body_md);
     if sqlx::query!(
-        "SELECT html FROM render_cache WHERE wiki_id = $1 AND content_hash = $2 AND renderer_version = $3",
+        "SELECT 1 AS present FROM render_cache WHERE wiki_id = $1 AND content_hash = $2 AND renderer_version = $3",
         wiki_id,
         key,
         naw_markdown::RENDERER_VERSION
@@ -259,19 +232,7 @@ async fn ensure_cache(
     {
         return Ok(());
     }
-    let rendered = naw_markdown::render_page(
-        env,
-        &naw_markdown::PageInput {
-            title,
-            body_md,
-            wiki_name,
-            lang: locale,
-            version: ENGINE_VERSION,
-            served_from_cache: false,
-            summary: "",
-            skin: skin_dir,
-        },
-    )?;
+    let rendered = naw_markdown::render_body(body_md);
     sqlx::query!(
         "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
         wiki_id,

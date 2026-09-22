@@ -1,0 +1,18 @@
+# Russian interface messages: editor.
+#
+# Keys here are asked for as editor.<key>. The file name is the prefix.
+
+new_page = "Новая страница"
+editing = "Правка страницы {page}"
+slug = "Адрес"
+title = "Заголовок"
+summary = "Описание правки (необязательно)"
+minor = "Мелкая правка"
+body = "Текст (Markdown)"
+save = "Сохранить"
+preview = "Предпросмотр"
+locked_note = "Страница защищена. Вы можете её править, потому что вы модератор."
+cheatsheet = "Шпаргалка по Markdown"
+live_preview = "Живой предпросмотр"
+live_preview_hint = "Начните печатать, чтобы увидеть настоящий рендер."
+

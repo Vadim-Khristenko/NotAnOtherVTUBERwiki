@@ -1,0 +1,64 @@
+{% extends "layout.html" %}
+{#
+  The page for every kind of failure that has no template of its own.
+
+  A skin restyles one kind by shipping errors/<kind>.html, for example
+  errors/forbidden.html, and leaves the rest to this file. The kinds and what
+  they mean are listed in crates/naw-web/src/errors.rs.
+
+  Bindings, all set by the engine:
+    error_kind     stable id, such as "not_found" or "auth_failed"
+    error_status   the HTTP status, for the small print
+    error_icon     a symbol id from icons.svg that suits the kind
+    error_title    the headline, already translated
+    error_message  one or two sentences, already translated
+    error_hint     optional advice, already translated
+    error_detail   optional: what the handler said, only for client errors
+    request_id     the id in the x-request-id header, for bug reports
+    action_href / action_label   the main way out
+    can_retry      whether "try again" is honest advice for this kind
+
+  Everything here is escaped. The detail can contain text a visitor influenced.
+#}
+{% block body %}
+<section class="error-page error-{{ error_kind }}" aria-labelledby="error-title">
+  <div class="error-mark" aria-hidden="true">
+    <svg class="icon"><use href="#i-{{ error_icon }}" /></svg>
+  </div>
+  <p class="error-status">{{ t("errors.status", status=error_status) }}</p>
+  <h1 id="error-title" class="error-title">{{ error_title }}</h1>
+  <p class="error-message">{{ error_message }}</p>
+  {% if error_hint %}<p class="error-hint">{{ error_hint }}</p>{% endif %}
+
+  <div class="error-actions">
+    <a class="button-save" href="{{ action_href }}">{{ action_label }}</a>
+    {% if can_retry %}
+    {# A reload is the retry: the page is the result of the request that failed. #}
+    <a class="button-preview" href="">{{ t("errors.retry") }}</a>
+    {% endif %}
+  </div>
+
+  {% if error_kind == "not_found" %}
+  {# Its own row: a search box squeezed beside a button reads as a second button. #}
+  <form class="error-search" method="get" action="/search" role="search">
+    <label class="visually-hidden" for="error-q">{{ t("nav.search") }}</label>
+    <svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>
+    <input class="field-input" id="error-q" name="q" type="search"
+           placeholder="{{ t('nav.search_placeholder') }}" maxlength="200" />
+  </form>
+  {% endif %}
+
+  {% if error_detail %}
+  <details class="error-detail">
+    <summary>{{ t("errors.detail") }}</summary>
+    <code>{{ error_detail }}</code>
+  </details>
+  {% endif %}
+
+  {% if request_id %}
+  <p class="error-request" title="{{ t('errors.request_id_hint') }}">
+    {{ t("errors.request_id", id=request_id) }}
+  </p>
+  {% endif %}
+</section>
+{% endblock %}

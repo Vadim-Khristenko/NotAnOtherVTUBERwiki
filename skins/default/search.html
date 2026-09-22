@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{#
+  Search results. One form field, one submit, no JavaScript: a search box that
+  needs a script to work is a search box that does not work on a bad connection,
+  which is most of them.
+
+  `snippet` is the only value rendered with `| safe`. It comes from ts_headline,
+  which escapes the surrounding text itself and adds nothing but <mark> tags.
+  The query is attacker controlled and is never marked safe: where it appears
+  inside a translated message, `t()` escapes it.
+#}
+{% block body %}
+<h1>{{ t("search.heading") }}</h1>
+
+<form class="search-form" method="get" action="/search" role="search">
+  <label class="field" for="search-q">{{ t("search.label") }}</label>
+  <div class="search-row">
+    <input class="field-input" id="search-q" name="q" type="search" value="{{ query }}"
+           maxlength="200" autofocus placeholder="{{ t('search.placeholder') }}" />
+    <button class="button-save" type="submit">{{ t("search.submit") }}</button>
+  </div>
+</form>
+
+{% if not searched %}
+  <p class="search-hint">{{ t("search.hint") }}</p>
+{% elif result_count == 0 %}
+  <p class="notice notice-warn" role="status">{{ t("search.nothing", query=query) }}</p>
+  <p class="search-hint">
+    {{ t("search.try_again") }}
+    {% if can_create %}{{ t("search.write_it") }}{% endif %}
+  </p>
+{% else %}
+  <p class="search-count" role="status">
+    {{ tn("search.results", result_count, query=query) }}{% if truncated %}{{ t("search.best_only") }}{% endif %}
+  </p>
+  <ol class="search-results">
+    {% for hit in results %}
+    <li class="search-hit">
+      <a class="search-hit-title" href="/{{ hit.slug }}">{{ hit.title }}</a>
+      <p class="search-hit-snippet">{{ hit.snippet | safe }}</p>
+      <p class="search-hit-slug">/{{ hit.slug }}</p>
+    </li>
+    {% endfor %}
+  </ol>
+{% endif %}
+{% endblock %}

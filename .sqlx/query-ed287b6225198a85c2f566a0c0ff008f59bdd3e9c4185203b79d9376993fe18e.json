@@ -1,0 +1,105 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT p.id, p.slug, p.title, p.is_locked, p.updated_at, p.deleted_at,\n               (p.search_vector IS NOT NULL) AS \"indexed!\",\n               (SELECT count(*) FROM revisions r WHERE r.page_id = p.id) AS \"revisions!\"\n        FROM pages p\n        WHERE p.wiki_id = $1\n          AND ($2::text IS NULL OR lower(p.slug) LIKE $2 OR lower(p.title) LIKE $2)\n        ORDER BY p.updated_at DESC\n        LIMIT $3 OFFSET $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "is_locked",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "is_locked"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "deleted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "deleted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "indexed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "revisions!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "ed287b6225198a85c2f566a0c0ff008f59bdd3e9c4185203b79d9376993fe18e"
+}

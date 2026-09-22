@@ -23,6 +23,12 @@ pub struct Config {
     pub skin_dir: String,
     #[serde(default = "default_seed_dir")]
     pub seed_dir: String,
+    #[serde(default = "default_locales_dir")]
+    pub locales_dir: String,
+    /// Seconds between checks for edited skin and locale files. 0 turns the
+    /// watcher off; the admin panel can still reload on demand.
+    #[serde(default = "default_reload_interval_secs")]
+    pub reload_interval_secs: u64,
     #[serde(default)]
     pub auth: AuthConfig,
 }
@@ -37,6 +43,8 @@ impl Default for Config {
             storage_root: default_storage_root(),
             skin_dir: default_skin_dir(),
             seed_dir: default_seed_dir(),
+            locales_dir: default_locales_dir(),
+            reload_interval_secs: default_reload_interval_secs(),
             auth: AuthConfig::default(),
         }
     }
@@ -68,6 +76,15 @@ fn default_skin_dir() -> String {
 
 fn default_seed_dir() -> String {
     "seeds".to_string()
+}
+
+/// Interface message catalogues, one TOML file per language.
+fn default_locales_dir() -> String {
+    "locales".to_string()
+}
+
+fn default_reload_interval_secs() -> u64 {
+    2
 }
 
 /// OAuth, sessions and mail. A provider is enabled when its credentials
@@ -205,6 +222,8 @@ impl fmt::Debug for Config {
             .field("storage_root", &self.storage_root)
             .field("skin_dir", &self.skin_dir)
             .field("seed_dir", &self.seed_dir)
+            .field("locales_dir", &self.locales_dir)
+            .field("reload_interval_secs", &self.reload_interval_secs)
             .field("auth", &self.auth)
             .finish()
     }
@@ -278,6 +297,15 @@ impl Config {
         }
         if let Ok(value) = std::env::var("NAW_SEED_DIR") {
             cfg.seed_dir = value;
+        }
+        if let Ok(value) = std::env::var("NAW_LOCALES_DIR") {
+            cfg.locales_dir = value;
+        }
+        if let Some(secs) = std::env::var("NAW_RELOAD_INTERVAL_SECS")
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+        {
+            cfg.reload_interval_secs = secs;
         }
         apply_auth_env(&mut cfg.auth);
         Ok(cfg)

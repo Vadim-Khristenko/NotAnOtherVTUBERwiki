@@ -1,0 +1,37 @@
+# Language pack metadata.
+#
+# A directory under locales/ is a language pack exactly when it holds this file.
+# Every other *.toml next to it is one area of the interface, and its file name
+# is the key prefix: `search.toml` holds what templates ask for as `search.*`.
+#
+# The engine reloads packs without a restart, so editing a message, adding a
+# language or flipping `enabled` takes effect on the next request after the
+# watcher notices, or immediately from Admin > Languages.
+
+# Must match the directory name. A mismatch is refused at load, because the
+# directory is what the URL parameter and the cookie use.
+code = "en"
+name = "English"
+native_name = "English"
+
+# The pack's own version, bumped by whoever maintains it. Shown in the admin
+# panel next to how complete the pack is, so a stale translation is visible.
+version = "0.2.0"
+
+# The engine release this pack was last checked against. Informational: a pack
+# written for an older engine still loads, and simply falls through to English
+# for any key it does not have.
+engine = "0.1.0"
+
+# `false` keeps the pack on disk but out of the language switcher, for a
+# translation that is not ready to be seen. A wiki can also hide an enabled
+# pack from its own settings without touching this file.
+enabled = true
+
+# Text direction, for the dir attribute on <html>.
+direction = "ltr"
+
+[[authors]]
+name = "VAI"
+role = "maintainer"
+url = "https://vai-rice.space"

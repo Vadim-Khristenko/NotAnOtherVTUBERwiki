@@ -1,0 +1,11 @@
+# Russian interface messages: page.
+#
+# Keys here are asked for as page.<key>. The file name is the prefix.
+
+edit = "Правка"
+locked = "Защищена"
+locked_hint = "Править эту страницу могут только модераторы"
+last_edited = "Последняя правка {when}"
+tools = "Действия со страницей"
+summary_label = "Краткое описание"
+

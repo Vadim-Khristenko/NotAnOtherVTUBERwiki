@@ -1244,95 +1244,46 @@ fn slugify(text: &str) -> String {
 }
 
 /// Version of the render pipeline. Part of the `render_cache` key: bump it
-/// whenever `render_page` output changes for identical input. Skin and
-/// chrome changes count: a new footer is a new rendering.
-pub const RENDERER_VERSION: i32 = 10;
+/// whenever `render_body` output changes for identical input.
+///
+/// Skin and chrome changes no longer count. The cache holds the body fragment
+/// only, so a footer edit is not a new rendering, and the same article under
+/// two skins is one cache row instead of two.
+pub const RENDERER_VERSION: i32 = 11;
 
-/// A fully rendered page plus the key it is cached under.
-pub struct RenderedPage {
+/// A rendered body fragment plus the key it is cached under.
+pub struct RenderedBody {
     pub content_hash: Vec<u8>,
     pub html: String,
+    /// How long the Markdown stage took. The footer shows it, and it is the
+    /// only part of the page worth measuring: the shell is a template render.
+    pub render_ms: u64,
 }
 
-/// Body-only content hash. Matches the `revisions.content_hash` semantics.
+/// Body-only content hash, and the `render_cache` key.
+///
+/// The same value `revisions.content_hash` stores, which is the point: a
+/// revision and its cached rendering are addressed by one hash, so looking up
+/// the rendering for a revision needs no second column and cannot disagree.
 pub fn content_hash(body_md: &str) -> Vec<u8> {
     use sha2::{Digest, Sha256};
     Sha256::digest(body_md.as_bytes()).to_vec()
 }
 
-/// Cache key hash. Everything that renders into the page is part of the
-/// key: correctness beats cross-page deduplication. The skin directory
-/// counts too: the same article under two skins is two different pages,
-/// and sharing a cache row would serve one skin dressed as the other.
-pub fn page_hash(title: &str, lang: &str, body_md: &str, summary: &str, skin: &str) -> Vec<u8> {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(title.as_bytes());
-    hasher.update([0u8]);
-    hasher.update(lang.as_bytes());
-    hasher.update([0u8]);
-    hasher.update(body_md.as_bytes());
-    hasher.update([0u8]);
-    hasher.update(summary.as_bytes());
-    hasher.update([0u8]);
-    hasher.update(skin.as_bytes());
-    hasher.finalize().to_vec()
-}
-
-/// Everything a full page render needs. One struct instead of a growing
-/// parameter list, so template chrome never reshapes the call sites again.
-pub struct PageInput<'a> {
-    pub title: &'a str,
-    pub body_md: &'a str,
-    pub wiki_name: &'a str,
-    pub lang: &'a str,
-    pub version: &'a str,
-    pub served_from_cache: bool,
-    pub summary: &'a str,
-    pub skin: &'a str,
-}
-
-/// Renders a full page through the `page.html` template. `version` and the
-/// cache flag land in the footer; on a hit the caller passes
-/// `served_from_cache` instead of re-rendering. The displayed duration
-/// covers the Markdown stage, the template adds microseconds on top.
-pub fn render_page(
-    env: &minijinja::Environment,
-    input: &PageInput<'_>,
-) -> Result<RenderedPage, naw_core::error::AppError> {
-    let content_hash = page_hash(
-        input.title,
-        input.lang,
-        input.body_md,
-        input.summary,
-        input.skin,
-    );
+/// Renders Markdown to a sanitized HTML fragment, timed, with its cache key.
+///
+/// This is the expensive half of serving a page and the only half worth
+/// caching. Assembling the document around it belongs to the web layer,
+/// because the surrounding chrome depends on who is asking and must never end
+/// up in a shared cache row.
+pub fn render_body(body_md: &str) -> RenderedBody {
     let started = std::time::Instant::now();
-    let body_html = render_html(input.body_md);
-    let render_ms = started.elapsed().as_millis() as u64;
-    let footer_note = if input.served_from_cache {
-        "served from cache".to_string()
-    } else {
-        format!("rendered in {render_ms} ms")
-    };
-    let template = env.get_template("page.html").map_err(template_error)?;
-    let html = template
-        .render(minijinja::context! {
-            title => input.title,
-            wiki_name => input.wiki_name,
-            lang => input.lang,
-            body => body_html,
-            version => input.version,
-            footer_note => footer_note,
-            summary => input.summary,
-        })
-        .map_err(template_error)?;
-    Ok(RenderedPage { content_hash, html })
-}
-
-fn template_error(err: minijinja::Error) -> naw_core::error::AppError {
-    tracing::error!(error = %err, "template render error");
-    naw_core::error::AppError::Internal
+    let html = render_html(body_md);
+    RenderedBody {
+        content_hash: content_hash(body_md),
+        html,
+        render_ms: started.elapsed().as_millis() as u64,
+    }
 }
 
 #[cfg(test)]
@@ -1421,74 +1372,29 @@ mod tests {
         assert!(!html.contains("status"));
     }
 
-    fn test_env() -> minijinja::Environment<'static> {
-        naw_core::templates::load_templates(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../skins/default"
-        ))
-        .expect("skins/default must exist with layout, page and 404 templates")
-    }
-
-    fn test_input() -> PageInput<'static> {
-        PageInput {
-            title: "Home",
-            body_md: "# Hi",
-            wiki_name: "FilianWIKI",
-            lang: "en",
-            version: "0.1.0",
-            served_from_cache: false,
-            summary: "",
-            skin: "skins/default",
-        }
+    #[test]
+    fn render_body_returns_the_fragment_and_its_key() {
+        let rendered = render_body("# Hi");
+        assert_eq!(rendered.html, render_html("# Hi"));
+        assert!(rendered.html.contains("<h1 id=\"hi\">Hi</h1>"));
+        // A fragment, not a document: assembling one is the web layer's job.
+        assert!(!rendered.html.contains("<html"));
+        assert!(!rendered.html.contains("<title"));
+        assert_eq!(rendered.content_hash, content_hash("# Hi"));
     }
 
     #[test]
-    fn page_renders_title_and_body() {
-        let html = render_page(&test_env(), &test_input())
-            .expect("render")
-            .html;
-        assert!(html.contains("<title>Home"));
-        assert!(html.contains("<h1 id=\"hi\">Hi</h1>"));
-        assert!(html.contains("FilianWIKI"));
-        assert!(html.contains("0.1.0"));
-        assert!(html.contains("rendered in "));
-    }
-
-    #[test]
-    fn cached_footer_has_no_timing() {
-        let mut input = test_input();
-        input.served_from_cache = true;
-        let html = render_page(&test_env(), &input).expect("render").html;
-        assert!(html.contains("served from cache"));
-        assert!(!html.contains("rendered in"));
-    }
-
-    #[test]
-    fn summary_renders_as_lede() {
-        let mut input = test_input();
-        input.summary = "Short version.";
-        let html = render_page(&test_env(), &input).expect("render").html;
-        assert!(html.contains("<p class=\"page-summary\">Short version.</p>"));
-        let plain = render_page(&test_env(), &test_input())
-            .expect("render")
-            .html;
-        assert!(!plain.contains("<p class=\"page-summary\">"));
-    }
-
-    #[test]
-    fn page_hash_is_stable_and_sensitive() {
-        let a = page_hash("T", "en", "# Hi", "", "skins/default");
-        assert_eq!(a, page_hash("T", "en", "# Hi", "", "skins/default"));
-        assert_ne!(a, page_hash("T", "en", "# Bye", "", "skins/default"));
-        assert_ne!(a, page_hash("Other", "en", "# Hi", "", "skins/default"));
-        assert_ne!(a, page_hash("T", "en", "# Hi", "lede", "skins/default"));
-        assert_ne!(a, page_hash("T", "en", "# Hi", "", "skins/snackers"));
-    }
-
-    #[test]
-    fn missing_template_is_an_error() {
-        let env = minijinja::Environment::new();
-        assert!(render_page(&env, &test_input()).is_err());
+    fn the_cache_key_is_the_revision_hash_and_nothing_else() {
+        // The design claim of the split render, asserted. The cache holds the
+        // body fragment, so nothing outside the body may change the key: the
+        // same article under two skins, two titles or two locales is one cache
+        // row, and editing only the title does not throw the rendering away.
+        let a = content_hash("# Hi");
+        assert_eq!(a, content_hash("# Hi"));
+        assert_eq!(a, render_body("# Hi").content_hash);
+        assert_ne!(a, content_hash("# Bye"));
+        // Whitespace is content: a trailing newline is a different revision.
+        assert_ne!(a, content_hash("# Hi\n"));
     }
 
     #[test]

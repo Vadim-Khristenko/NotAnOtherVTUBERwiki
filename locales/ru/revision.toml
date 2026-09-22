@@ -1,0 +1,12 @@
+# Russian interface messages: revision.
+#
+# Keys here are asked for as revision.<key>. The file name is the prefix.
+
+old_banner = "<strong>Это старая версия</strong> страницы <a href=\"/{slug}\">{page}</a>, сохранённая {when}, автор: {who}."
+anonymous_editor = "анонимный редактор"
+read_current = "Читать текущую версию"
+what_changed = "Что изменилось с тех пор"
+all_revisions = "Все версии"
+suffix = "{page} (старая версия)"
+edit_summary = "Комментарий к правке: {summary}"
+

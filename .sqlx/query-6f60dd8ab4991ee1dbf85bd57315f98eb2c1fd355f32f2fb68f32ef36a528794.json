@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pages SET deleted_at = now(), deleted_by = $3\n             WHERE id = $1 AND wiki_id = $2 AND deleted_at IS NULL RETURNING slug",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6f60dd8ab4991ee1dbf85bd57315f98eb2c1fd355f32f2fb68f32ef36a528794"
+}

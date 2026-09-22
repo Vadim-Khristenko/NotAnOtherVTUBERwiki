@@ -1,0 +1,11 @@
+# English interface messages: page.
+#
+# Keys here are asked for as page.<key>. The file name is the prefix.
+
+edit = "Edit"
+locked = "Locked"
+locked_hint = "Only moderators can edit this page"
+last_edited = "Last edited {when}"
+tools = "Page tools"
+summary_label = "Summary"
+

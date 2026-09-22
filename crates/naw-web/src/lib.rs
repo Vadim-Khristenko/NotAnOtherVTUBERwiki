@@ -1,8 +1,16 @@
 //! NotAnotherWiki Engine HTTP layer: router, middleware, handlers.
 
+mod admin;
+mod audit;
 mod auth;
+mod errors;
+mod history;
+mod lang;
+mod observe;
 mod pages;
+mod perm;
 mod resolve;
+mod search;
 
 use axum::extract::State;
 use axum::routing::{get, post};
@@ -30,6 +38,28 @@ pub fn router(state: AppState) -> Router {
         // `{provider}` match below.
         .route("/auth/{provider}", get(auth::routes::start))
         .route("/auth/{provider}/callback", get(auth::routes::callback))
+        // The admin panel. Every mutation is a POST, which is what makes
+        // SameSite=Lax the CSRF defence for this whole subtree. See admin.rs.
+        .route("/admin", get(admin::overview))
+        .route("/admin/users", get(admin::users))
+        .route("/admin/users/role", post(admin::set_role))
+        .route("/admin/pages", get(admin::pages_list))
+        .route("/admin/pages/{action}", post(admin::page_action))
+        .route("/admin/audit", get(admin::audit_log))
+        .route(
+            "/admin/wiki",
+            get(admin::wiki_settings).post(admin::save_wiki_settings),
+        )
+        .route("/admin/reindex", post(admin::reindex))
+        .route(
+            "/admin/languages",
+            get(admin::languages).post(admin::save_languages),
+        )
+        .route("/admin/reload", post(admin::reload))
+        .route("/admin/errors", get(admin::error_gallery))
+        .route("/admin/errors/{kind}", get(admin::error_preview))
+        .route("/search", get(search::search_page))
+        .route("/lang", post(pages::set_language))
         .route("/", get(pages::home))
         .route("/new", get(pages::new_page).post(pages::create_page))
         .route("/preview", post(pages::preview))
@@ -47,12 +77,36 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/{slug}", get(pages::page))
         .route("/{slug}/edit", get(pages::edit_page).post(pages::save_page))
+        .route("/{slug}/history", get(history::history))
+        .route("/{slug}/diff", get(history::diff))
+        .route("/{slug}/rev/{revision}", get(history::revision))
+        .route("/{slug}/revert", post(history::revert))
+        .route("/{slug}/patrol", post(history::patrol))
+        // Declared before `.layer` on purpose: axum only wraps what already
+        // exists, and a fallback added afterwards would skip every middleware,
+        // including the one that turns a bare 404 into a page.
+        .fallback(pages::fallback)
         .layer(
             tower::ServiceBuilder::new()
                 .layer(tower_http::catch_panic::CatchPanicLayer::new())
+                // Outermost after the panic guard, so even a request that dies
+                // downstream still gets an id in its response and its log line.
+                .layer(axum::middleware::from_fn(observe::layer))
                 .layer(axum::middleware::from_fn_with_state(
                     state.clone(),
                     auth::session::layer,
+                ))
+                // Inside the session layer, because an error page shows who is
+                // signed in; outside the body limit, so a 413 is themed too.
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    errors::layer,
+                ))
+                // Inside the session layer: a language switch never needs a
+                // session, and this way it answers before any handler runs.
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    lang::layer,
                 ))
                 .layer(tower_http::limit::RequestBodyLimitLayer::new(1024 * 1024))
                 .layer(
