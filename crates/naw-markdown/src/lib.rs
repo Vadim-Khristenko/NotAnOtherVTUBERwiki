@@ -91,6 +91,9 @@ fn render_html_with_depth(markdown: &str, depth: usize) -> String {
     // Tables: pulldown-cmark reports column alignment as an inline style,
     // which the sanitizer would strip. `align` survives the whitelist.
     dirty = preserve_table_alignment(&dirty);
+    // Task list checkboxes are `<input>` elements, which the sanitizer
+    // rightly drops. They become styled marks that keep their state as text.
+    dirty = render_task_items(&dirty);
     // Footnotes move into the `fn-` namespace before heading ids are
     // assigned, so `# 1` and `[^1]` never share one anchor.
     dirty = namespace_footnote_ids(&dirty);
@@ -101,6 +104,7 @@ fn render_html_with_depth(markdown: &str, depth: usize) -> String {
     // Navigation and notes settle last: the table of contents needs final
     // anchors, footnotes belong at the bottom in reference order.
     anchored = insert_toc(&anchored);
+    anchored = link_footnote_references(&anchored);
     anchored = collect_footnotes(&anchored);
     // `id` and `class` join the generic whitelist so heading anchors and
     // author styling survive. Neither executes anything; the worst a class
@@ -1023,6 +1027,11 @@ fn insert_toc(html: &str) -> String {
         }
         rest = &rest[content_start + content_end + close.len()..];
     }
+    // A lone `#` heading is the page title, already on screen above the
+    // contents. Only when an author uses several does level one mean sections.
+    if items.iter().filter(|(level, _, _)| *level == 1).count() == 1 {
+        items.retain(|(level, _, _)| *level != 1);
+    }
     let nav = if items.is_empty() {
         String::new()
     } else {
@@ -1102,10 +1111,73 @@ fn collect_footnotes(html: &str) -> String {
     }
     out.push_str("<div class=\"footnotes\">");
     for def in defs {
-        out.push_str(def);
+        // A note whose reference got an anchor links back to it, so a reader
+        // who jumped down can return to the sentence they left.
+        let back = attr_value(def, "id")
+            .and_then(|id| id.strip_prefix("fn-").map(|n| format!("fnref-{n}")))
+            .filter(|back| {
+                out.contains(&format!("<sup class=\"footnote-reference\" id=\"{back}\">"))
+            });
+        match (back, def.strip_suffix("</div>")) {
+            (Some(back), Some(body)) => {
+                out.push_str(body);
+                out.push_str(&format!(
+                    "<a class=\"footnote-backref\" href=\"#{back}\">\u{21A9}\u{FE0E}</a></div>"
+                ));
+            }
+            _ => out.push_str(def),
+        }
     }
     out.push_str("</div>");
     out
+}
+
+/// Gives the first reference to each footnote an anchor (`fnref-1` for
+/// `fn-1`), the target of the note's way back. Later references to the same
+/// note stay plain: one note can only return to one place. An id already in
+/// use elsewhere wins, and that note simply goes without a way back.
+fn link_footnote_references(html: &str) -> String {
+    const OPEN: &str = "<sup class=\"footnote-reference\"><a href=\"#fn-";
+    let mut out = String::with_capacity(html.len() + 64);
+    let mut linked = std::collections::HashSet::new();
+    let mut rest = html;
+    while let Some(pos) = rest.find(OPEN) {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + OPEN.len()..];
+        let Some(quote) = after.find('"') else {
+            break;
+        };
+        let label = &after[..quote];
+        let anchor = format!("fnref-{label}");
+        let taken = html.contains(&format!("id=\"{anchor}\""));
+        if !taken && linked.insert(label.to_string()) {
+            out.push_str(&format!(
+                "<sup class=\"footnote-reference\" id=\"{anchor}\">"
+            ));
+        } else {
+            out.push_str("<sup class=\"footnote-reference\">");
+        }
+        out.push_str("<a href=\"#fn-");
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Turns pulldown-cmark's disabled checkboxes into marks the sanitizer
+/// keeps. The state stays in the text as `[x]` or `[ ]` for screen readers
+/// and copy paste, and skins draw the box from the `task-done` class.
+fn render_task_items(html: &str) -> String {
+    const DONE: &str = "<li><input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n";
+    const TODO: &str = "<li><input disabled=\"\" type=\"checkbox\"/>\n";
+    html.replace(
+        DONE,
+        "<li class=\"task task-done\"><span class=\"task-mark\">[x]</span> ",
+    )
+    .replace(
+        TODO,
+        "<li class=\"task\"><span class=\"task-mark\">[ ]</span> ",
+    )
 }
 /// Gives every `#`-heading a stable `id` so pages support `#fragment`
 /// links and a future table of contents. Duplicate titles get `-2`, `-3`.
@@ -1249,7 +1321,7 @@ fn slugify(text: &str) -> String {
 /// Skin and chrome changes no longer count. The cache holds the body fragment
 /// only, so a footer edit is not a new rendering, and the same article under
 /// two skins is one cache row instead of two.
-pub const RENDERER_VERSION: i32 = 11;
+pub const RENDERER_VERSION: i32 = 12;
 
 /// A rendered body fragment plus the key it is cached under.
 pub struct RenderedBody {
@@ -1554,10 +1626,51 @@ mod tests {
 
     #[test]
     fn toc_lists_headings_with_final_anchors() {
-        let html = render_html("[[toc]]\n\n# One\n\n## One\n");
+        let html = render_html("[[toc]]\n\n## One\n\n### One\n");
         assert!(html.contains("<nav class=\"toc\">"), "{html}");
         assert!(html.contains("href=\"#one\""), "{html}");
         assert!(html.contains("href=\"#one-2\""), "{html}");
+    }
+
+    #[test]
+    fn toc_leaves_out_a_lone_title_but_keeps_several() {
+        let html = render_html("# Title\n\n[[toc]]\n\n## Part\n");
+        assert!(!html.contains("href=\"#title\""), "{html}");
+        assert!(html.contains("href=\"#part\""), "{html}");
+        let html = render_html("[[toc]]\n\n# One\n\n# Two\n");
+        assert!(html.contains("href=\"#one\""), "{html}");
+        assert!(html.contains("href=\"#two\""), "{html}");
+    }
+
+    #[test]
+    fn task_items_keep_their_state_without_inputs() {
+        let html = render_html("- [x] Done\n- [ ] Todo\n");
+        assert!(!html.contains("<input"), "{html}");
+        assert!(
+            html.contains("<li class=\"task task-done\"><span class=\"task-mark\">[x]</span> Done"),
+            "{html}"
+        );
+        assert!(
+            html.contains("<li class=\"task\"><span class=\"task-mark\">[ ]</span> Todo"),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn footnotes_link_back_to_their_first_reference() {
+        let html = render_html("One[^a] and again[^a].\n\n[^a]: The note.\n");
+        assert_eq!(html.matches("id=\"fnref-a\"").count(), 1, "{html}");
+        assert!(html.contains("href=\"#fnref-a\""), "{html}");
+        let note = html.find("id=\"fn-a\"").expect("note renders");
+        let back = html.find("footnote-backref").expect("way back renders");
+        assert!(note < back, "{html}");
+    }
+
+    #[test]
+    fn footnote_backref_yields_to_a_taken_id() {
+        let html = render_html("# fnref-a\n\nText[^a].\n\n[^a]: The note.\n");
+        assert_eq!(html.matches("id=\"fnref-a\"").count(), 1, "{html}");
+        assert!(!html.contains("footnote-backref"), "{html}");
     }
 
     #[test]

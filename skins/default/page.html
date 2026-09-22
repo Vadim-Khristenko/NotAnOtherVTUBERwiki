@@ -12,22 +12,26 @@
   voice for the content and not for the chrome around it.
 #}
 {% block body %}
+{% if slug is defined %}
+{# Actions sit above the article, where a reader who spots a mistake looks
+   for them. The bottom row keeps only the date, which is reference, not action. #}
+<nav class="page-actions" aria-label="{{ t('page.tools') }}">
+  {% if can_edit_this is defined and can_edit_this %}
+    <a class="page-action" href="/{{ slug }}/edit"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("page.edit") }}</a>
+  {% elif locked is defined and locked %}
+    <span class="page-action is-static" title="{{ t('page.locked_hint') }}"><svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg>{{ t("page.locked") }}</span>
+  {% endif %}
+  <a class="page-action" href="/{{ slug }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
+</nav>
+{% endif %}
 {% if content_lang is defined and content_lang != lang %}
 <div lang="{{ content_lang }}">{{ body | safe }}</div>
 {% else %}
 {{ body | safe }}
 {% endif %}
 {% if slug is defined %}
-<nav class="page-tools" aria-label="{{ t('page.tools') }}">
-  {% if can_edit_this is defined and can_edit_this %}
-    <a href="/{{ slug }}/edit">{{ t("page.edit") }}</a>
-  {% elif locked is defined and locked %}
-    <span class="muted-cell" title="{{ t('page.locked_hint') }}">{{ t("page.locked") }}</span>
-  {% endif %}
-  <a href="/{{ slug }}/history">{{ t("nav.history") }}</a>
-  {% if updated_at is defined %}
-    <span class="muted-cell">{{ t("page.last_edited", when=updated_at) }}</span>
-  {% endif %}
-</nav>
+{% if updated_at is defined %}
+<p class="page-meta">{{ t("page.last_edited", when=updated_at) }}</p>
+{% endif %}
 {% endif %}
 {% endblock %}
