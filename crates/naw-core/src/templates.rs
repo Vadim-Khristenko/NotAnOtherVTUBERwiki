@@ -9,6 +9,9 @@ use crate::i18n::Catalog;
 
 const TEMPLATES: &[&str] = &[
     "layout.html",
+    // Colors and details on top of the default styles. Empty in the default
+    // skin; a skin that only recolors ships this file and nothing else.
+    "_theme.html",
     "_header.html",
     "_footer.html",
     // Not HTML, but loaded the same way so a skin can ship its own icon set and
@@ -160,6 +163,29 @@ mod tests {
         assert!(env.get_template("edit.html").is_ok());
         assert!(env.get_template("page.html").is_ok());
         std::fs::remove_dir(&empty).ok();
+    }
+
+    #[test]
+    fn a_theme_only_skin_inherits_the_rest_and_lands_in_the_head() {
+        // The snackers skin ships `_theme.html` and nothing else. Its palette
+        // must reach every page through the default layout.
+        let snackers = format!("{}/../../skins/snackers", env!("CARGO_MANIFEST_DIR"));
+        let env = load_templates_with_fallback(&snackers, &default_skin(), &locales())
+            .expect("theme only skin loads");
+        let html = env
+            .get_template("message.html")
+            .expect("inherited")
+            .render(minijinja::context! { title => "t", wiki_name => "w", lang => "en" })
+            .expect("renders");
+        let head = &html[..html.find("</head>").expect("has a head")];
+        assert!(
+            head.contains("--accent: #ff3d8b"),
+            "theme missing from head"
+        );
+        assert!(
+            head.rfind("--accent: #ff3d8b") > head.find("--accent: #0b5fff"),
+            "the theme must come after the default styles to win"
+        );
     }
 
     #[test]
