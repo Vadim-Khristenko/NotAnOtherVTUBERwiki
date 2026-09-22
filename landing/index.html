@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>FilianWIKI: launching soon</title>
+<title>FilianWIKI: closed alpha</title>
 <meta name="description" content="A fan-run wiki for Filian and the Snackers community, moving off FANDOM onto its own open engine. Open source, contributions welcome. Not affiliated with Filian, not part of any ARG." />
 <meta name="color-scheme" content="dark light" />
 <meta name="robots" content="index, follow" />
 
 <meta property="og:type" content="website" />
-<meta property="og:title" content="FilianWIKI: launching soon" />
-<meta property="og:description" content="A fan-run wiki for the Snackers. Open source, no trackers, no ads, no analytics." />
+<meta property="og:title" content="FilianWIKI: closed alpha" />
+<meta property="og:description" content="A fan-run wiki for the Snackers, in closed alpha. Looking for writers, bug finders and translators. Open source, no trackers, no ads, no analytics." />
 <meta property="og:url" content="https://filian.wiki/" />
 <meta name="twitter:card" content="summary_large_image" />
 
@@ -254,6 +254,13 @@ section { padding-block: var(--s6); }
 .help-list li:last-child { border-bottom: 1px solid var(--line); }
 .help-list b { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1rem; margin-bottom: 0.2rem; }
 .help-list span { color: var(--ink-soft); font-size: 0.95rem; }
+.apply-how { margin: 0 0 var(--s3); }
+.apply-template { margin: 0 0 var(--s4); padding: var(--s3) var(--s4); background: var(--surface-alt); border: 1px solid var(--line); border-left: 3px solid var(--accent); font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.9rem; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.apply .cta-row { margin: 0 0 var(--s5); }
+.apply-notes { margin: 0; font-size: 0.92rem; }
+.apply-notes dt { font-weight: 700; margin-top: var(--s3); }
+.apply-notes dd { margin: 0.15rem 0 0; color: var(--ink-soft); }
+html:not(.js) .js-only { display: none; }
 .link-stack { display: flex; flex-direction: column; gap: var(--s2); }
 .link-card {
   display: block; padding: var(--s3); text-decoration: none;
@@ -372,11 +379,12 @@ section { padding-block: var(--s6); }
 <main id="main">
 
   <section class="hero wrap">
-    <p class="eyebrow" data-en="Pre-alpha, built in the open" data-ru="Пре-альфа, разработка открыта">Pre-alpha, built in the open</p>
+    <p class="eyebrow" data-en="Closed alpha, applications open" data-ru="Закрытая альфа, идёт набор">Closed alpha, applications open</p>
     <h1 data-en="A Snackers wiki that <em>outlives</em> its platform" data-ru="Вики, которая <em>переживёт</em> свою платформу">A Snackers wiki that <em>outlives</em> its platform</h1>
-    <p class="hero-lede" data-en="Moving off FANDOM onto an open engine built for this community. Reading and editing are being finished right now." data-ru="Уходим с FANDOM на открытый движок, сделанный для этого сообщества. Чтение и редактирование доделываются прямо сейчас.">Moving off FANDOM onto an open engine built for this community. Reading and editing are being finished right now.</p>
+    <p class="hero-lede" data-en="Moving off FANDOM onto an open engine built for this community. It already runs in closed alpha, and the first people are being let in." data-ru="Уходим с FANDOM на открытый движок, сделанный для этого сообщества. Он уже работает в закрытой альфе, и мы пускаем первых людей.">Moving off FANDOM onto an open engine built for this community. It already runs in closed alpha, and the first people are being let in.</p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki" data-en="Code on GitHub" data-ru="Код на GitHub">Code on GitHub</a>
+      <a class="btn btn-primary" href="#alpha" data-en="Join the closed alpha" data-ru="Попасть в закрытую альфу">Join the closed alpha</a>
+      <a class="btn btn-ghost" href="https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki" data-en="Code on GitHub" data-ru="Код на GitHub">Code on GitHub</a>
       <a class="btn btn-ghost" href="#roadmap" data-en="See the roadmap" data-ru="Посмотреть роадмап">See the roadmap</a>
     </div>
   </section>
@@ -407,6 +415,56 @@ section { padding-block: var(--s6); }
       </div>
     </div>
   </div>
+
+
+  <!-- Closed alpha. Accounts are created by hand until open registration, so
+       the application is an email in a fixed shape rather than a form: no
+       backend to run, nothing collected by this page. -->
+  <section id="alpha" class="wrap">
+    <div class="reveal">
+      <h2 class="section-title" data-en="The closed alpha is recruiting" data-ru="Набираем людей в закрытую альфу">The closed alpha is recruiting</h2>
+      <p class="section-lede" data-en="The wiki is already running for a small group. Accounts are handed out by hand until Vadim decides it is ready for everyone to sign up on their own. Until then, this is how you get in." data-ru="Вики уже работает для небольшой группы. Аккаунты выдаются вручную, пока Вадим не решит, что можно открыть самостоятельную регистрацию. До тех пор попасть внутрь можно только так.">The wiki is already running for a small group. Accounts are handed out by hand until Vadim decides it is ready for everyone to sign up on their own. Until then, this is how you get in.</p>
+    </div>
+    <div class="help-grid">
+      <ul class="help-list">
+        <li>
+          <b data-en="Content makers" data-ru="Авторы контента">Content makers</b>
+          <span data-en="People ready to write lore, timelines and glossary entries, and to keep them current. Clippers welcome." data-ru="Те, кто готов писать лор, таймлайны и статьи глоссария и поддерживать их в актуальном виде. Клипперам тоже рады.">People ready to write lore, timelines and glossary entries, and to keep them current. Clippers welcome.</span>
+        </li>
+        <li>
+          <b data-en="Bug finders" data-ru="Охотники за багами">Bug finders</b>
+          <span data-en="Break things on purpose, on any device, and report what happened. Alpha means rough edges, and every one you find is one fewer at launch." data-ru="Ломать специально, на любом устройстве, и рассказывать, что случилось. Альфа значит шероховатости, и каждая найденная вами не доживёт до открытия.">Break things on purpose, on any device, and report what happened. Alpha means rough edges, and every one you find is one fewer at launch.</span>
+        </li>
+        <li>
+          <b data-en="People with opinions" data-ru="Люди с мнением">People with opinions</b>
+          <span data-en="Suggest improvements, actively. Now is when a change costs an evening instead of a migration." data-ru="Активно предлагать улучшения. Сейчас изменение стоит вечера, а не миграции.">Suggest improvements, actively. Now is when a change costs an evening instead of a migration.</span>
+        </li>
+        <li>
+          <b data-en="Translators" data-ru="Переводчики">Translators</b>
+          <span data-en="The interface and the articles are translatable. English and Russian come first, other languages are welcome." data-ru="Интерфейс и статьи переводятся. Сначала английский и русский, другие языки тоже нужны.">The interface and the articles are translatable. English and Russian come first, other languages are welcome.</span>
+        </li>
+      </ul>
+      <div class="apply">
+        <p class="apply-how" data-en="Email <a href=&quot;mailto:vadim+calpha@filian.wiki?subject=Closed%20alpha%20application&amp;body=Username%20that%20you%20wanna%20claim%3A%20%0AYour%20age%20group%3A%20%0AWho%20are%20you%3F%3A%20%0AWhy%20Vadim%20should%20approve%20your%20registration%3A%20%0A&quot;>vadim+calpha@filian.wiki</a>, or <a href=&quot;mailto:vadim@filian.wiki?subject=Closed%20alpha%20application&amp;body=Username%20that%20you%20wanna%20claim%3A%20%0AYour%20age%20group%3A%20%0AWho%20are%20you%3F%3A%20%0AWhy%20Vadim%20should%20approve%20your%20registration%3A%20%0A&quot;>vadim@filian.wiki</a> with &quot;closed alpha&quot; in the subject, and fill in these four lines:" data-ru="Напишите на <a href=&quot;mailto:vadim+calpha@filian.wiki?subject=Closed%20alpha%20application&amp;body=Username%20that%20you%20wanna%20claim%3A%20%0AYour%20age%20group%3A%20%0AWho%20are%20you%3F%3A%20%0AWhy%20Vadim%20should%20approve%20your%20registration%3A%20%0A&quot;>vadim+calpha@filian.wiki</a> или на <a href=&quot;mailto:vadim@filian.wiki?subject=Closed%20alpha%20application&amp;body=Username%20that%20you%20wanna%20claim%3A%20%0AYour%20age%20group%3A%20%0AWho%20are%20you%3F%3A%20%0AWhy%20Vadim%20should%20approve%20your%20registration%3A%20%0A&quot;>vadim@filian.wiki</a>, указав в теме «closed alpha», и заполните четыре строки:">Email <a href="mailto:vadim+calpha@filian.wiki?subject=Closed%20alpha%20application&amp;body=Username%20that%20you%20wanna%20claim%3A%20%0AYour%20age%20group%3A%20%0AWho%20are%20you%3F%3A%20%0AWhy%20Vadim%20should%20approve%20your%20registration%3A%20%0A">vadim+calpha@filian.wiki</a>, or <a href="mailto:vadim@filian.wiki?subject=Closed%20alpha%20application&amp;body=Username%20that%20you%20wanna%20claim%3A%20%0AYour%20age%20group%3A%20%0AWho%20are%20you%3F%3A%20%0AWhy%20Vadim%20should%20approve%20your%20registration%3A%20%0A">vadim@filian.wiki</a> with "closed alpha" in the subject, and fill in these four lines:</p>
+        <pre class="apply-template" id="apply-template">Username that you wanna claim: 
+Your age group: 
+Who are you?: 
+Why Vadim should approve your registration: </pre>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="mailto:vadim+calpha@filian.wiki?subject=Closed%20alpha%20application&amp;body=Username%20that%20you%20wanna%20claim%3A%20%0AYour%20age%20group%3A%20%0AWho%20are%20you%3F%3A%20%0AWhy%20Vadim%20should%20approve%20your%20registration%3A%20%0A" data-en="Write the email" data-ru="Написать письмо">Write the email</a>
+          <button class="btn btn-ghost js-only" type="button" id="apply-copy" data-en="Copy the template" data-ru="Скопировать шаблон">Copy the template</button>
+        </div>
+        <dl class="apply-notes">
+          <dt data-en="Age group" data-ru="Возрастная группа">Age group</dt>
+          <dd data-en="Something like 14+ or 18+. Some countries have strict rules for teens, and this is only there for them. Write whatever you are comfortable with." data-ru="Например 14+ или 18+. В некоторых странах строгие правила для подростков, поле нужно только ради них. Пишите то, что вам комфортно.">Something like 14+ or 18+. Some countries have strict rules for teens, and this is only there for them. Write whatever you are comfortable with.</dd>
+          <dt data-en="Who are you" data-ru="Кто вы">Who are you</dt>
+          <dd data-en="Dev, bug finder, just a Snacker, content maker (clipper and so on), VTuber, translator, or anything else. Discord mods of SnackersHQ+ or SnackersRU: say so, then DM vai_prog to verify it." data-ru="Разработчик, охотник за багами, просто Snacker, автор контента (клиппер и так далее), VTuber, переводчик или кто-то ещё. Модераторы Discord SnackersHQ+ или SnackersRU: укажите это и напишите в личку vai_prog для проверки.">Dev, bug finder, just a Snacker, content maker (clipper and so on), VTuber, translator, or anything else. Discord mods of SnackersHQ+ or SnackersRU: say so, then DM vai_prog to verify it.</dd>
+          <dt data-en="Language" data-ru="Язык">Language</dt>
+          <dd data-en="The template is in English so every application looks the same. Answer in English or Russian." data-ru="Шаблон на английском, чтобы все заявки выглядели одинаково. Отвечать можно на английском или русском.">The template is in English so every application looks the same. Answer in English or Russian.</dd>
+        </dl>
+      </div>
+    </div>
+  </section>
 
   <section id="plan" class="wrap">
     <div class="reveal">
@@ -739,7 +797,7 @@ function showToast(text) {
 /* --- language and theme ------------------------------------------------ */
 const LANG_KEY = "naw-lang";
 const THEME_KEY = "naw-theme";
-const TITLE = { en: "FilianWIKI: launching soon", ru: "FilianWIKI: скоро открытие" };
+const TITLE = { en: "FilianWIKI: closed alpha", ru: "FilianWIKI: закрытая альфа" };
 
 function applyLang(next) {
   lang = next;
@@ -796,6 +854,16 @@ function burst(glyphs) {
   applyTheme(storedTheme === "light" || storedTheme === "dark" ? storedTheme : (prefersLight ? "light" : "dark"));
 
   document.getElementById("lang").addEventListener("click", () => applyLang(lang === "ru" ? "en" : "ru"));
+  document.documentElement.classList.add("js");
+  document.getElementById("apply-copy").addEventListener("click", async () => {
+    const text = document.getElementById("apply-template").textContent + "\n";
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(lang === "ru" ? "Шаблон скопирован" : "Template copied");
+    } catch (e) {
+      showToast(lang === "ru" ? "Не вышло скопировать, выделите текст вручную" : "Could not copy, select the text by hand");
+    }
+  });
   document.getElementById("theme").addEventListener("click", () =>
     applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
 
