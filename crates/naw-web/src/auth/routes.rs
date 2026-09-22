@@ -272,8 +272,9 @@ fn sign_in_response(state: &AppState, session_value: &str, next: &str) -> Respon
 }
 
 /// GET /auth/dev: loopback-only instant sign-in as the fixed `dev` user.
-/// Refuses when the flag is off (404), when base_url is https (defense in
-/// depth, the config check happens at startup too) or off loopback.
+/// Refuses when the flag is off (404), when base_url is https or off
+/// loopback. Defense in depth: `Config::check_dev_login` already refuses to
+/// start with the flag on an https base url or a public bind.
 pub async fn dev_login(
     State(state): State<AppState>,
     Query(params): Query<BTreeMap<String, String>>,

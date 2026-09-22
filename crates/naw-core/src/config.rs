@@ -308,7 +308,31 @@ impl Config {
             cfg.reload_interval_secs = secs;
         }
         apply_auth_env(&mut cfg.auth);
+        cfg.check_dev_login()?;
         Ok(cfg)
+    }
+
+    /// Refuses to start with the dev login anywhere it could be reached from
+    /// outside. The handler checks the peer address too, but behind a reverse
+    /// proxy every request comes from loopback, so that check alone would let
+    /// the whole internet sign in as the dev account. A public https base URL
+    /// or a bind on a non-loopback address both mean "not a laptop".
+    pub fn check_dev_login(&self) -> Result<(), AppError> {
+        if !self.auth.dev_login {
+            return Ok(());
+        }
+        let public_url = self.auth.base_url.as_deref().is_some_and(|url| {
+            url.trim_start()
+                .to_ascii_lowercase()
+                .starts_with("https://")
+        });
+        let public_bind = !matches!(self.http_bind.trim(), "127.0.0.1" | "::1" | "localhost");
+        if public_url || public_bind {
+            return Err(AppError::Config(
+                "the dev login is for local development only: it cannot run with an https base url or a non-loopback bind".to_string(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -414,6 +438,22 @@ mod tests {
         assert!(!dumped.contains("redis://"));
         assert!(dumped.contains("[redacted]"));
         assert_eq!(cfg.skin_dir, "skins/default");
+    }
+
+    #[test]
+    fn dev_login_refuses_anything_that_looks_public() {
+        let mut cfg = Config::default();
+        cfg.auth.dev_login = true;
+        cfg.http_bind = "127.0.0.1".to_string();
+        cfg.auth.base_url = Some("http://127.0.0.1:4242".to_string());
+        assert!(cfg.check_dev_login().is_ok(), "a laptop is fine");
+        cfg.auth.base_url = Some("HTTPS://filian.wiki".to_string());
+        assert!(cfg.check_dev_login().is_err(), "https base url");
+        cfg.auth.base_url = None;
+        cfg.http_bind = "0.0.0.0".to_string();
+        assert!(cfg.check_dev_login().is_err(), "public bind");
+        cfg.auth.dev_login = false;
+        assert!(cfg.check_dev_login().is_ok(), "off is always fine");
     }
 
     #[test]
