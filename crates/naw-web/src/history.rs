@@ -36,6 +36,19 @@ const CONTEXT: usize = 3;
 /// everybody. Past this the diff is truncated and says so.
 const DIFF_ROW_MAX: usize = 1500;
 
+/// Longest the diff algorithm may search, on a page anyone can open. Past the
+/// deadline the crate stops looking for the shortest diff and returns a
+/// correct, coarser one. It needs the crate's `std` feature: without it the
+/// deadline type is `()` and the limit silently does nothing.
+const DIFF_TIME_MAX: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Longest body, in lines, whose diff still gets tidied. The crate's
+/// compaction pass slides hunks to cleaner boundaries, ignores the deadline,
+/// and is quadratic on long repetitive bodies: two 60 000 line bodies of
+/// repeating short lines spent 2.5 s there against 75 ms in the diff itself.
+/// Past this the rows come straight from the diff.
+const COMPACT_LINES_MAX: usize = 2000;
+
 const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; charset=utf-8");
 
 fn slug_or_404(raw: &str) -> Option<String> {
@@ -331,15 +344,42 @@ pub struct Diff {
 /// writer because the output is a table in a template, not a patch file, and
 /// this way the collapsing rule is one testable function.
 pub fn diff_bodies(old: &str, new: &str) -> Diff {
-    use similar::{ChangeTag, TextDiff};
+    use similar::algorithms::{Capture, diff_deadline};
+    use similar::{Algorithm, ChangeTag, capture_diff_deadline};
 
-    let text_diff = TextDiff::from_lines(old, new);
+    // Lines keep their terminator, as the crate's own line diff does, so a
+    // last line with and without a newline still differ.
+    let old_lines: Vec<&str> = old.split_inclusive('\n').collect();
+    let new_lines: Vec<&str> = new.split_inclusive('\n').collect();
+    let deadline = Some(std::time::Instant::now() + DIFF_TIME_MAX);
+    let ops = if old_lines.len().max(new_lines.len()) <= COMPACT_LINES_MAX {
+        capture_diff_deadline(
+            Algorithm::Myers,
+            &old_lines,
+            0..old_lines.len(),
+            &new_lines,
+            0..new_lines.len(),
+            deadline,
+        )
+    } else {
+        let mut capture = Capture::new();
+        let Ok(()) = diff_deadline(
+            Algorithm::Myers,
+            &mut capture,
+            &old_lines,
+            0..old_lines.len(),
+            &new_lines,
+            0..new_lines.len(),
+            deadline,
+        );
+        capture.into_ops()
+    };
     let mut all: Vec<DiffRow> = Vec::new();
     let mut added = 0usize;
     let mut removed = 0usize;
 
-    for op in text_diff.ops() {
-        for change in text_diff.iter_changes(op) {
+    for op in &ops {
+        for change in op.iter_changes(&old_lines, &new_lines) {
             let kind = match change.tag() {
                 ChangeTag::Equal => RowKind::Context,
                 ChangeTag::Insert => {
@@ -834,6 +874,19 @@ mod tests {
         // the truth about the size of the change.
         assert_eq!(diff.added, 4000);
         assert_eq!(diff.removed, 4000);
+    }
+
+    #[test]
+    fn a_long_repetitive_diff_stays_cheap() {
+        // Two bodies cycling through a few short lines out of step: seconds
+        // of hunk compaction in a release build before it was skipped here.
+        let old: String = (0..60_000).map(|i| format!("{}\n", i % 3)).collect();
+        let new: String = (0..60_000).map(|i| format!("{}\n", (i + 1) % 2)).collect();
+        let started = std::time::Instant::now();
+        let diff = diff_bodies(&old, &new);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        assert!(diff.truncated);
+        assert!(diff.added > 0 && diff.removed > 0);
     }
 
     #[test]
