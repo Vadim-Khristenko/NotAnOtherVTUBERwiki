@@ -76,7 +76,7 @@ pub async fn history(
     let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
         return Ok(crate::errors::not_found());
     };
-    let locale = ctx.wiki.default_locale.clone();
+    let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
     };
@@ -236,7 +236,7 @@ pub async fn revision(
     let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
         return Ok(crate::errors::not_found());
     };
-    let locale = ctx.wiki.default_locale.clone();
+    let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
     };
@@ -450,13 +450,13 @@ pub async fn diff(
     let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
         return Ok(crate::errors::not_found());
     };
-    let locale = ctx.wiki.default_locale.clone();
+    let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
     };
 
     let Some(from_id) = query.from.as_deref().and_then(pages::parse_uuid) else {
-        return Ok(pages::see_other(&format!("/{slug}/history")));
+        return Ok(pages::see_other(&ctx.link(&format!("/{slug}/history"))));
     };
     let to_id = query
         .to
@@ -546,7 +546,7 @@ pub async fn revert(
     let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
         return Ok(crate::errors::not_found());
     };
-    let locale = ctx.wiki.default_locale.clone();
+    let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
     };
@@ -562,7 +562,7 @@ pub async fn revert(
     // Reverting to what is already live would add a revision that changes
     // nothing. Send them to the page instead.
     if target.body_md == found.body_md {
-        return Ok(pages::see_other(&format!("/{slug}")));
+        return Ok(pages::see_other(&ctx.link(&format!("/{slug}"))));
     }
 
     let revision_id = Uuid::new_v4();
@@ -628,7 +628,7 @@ pub async fn revert(
         },
     )
     .await;
-    Ok(pages::see_other(&format!("/{slug}")))
+    Ok(pages::see_other(&ctx.link(&format!("/{slug}"))))
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -658,7 +658,7 @@ pub async fn patrol(
     if !ctx.actor.can(Capability::RevisionPatrol) {
         return Ok((StatusCode::FORBIDDEN, "patrolling needs moderator rights").into_response());
     }
-    let locale = ctx.wiki.default_locale.clone();
+    let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
     };
@@ -678,7 +678,7 @@ pub async fn patrol(
     .rows_affected();
     if updated == 0 {
         // Either it is not a revision of this page, or it was already checked.
-        return Ok(pages::see_other(&format!("/{slug}/history")));
+        return Ok(pages::see_other(&ctx.link(&format!("/{slug}/history"))));
     }
     audit::record_or_log(
         &state.db,
@@ -692,7 +692,7 @@ pub async fn patrol(
         },
     )
     .await;
-    Ok(pages::see_other(&format!("/{slug}/history")))
+    Ok(pages::see_other(&ctx.link(&format!("/{slug}/history"))))
 }
 
 #[cfg(test)]

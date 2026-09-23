@@ -45,8 +45,8 @@ pub struct Hit {
 pub struct Request<'a> {
     pub wiki_id: Uuid,
     pub text: &'a str,
-    /// The wiki's locale. Each backend maps it to what it needs: a PostgreSQL
-    /// text search configuration here, an index name elsewhere.
+    /// The language searched: results are limited to it, and each backend
+    /// maps it to what it needs, a PostgreSQL text search configuration here.
     pub locale: &'a str,
     pub limit: i64,
 }
@@ -173,6 +173,9 @@ impl SearchBackend for Postgres {
             WHERE p.wiki_id = $3
               AND p.namespace = 'main'
               AND p.deleted_at IS NULL
+              -- One language at a time: a search on the Russian side of a wiki
+              -- finds Russian articles, and links to them in Russian.
+              AND COALESCE(p.locale, '') = $5
               AND (p.search_vector @@ parsed.tsq OR p.title % $2)
             ORDER BY "score!" DESC, p.updated_at DESC
             LIMIT $4
@@ -180,7 +183,8 @@ impl SearchBackend for Postgres {
             config,
             request.text,
             request.wiki_id,
-            request.limit
+            request.limit,
+            request.locale
         )
         .fetch_all(&self.db)
         .await?;

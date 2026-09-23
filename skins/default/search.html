@@ -12,7 +12,7 @@
 {% block body %}
 <h1>{{ t("search.heading") }}</h1>
 
-<form class="search-form" method="get" action="/search" role="search">
+<form class="search-form" method="get" action="{{ base }}/search" role="search">
   <label class="field" for="search-q">{{ t("search.label") }}</label>
   <div class="search-row">
     <input class="field-input" id="search-q" name="q" type="search" value="{{ query }}"
@@ -36,9 +36,9 @@
   <ol class="search-results">
     {% for hit in results %}
     <li class="search-hit">
-      <a class="search-hit-title" href="/{{ hit.slug }}">{{ hit.title }}</a>
+      <a class="search-hit-title" href="{{ base }}/{{ hit.slug }}">{{ hit.title }}</a>
       <p class="search-hit-snippet">{{ hit.snippet | safe }}</p>
-      <p class="search-hit-slug">/{{ hit.slug }}</p>
+      <p class="search-hit-slug">{{ base }}/{{ hit.slug }}</p>
     </li>
     {% endfor %}
   </ol>

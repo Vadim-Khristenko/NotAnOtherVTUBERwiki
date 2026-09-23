@@ -19,7 +19,7 @@
 <a class="skip-link" href="#content">{{ t("nav.skip_to_content") }}</a>
 <header class="site-header">
   <div class="site-header-inner">
-    <a class="site-brand" href="/">
+    <a class="site-brand" href="{{ base or '/' }}">
       <span class="site-brand-mark" aria-hidden="true"></span>
       <span class="site-brand-name">{{ wiki_name }}</span>
     </a>
@@ -43,7 +43,7 @@
       <span class="visually-hidden">{{ t("nav.menu") }}</span>
     </label>
 
-    <form class="header-search" id="site-search" method="get" action="/search" role="search">
+    <form class="header-search" id="site-search" method="get" action="{{ base }}/search" role="search">
       <label class="visually-hidden" for="header-q">{{ t("nav.search_this", wiki=wiki_name) }}</label>
       <svg class="icon header-search-icon" aria-hidden="true"><use href="#i-search" /></svg>
       <input id="header-q" name="q" type="search" placeholder="{{ t('nav.search_placeholder') }}"
@@ -54,7 +54,7 @@
 
     <nav class="site-nav" id="site-nav" aria-label="{{ t('nav.main') }}">
       {% if can_create is defined and can_create %}
-      <a class="nav-link" href="/new" title="{{ t('nav.new_page') }}" aria-label="{{ t('nav.new_page') }}">
+      <a class="nav-link" href="{{ base }}/new" title="{{ t('nav.new_page') }}" aria-label="{{ t('nav.new_page') }}">
         <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
         <span>{{ t("nav.new_page") }}</span>
       </a>
@@ -65,7 +65,7 @@
         <span>{{ t("nav.admin") }}</span>
       </a>
       {% endif %}
-      <a class="nav-link" href="/about" title="{{ t('nav.about') }}" aria-label="{{ t('nav.about') }}">
+      <a class="nav-link" href="{{ base }}/about" title="{{ t('nav.about') }}" aria-label="{{ t('nav.about') }}">
         <svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>
         <span>{{ t("nav.about") }}</span>
       </a>
@@ -74,15 +74,16 @@
       {#
         Language menu. A dropdown rather than a row of codes, because a row of
         codes stops working somewhere past five languages, and this engine is
-        meant to carry many more. Each entry is a plain link to `?lang=`, so a
-        choice is one click and needs no script. With a script and enough
+        meant to carry many more. Each entry links to this article in that
+        language (`/ru/about`, or a subdomain) with `?lang=` so the interface
+        follows, so a choice is one click and needs no script. With a script and enough
         languages, a filter field appears at the top of the list.
       #}
       <details class="lang-menu">
         <summary class="nav-link lang-summary" title="{{ t('nav.language') }}">
           <svg class="icon" aria-hidden="true"><use href="#i-world" /></svg>
           {# The short code on the wide row, the full name in the drawer. #}
-          {% for option in language_options %}{% if option.current %}<b class="lang-code">{{ option.code | upper }}</b><span>{{ option.native_name }}</span>{% endif %}{% endfor %}
+          <b class="lang-code">{{ lang | upper }}</b><span>{{ lang_native }}</span>
           <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron-down" /></svg>
         </summary>
         <div class="lang-panel">
@@ -98,7 +99,7 @@
                 <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
               </span>
               {% else %}
-              <a class="lang-option" href="?lang={{ option.code }}" lang="{{ option.code }}"
+              <a class="lang-option" href="{{ option.href }}" lang="{{ option.code }}"
                  hreflang="{{ option.code }}" rel="nofollow">{{ option.native_name }}</a>
               {% endif %}
             </li>

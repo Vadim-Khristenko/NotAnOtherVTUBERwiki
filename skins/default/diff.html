@@ -7,19 +7,19 @@
   Every cell is escaped. The diff text is page source written by anybody.
 #}
 {% block body %}
-<nav class="crumbs"><a href="/{{ slug }}">{{ page_title }}</a> /
-  <a href="/{{ slug }}/history">{{ t("history.crumb") }}</a> / {{ t("diff.crumb") }}</nav>
+<nav class="crumbs"><a href="{{ base }}/{{ slug }}">{{ page_title }}</a> /
+  <a href="{{ base }}/{{ slug }}/history">{{ t("history.crumb") }}</a> / {{ t("diff.crumb") }}</nav>
 <h1>{{ t("diff.title", page=page_title) }}</h1>
 
 <div class="diff-heads">
   <div class="diff-head">
     <p class="diff-head-label">{{ t("diff.old") }}</p>
-    <p><a href="/{{ slug }}/rev/{{ from_id }}">{{ from_at }}</a></p>
+    <p><a href="{{ base }}/{{ slug }}/rev/{{ from_id }}">{{ from_at }}</a></p>
     <p class="muted-cell">{% if from_author %}{{ from_author }}{% else %}{{ t("history.anonymous") }}{% endif %}</p>
   </div>
   <div class="diff-head">
     <p class="diff-head-label">{{ t("diff.new") }}{% if to_is_current %}{{ t("diff.current_suffix") }}{% endif %}</p>
-    <p><a href="/{{ slug }}/rev/{{ to_id }}">{{ to_at }}</a></p>
+    <p><a href="{{ base }}/{{ slug }}/rev/{{ to_id }}">{{ to_at }}</a></p>
     <p class="muted-cell">{% if to_author %}{{ to_author }}{% else %}{{ t("history.anonymous") }}{% endif %}</p>
   </div>
 </div>
@@ -60,7 +60,7 @@
 {% endif %}
 
 <p class="form-actions">
-  <a class="button-preview" href="/{{ slug }}/history">{{ t("diff.back") }}</a>
-  {% if may_edit %}<a class="button-preview" href="/{{ slug }}/edit">{{ t("diff.edit_page") }}</a>{% endif %}
+  <a class="button-preview" href="{{ base }}/{{ slug }}/history">{{ t("diff.back") }}</a>
+  {% if may_edit %}<a class="button-preview" href="{{ base }}/{{ slug }}/edit">{{ t("diff.edit_page") }}</a>{% endif %}
 </p>
 {% endblock %}

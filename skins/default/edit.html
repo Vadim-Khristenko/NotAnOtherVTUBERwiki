@@ -4,8 +4,8 @@
 {% if back_href %}
 <nav class="crumbs"><a href="{{ back_href }}">{{ t("nav.read") }}</a></nav>
 {% elif not show_slug and slug %}
-<nav class="crumbs"><a href="/{{ slug }}">{{ t("nav.read") }}</a> ·
-  <a href="/{{ slug }}/history">{{ t("nav.history") }}</a></nav>
+<nav class="crumbs"><a href="{{ base }}/{{ slug }}">{{ t("nav.read") }}</a> ·
+  <a href="{{ base }}/{{ slug }}/history">{{ t("nav.history") }}</a></nav>
 {% endif %}
 {% if locked is defined and locked %}
 <p class="notice notice-warn" role="status">
@@ -35,6 +35,7 @@
 <input class="field-input" name="summary" value="{{ summary_value }}" maxlength="200" />
 </label>
 {% if not fixed_title %}<label class="check"><input type="checkbox" name="minor" value="1" /> {{ t("editor.minor") }}</label>{% endif %}
+{% if translation_of %}<label class="check"><input type="checkbox" name="synced" value="1" /> {{ t("translate.synced", source=translation_of) }}</label>{% endif %}
 <div class="toolbar" role="toolbar" aria-label="Formatting">
 <button type="button" data-wrap="**" title="Bold"><b>B</b></button>
 <button type="button" data-wrap="*" title="Italic"><i>I</i></button>

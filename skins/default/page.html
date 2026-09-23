@@ -17,12 +17,29 @@
    for them. The bottom row keeps only the date, which is reference, not action. #}
 <nav class="page-actions" aria-label="{{ t('page.tools') }}">
   {% if can_edit_this is defined and can_edit_this %}
-    <a class="page-action" href="/{{ slug }}/edit"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("page.edit") }}</a>
+    <a class="page-action" href="{{ base }}/{{ slug }}/edit"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("page.edit") }}</a>
   {% elif locked is defined and locked %}
     <span class="page-action is-static" title="{{ t('page.locked_hint') }}"><svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg>{{ t("page.locked") }}</span>
   {% endif %}
-  <a class="page-action" href="/{{ slug }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
+  <a class="page-action" href="{{ base }}/{{ slug }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
+  {% if translate %}
+    <a class="page-action" href="{{ translate.href }}" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-language" /></svg>{{ t("translate.offer", language=translate.name) }}</a>
+  {% endif %}
 </nav>
+{% endif %}
+{#
+  Language notices, above the text they are about: the reader first learns
+  there is a version in their own language, or that this translation may be
+  behind its source.
+#}
+{% if reader_version %}
+<p class="notice lang-notice" role="note"><svg class="icon" aria-hidden="true"><use href="#i-language" /></svg>
+  <a href="{{ reader_version.href }}">{{ t("translate.in_your_language", language=reader_version.name) }}</a></p>
+{% endif %}
+{% if stale %}
+<p class="notice notice-warn lang-notice" role="note"><svg class="icon" aria-hidden="true"><use href="#i-alert-triangle" /></svg>
+  <span>{{ t("translate.stale", source=stale.source_name) }}
+  <a href="{{ stale.diff_href }}">{{ t("translate.stale_diff") }}</a> · <a href="{{ stale.source_href }}">{{ t("translate.stale_source") }}</a></span></p>
 {% endif %}
 {% if content_lang is defined and content_lang != lang %}
 <div lang="{{ content_lang }}">{{ body | safe }}</div>
@@ -30,6 +47,13 @@
 {{ body | safe }}
 {% endif %}
 {% if slug is defined %}
+{% if other_languages %}
+<nav class="other-languages" aria-label="{{ t('translate.other_languages') }}">
+  <svg class="icon" aria-hidden="true"><use href="#i-language" /></svg>
+  <span>{{ t("translate.other_languages") }}:</span>
+  {% for v in other_languages %}<a href="{{ v.href }}" hreflang="{{ v.code }}" lang="{{ v.code }}" title="{{ v.title }}">{{ v.name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
+</nav>
+{% endif %}
 {% if updated_at is defined %}
 <p class="page-meta">{{ t("page.last_edited", when=updated_at) }}</p>
 {% endif %}

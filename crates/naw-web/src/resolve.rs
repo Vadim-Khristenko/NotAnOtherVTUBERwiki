@@ -90,6 +90,37 @@ pub struct Ctx {
     /// request, so a reload landing mid-request cannot mix two versions of the
     /// skin into one page. An `Arc` clone, which is a pointer bump.
     pub skin: std::sync::Arc<naw_core::skin::Loaded>,
+    /// The language of the article this request is about. The wiki's own
+    /// language unless the address names another one (`/ru/about` or
+    /// `ru.wiki.example`).
+    pub content_locale: String,
+    /// How `content_locale` was chosen, which decides how links are built.
+    pub locale_via: LocaleVia,
+    /// The routed path, without a language prefix: what a language switch
+    /// keeps when it moves the reader to another language.
+    pub path: String,
+}
+
+/// Where the article language of a request came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocaleVia {
+    /// No language in the address: the wiki's own language.
+    Default,
+    /// A path prefix, `/ru/about`.
+    Path,
+    /// A language subdomain, `ru.wiki.example/about`.
+    Subdomain,
+}
+
+/// How a wiki spells a language in its links, from
+/// `settings.languages.urls`: `path` (the default, works on any host) or
+/// `subdomain` (needs DNS and a certificate for every language).
+pub fn language_urls_by_subdomain(settings: &serde_json::Value) -> bool {
+    settings
+        .get("languages")
+        .and_then(|v| v.get("urls"))
+        .and_then(|v| v.as_str())
+        == Some("subdomain")
 }
 
 impl Ctx {
@@ -110,6 +141,53 @@ impl Ctx {
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
             .collect();
         self.skin.messages.render(&self.lang, key, &owned)
+    }
+
+    /// A local path in this request's article language: `/about` becomes
+    /// `/ru/about` on a Russian page reached by prefix. The wiki's own
+    /// language and subdomain addresses need no prefix.
+    pub fn link(&self, path: &str) -> String {
+        if self.locale_via == LocaleVia::Path && self.content_locale != self.wiki.default_locale {
+            if path == "/" {
+                format!("/{}", self.content_locale)
+            } else {
+                format!("/{}{path}", self.content_locale)
+            }
+        } else {
+            path.to_string()
+        }
+    }
+
+    /// The prefix `link` adds, for templates: "" or "/ru".
+    pub fn base(&self) -> String {
+        if self.locale_via == LocaleVia::Path && self.content_locale != self.wiki.default_locale {
+            format!("/{}", self.content_locale)
+        } else {
+            String::new()
+        }
+    }
+
+    /// `path` in another language, the way this wiki spells languages in its
+    /// addresses. A subdomain wiki gets an absolute URL, because the language
+    /// is in the host.
+    pub fn link_for(&self, locale: &str, path: &str) -> String {
+        let default = locale == self.wiki.default_locale;
+        if language_urls_by_subdomain(&self.wiki.settings)
+            && let Some(domain) = self.wiki.domain.as_deref()
+        {
+            return if default {
+                format!("https://{domain}{path}")
+            } else {
+                format!("https://{locale}.{domain}{path}")
+            };
+        }
+        if default {
+            path.to_string()
+        } else if path == "/" {
+            format!("/{locale}")
+        } else {
+            format!("/{locale}{path}")
+        }
     }
 
     /// The languages this wiki offers, in catalogue order.
@@ -231,10 +309,16 @@ impl Ctx {
                     .meta(code)
                     .map(|m| m.native_name.clone())
                     .unwrap_or_else(|| code.to_uppercase());
+                // Choosing a language moves the reader to this article in
+                // it, and `?lang=` makes the interface follow. An option is
+                // only "where you are" when both already match: an English
+                // article under a Russian interface still offers Russian.
+                let href = format!("{}?lang={code}", self.link_for(code, &self.path));
                 minijinja::context! {
                     code => code.clone(),
                     native_name => native,
-                    current => *code == self.lang,
+                    current => *code == self.lang && *code == self.content_locale,
+                    href => href,
                 }
             })
             .collect();
@@ -249,7 +333,12 @@ impl Ctx {
             dir => dir,
             // The content language, for a lang attribute on the article itself
             // when it differs from the chrome.
-            content_lang => self.wiki.default_locale.clone(),
+            content_lang => self.content_locale.clone(),
+            lang_native => messages
+                .meta(&self.lang)
+                .map(|m| m.native_name.clone())
+                .unwrap_or_else(|| self.lang.to_uppercase()),
+            base => self.base(),
             // Shadows the install-wide global of the same name, so a template
             // offers exactly what this wiki offers.
             languages => offered,
@@ -275,8 +364,16 @@ pub async fn context(
     user: Option<&crate::auth::session::CurrentUser>,
 ) -> Result<Option<Ctx>, AppError> {
     let wikis = load_wikis(&state.db).await?;
-    let Some(wiki) = resolve_wiki(request_host(headers), &wikis) else {
-        return Ok(None);
+    let skin_now = state.skin.current();
+    let known = |code: &str| skin_now.messages.has(code);
+    // A language subdomain first (`ru.wiki.example`), so it is not swallowed
+    // by the default wiki fallback in `resolve_wiki`.
+    let (wiki, host_locale) = match language_subdomain(request_host(headers), &wikis, &known) {
+        Some((wiki, locale)) => (wiki, Some(locale)),
+        None => match resolve_wiki(request_host(headers), &wikis) {
+            Some(wiki) => (wiki, None),
+            None => return Ok(None),
+        },
     };
     let wiki = wiki.clone();
     let actor = crate::perm::resolve(&state.db, wiki.id, &wiki.settings, user).await?;
@@ -286,13 +383,65 @@ pub async fn context(
         let code = code.trim().to_ascii_lowercase();
         skin.messages.has(&code) && !disabled.contains(&code)
     };
-    let lang = pick_language(&offered, headers, user, &wiki.default_locale);
+    let path_locale = headers
+        .get(crate::locale_path::LOCALE_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    // A language this wiki switched off is not reachable by address either.
+    let (content_locale, locale_via) = match (path_locale, host_locale) {
+        (Some(locale), _) if offered(&locale) => (locale, LocaleVia::Path),
+        (_, Some(locale)) if offered(&locale) => (locale, LocaleVia::Subdomain),
+        _ => (wiki.default_locale.clone(), LocaleVia::Default),
+    };
+    // An address that names a language is a deliberate choice, the way a
+    // language subdomain is on Wikipedia: the interface follows it. Without
+    // one, the reader's own preference decides.
+    let lang = if locale_via == LocaleVia::Default {
+        pick_language(&offered, headers, user, &wiki.default_locale)
+    } else {
+        content_locale.clone()
+    };
+    let path = headers
+        .get(crate::locale_path::PATH_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("/")
+        .to_string();
     Ok(Some(Ctx {
         wiki,
         actor,
         lang,
         skin,
+        content_locale,
+        locale_via,
+        path,
     }))
+}
+
+/// `ru.wiki.example` for a wiki on `wiki.example`: the wiki plus the
+/// language, when the first label is an installed language and the rest is
+/// exactly a wiki's domain. Never falls back to the default wiki; that is
+/// `resolve_wiki`'s job once this finds nothing.
+pub fn language_subdomain<'a>(
+    host: Option<&str>,
+    wikis: &'a [WikiRef],
+    known: &dyn Fn(&str) -> bool,
+) -> Option<(&'a WikiRef, String)> {
+    let host = host?.split(':').next()?.trim().to_lowercase();
+    let (label, rest) = host.split_once('.')?;
+    if !known(label) {
+        return None;
+    }
+    // A wiki that really lives on `ru.example` keeps it.
+    if wikis
+        .iter()
+        .any(|w| w.domain.as_deref().map(str::to_lowercase).as_deref() == Some(host.as_str()))
+    {
+        return None;
+    }
+    wikis
+        .iter()
+        .find(|w| w.domain.as_deref().map(str::to_lowercase).as_deref() == Some(rest))
+        .map(|w| (w, label.to_string()))
 }
 
 pub fn resolve_wiki<'a>(host: Option<&str>, wikis: &'a [WikiRef]) -> Option<&'a WikiRef> {
@@ -344,6 +493,27 @@ mod tests {
             settings: json!({"default": default}),
             is_default: default,
         }
+    }
+
+    #[test]
+    fn a_language_subdomain_names_the_wiki_and_the_language() {
+        let known = |code: &str| matches!(code, "en" | "ru");
+        let list = vec![
+            wiki("filian", Some("filian.wiki"), true),
+            wiki("russian-only", Some("ru.example.test"), false),
+        ];
+        let (hit, lang) =
+            language_subdomain(Some("ru.filian.wiki:443"), &list, &known).expect("hit");
+        assert_eq!(hit.slug, "filian");
+        assert_eq!(lang, "ru");
+        assert!(language_subdomain(Some("filian.wiki"), &list, &known).is_none());
+        assert!(
+            language_subdomain(Some("de.filian.wiki"), &list, &known).is_none(),
+            "no German pack"
+        );
+        assert!(language_subdomain(Some("www.filian.wiki"), &list, &known).is_none());
+        // A wiki that really lives on a ru. host keeps it.
+        assert!(language_subdomain(Some("ru.example.test"), &list, &known).is_none());
     }
 
     #[test]

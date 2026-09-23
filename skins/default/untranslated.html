@@ -1,0 +1,30 @@
+{% extends "layout.html" %}
+{#
+  An article that exists, just not in the language asked for.
+
+  `article_title`   the title in the language it exists in
+  `here_name`       the requested language, by its own name
+  `versions`        languages it exists in: code, name, title, href
+  `translate_href`  where to start the translation, when the reader may
+  `source_name`     the language a translation would start from
+#}
+{% block body %}
+<section class="untranslated">
+  <svg class="icon untranslated-icon" aria-hidden="true"><use href="#i-language" /></svg>
+  <h1>{{ article_title }}</h1>
+  <p class="untranslated-lede">{{ t("translate.missing", language=here_name) }}</p>
+  {% if versions %}
+  <ul class="untranslated-versions">
+    {% for v in versions %}
+    <li><a href="{{ v.href }}" hreflang="{{ v.code }}" lang="{{ v.code }}">{{ v.title }}</a>
+      <span class="muted-cell">{{ v.name }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if translate_href %}
+  <p><a class="button-save untranslated-action" href="{{ translate_href }}">
+    <svg class="icon" aria-hidden="true"><use href="#i-language" /></svg>{{ t("translate.start", language=here_name) }}</a></p>
+  <p class="field-note">{{ t("translate.start_note", source=source_name) }}</p>
+  {% endif %}
+</section>
+{% endblock %}

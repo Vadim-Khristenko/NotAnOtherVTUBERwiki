@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT current_revision_id FROM pages\n           WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2\n             AND COALESCE(locale, '') = $3 AND deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "current_revision_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "current_revision_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "2b420c011965a8cf7495dfbfb3e63c436696cb9acd4b3b3f05aed4e72fb08435"
+}

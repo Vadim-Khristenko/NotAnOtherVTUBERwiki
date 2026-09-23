@@ -7,7 +7,7 @@
   engine reads an outdated article as current, which is how wikis spread stale
   claims. `rel=canonical` points at the live page for the same reason.
 #}
-{% block head_extra %}<link rel="canonical" href="/{{ slug }}" />{% endblock %}
+{% block head_extra %}<link rel="canonical" href="{{ base }}/{{ slug }}" />{% endblock %}
 {% block body %}
 <aside class="revision-banner" role="note">
   <p>{{ t("revision.old_banner", slug=slug, page=page_title, when=created_at,
@@ -16,9 +16,9 @@
   <p class="revision-summary">{{ t("revision.edit_summary", summary=edit_summary) }}</p>
   {% endif %}
   <p class="revision-banner-links">
-    <a href="/{{ slug }}">{{ t("revision.read_current") }}</a> ·
-    <a href="/{{ slug }}/diff?from={{ revision_id }}">{{ t("revision.what_changed") }}</a> ·
-    <a href="/{{ slug }}/history">{{ t("revision.all_revisions") }}</a>
+    <a href="{{ base }}/{{ slug }}">{{ t("revision.read_current") }}</a> ·
+    <a href="{{ base }}/{{ slug }}/diff?from={{ revision_id }}">{{ t("revision.what_changed") }}</a> ·
+    <a href="{{ base }}/{{ slug }}/history">{{ t("revision.all_revisions") }}</a>
   </p>
 </aside>
 {% if content_lang is defined and content_lang != lang %}

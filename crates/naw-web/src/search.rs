@@ -42,7 +42,7 @@ pub async fn search_page(
                 .search(Request {
                     wiki_id: ctx.wiki.id,
                     text,
-                    locale: &ctx.wiki.default_locale,
+                    locale: &ctx.content_locale,
                     limit: LIMIT,
                 })
                 .await?

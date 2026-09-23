@@ -7,7 +7,7 @@
   Revert is a POST with the revision id, gated server side on edit rights.
 #}
 {% block body %}
-<nav class="crumbs"><a href="/{{ slug }}">{{ page_title }}</a> / {{ t("history.crumb") }}</nav>
+<nav class="crumbs"><a href="{{ base }}/{{ slug }}">{{ page_title }}</a> / {{ t("history.crumb") }}</nav>
 <h1>{{ t("history.title", page=page_title) }}</h1>
 <p class="history-meta">
   {{ tn("history.revisions", total) }}
@@ -15,7 +15,7 @@
 </p>
 
 {% if revisions %}
-<form method="get" action="/{{ slug }}/diff">
+<form method="get" action="{{ base }}/{{ slug }}/diff">
   {# Comparing needs two revisions. With one, the button could only fail. #}
   {% if total > 1 %}
   <div class="form-actions history-actions">
@@ -50,7 +50,7 @@
                  aria-label="{{ t('history.compare_to') }}"
                  {% if loop.first %}checked{% endif %} />
         </td>
-        <td class="history-when" data-label="{{ t('history.column_when') }}"><a href="/{{ slug }}/rev/{{ rev.id }}">{{ rev.created_at }}</a></td>
+        <td class="history-when" data-label="{{ t('history.column_when') }}"><a href="{{ base }}/{{ slug }}/rev/{{ rev.id }}">{{ rev.created_at }}</a></td>
         <td class="history-who" data-label="{{ t('history.column_who') }}">
           {%- if rev.author %}{{ rev.author }}{% else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif -%}
         </td>
@@ -89,7 +89,7 @@
 #}
 {% for rev in revisions %}
   {% if not rev.is_patrolled %}
-  <form id="patrol-{{ rev.id }}" method="post" action="/{{ slug }}/patrol" hidden>
+  <form id="patrol-{{ rev.id }}" method="post" action="{{ base }}/{{ slug }}/patrol" hidden>
     <input type="hidden" name="revision" value="{{ rev.id }}" />
   </form>
   {% endif %}
@@ -105,7 +105,7 @@
 <section class="settings-section">
   <h2>{{ t("history.restore_heading") }}</h2>
   <p class="muted-cell">{{ t("history.restore_hint") }}</p>
-  <form method="post" action="/{{ slug }}/revert">
+  <form method="post" action="{{ base }}/{{ slug }}/revert">
     <label class="field" for="revert-pick">{{ t("history.restore_pick") }}
       <select class="field-input" id="revert-pick" name="revision" required>
         {% for rev in revisions %}
@@ -126,9 +126,9 @@
 {% endif %}
 
 <nav class="pager">
-  {% if has_prev %}<a href="/{{ slug }}/history?page={{ prev_page }}">{{ t("history.newer") }}</a>{% endif %}
+  {% if has_prev %}<a href="{{ base }}/{{ slug }}/history?page={{ prev_page }}">{{ t("history.newer") }}</a>{% endif %}
   <span class="muted-cell">{{ t("history.page_no", n=page_no) }}</span>
-  {% if has_next %}<a href="/{{ slug }}/history?page={{ next_page }}">{{ t("history.older") }}</a>{% endif %}
+  {% if has_next %}<a href="{{ base }}/{{ slug }}/history?page={{ next_page }}">{{ t("history.older") }}</a>{% endif %}
 </nav>
 {% else %}
 <p class="notice">{{ t("history.empty") }}</p>

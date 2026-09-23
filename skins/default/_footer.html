@@ -1,10 +1,10 @@
 <footer class="site-footer">
   <div class="footer-inner">
     <nav class="footer-nav">
-      <a href="/about">{{ t("footer.about") }}</a>
-      <a href="/privacy">{{ t("footer.privacy") }}</a>
-      <a href="/terms">{{ t("footer.terms") }}</a>
-      <a href="/license">{{ t("footer.license") }}</a>
+      <a href="{{ base }}/about">{{ t("footer.about") }}</a>
+      <a href="{{ base }}/privacy">{{ t("footer.privacy") }}</a>
+      <a href="{{ base }}/terms">{{ t("footer.terms") }}</a>
+      <a href="{{ base }}/license">{{ t("footer.license") }}</a>
     </nav>
     <p class="engine-note">{{ t("footer.engine", version=version) }}{% if footer_note is defined and footer_note %} · {{ footer_note }}{% endif %}</p>
   </div>

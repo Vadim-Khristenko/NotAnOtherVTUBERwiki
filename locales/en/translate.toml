@@ -1,0 +1,13 @@
+# Articles in several languages.
+
+heading = "Translating {page}: {from} to {to}"
+missing = "This article is not in {language} yet. It exists in:"
+start = "Translate into {language}"
+start_note = "The editor opens with the {source} text, ready to translate."
+offer = "Translate into {language}"
+in_your_language = "This article is also in {language}"
+stale = "The {source} original has changed since this translation was made."
+stale_diff = "What changed"
+stale_source = "Read the original"
+other_languages = "In other languages"
+synced = "This translation now matches the current {source} original"

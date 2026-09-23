@@ -316,6 +316,10 @@ pub(crate) struct FoundPage {
     pub body_md: String,
     pub summary: Option<String>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// Set on a translation: the language it was translated from, and the
+    /// revision of that source it matches.
+    pub translation_source_locale: Option<String>,
+    pub translation_source_revision_id: Option<Uuid>,
 }
 
 /// Loads a live page and its current revision. An archived page reads as
@@ -329,6 +333,7 @@ pub(crate) async fn find_page(
     let row = sqlx::query!(
         r#"
         SELECT p.id, p.title, p.is_locked, p.updated_at,
+               p.translation_source_locale, p.translation_source_revision_id,
                r.id AS revision_id, r.body_md, r.summary
         FROM pages p
         JOIN revisions r ON r.id = p.current_revision_id
@@ -352,6 +357,8 @@ pub(crate) async fn find_page(
         body_md: row.body_md,
         summary: row.summary,
         updated_at: row.updated_at,
+        translation_source_locale: row.translation_source_locale,
+        translation_source_revision_id: row.translation_source_revision_id,
     }))
 }
 
@@ -401,7 +408,7 @@ pub async fn home(
     if !slug_is_valid(slug) {
         return Ok(crate::errors::not_found());
     }
-    let target = format!("/{slug}");
+    let target = ctx.link(&format!("/{slug}"));
     match redirect_response(StatusCode::PERMANENT_REDIRECT, &target) {
         Some(response) => Ok(response),
         None => Ok(crate::errors::not_found()),
@@ -427,11 +434,18 @@ pub async fn page(
     let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
         return Ok(crate::errors::not_found());
     };
-    let locale = ctx.wiki.default_locale.clone();
+    let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
-        return Ok(crate::errors::not_found());
+        // Not in this language. If it exists in another one, say so and offer
+        // to translate; a bare 404 would hide the article from its readers.
+        return Ok(
+            match crate::translate::missing(&state, &ctx, &slug).await? {
+                Some(response) => response,
+                None => crate::errors::not_found(),
+            },
+        );
     };
-    if let Some(target) = jump_target(&slug, &query) {
+    if let Some(target) = jump_target(&slug, &query).map(|t| ctx.link(&t)) {
         // jump_target pins the fragment charset, so this is Some in practice.
         // If it ever is not, render the page instead of failing the request.
         if let Some(response) = redirect_response(StatusCode::SEE_OTHER, &target) {
@@ -439,6 +453,27 @@ pub async fn page(
         }
     }
     let (body_html, render_ms) = cached_body(&state, ctx.wiki.id, &found.body_md).await?;
+    let versions = crate::translate::versions(&state, &ctx, &slug).await?;
+    let stale = crate::translate::staleness(
+        &state,
+        &ctx,
+        &slug,
+        found.translation_source_locale.as_deref(),
+        found.translation_source_revision_id,
+    )
+    .await?;
+    // The same article in the reader's own language, when this is not it.
+    let reader_version = (ctx.lang != ctx.content_locale)
+        .then(|| versions.iter().find(|v| v.locale == ctx.lang))
+        .flatten()
+        .map(|v| {
+            minijinja::context! {
+                href => ctx.link_for(&v.locale, &format!("/{slug}")),
+                name => crate::translate::native_name(&ctx, &v.locale),
+            }
+        });
+    let translate = crate::translate::translate_offer(&ctx, &slug, &versions)
+        .map(|(href, name)| minijinja::context! { href => href, name => name });
     let html = render_shell(
         &ctx,
         &Shell {
@@ -451,6 +486,14 @@ pub async fn page(
                 locked => found.locked,
                 updated_at => found.updated_at.format("%Y-%m-%d %H:%M UTC").to_string(),
                 can_edit_this => ctx.actor.can_edit_page(found.locked),
+                other_languages => crate::translate::others(&ctx, &slug, &versions),
+                reader_version => reader_version,
+                translate => translate,
+                stale => stale.map(|s| minijinja::context! {
+                    source_name => crate::translate::native_name(&ctx, &s.source_locale),
+                    source_href => s.source_href,
+                    diff_href => s.diff_href,
+                }),
             },
         },
     )?;
@@ -474,6 +517,9 @@ pub struct EditForm {
     base_revision: String,
     #[serde(default)]
     minor: Option<String>,
+    /// On a translation: "this now matches the source as it is today".
+    #[serde(default)]
+    synced: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -530,6 +576,9 @@ pub(crate) struct FormView<'a> {
     pub fixed_title: bool,
     /// Where "back" goes, for pages that are not addressed by `slug`.
     pub back_href: Option<&'a str>,
+    /// On a translation, the source language's name: the form then offers to
+    /// mark the translation as matching the source's current revision.
+    pub translation_of: Option<&'a str>,
 }
 
 pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, AppError> {
@@ -555,6 +604,7 @@ pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, Ap
                 locked => view.locked,
                 fixed_title => view.fixed_title,
                 back_href => view.back_href,
+                translation_of => view.translation_of,
             }
         })
         .map_err(template_error)?;
@@ -575,7 +625,7 @@ pub async fn new_page(
     if !ctx.actor.can(Capability::PageCreate) {
         return refuse(
             &ctx,
-            "/new",
+            &ctx.link("/new"),
             Capability::PageCreate,
             &ctx.t("error.no_create"),
         );
@@ -584,7 +634,7 @@ pub async fn new_page(
         &ctx,
         &FormView {
             heading: &ctx.t("editor.new_page"),
-            action: "/new",
+            action: &ctx.link("/new"),
             show_slug: true,
             slug: "",
             title_value: "",
@@ -594,6 +644,7 @@ pub async fn new_page(
             locked: false,
             fixed_title: false,
             back_href: None,
+            translation_of: None,
         },
     )
 }
@@ -612,7 +663,7 @@ pub async fn create_page(
     if !ctx.actor.can(Capability::PageCreate) {
         return refuse(
             &ctx,
-            "/new",
+            &ctx.link("/new"),
             Capability::PageCreate,
             &ctx.t("error.no_create"),
         );
@@ -627,7 +678,7 @@ pub async fn create_page(
         Ok(draft) => draft,
         Err(reason) => return Ok(bad_request(reason)),
     };
-    let locale = ctx.wiki.default_locale.clone();
+    let locale = ctx.content_locale.clone();
 
     // The unique index on (wiki_id, namespace, locale, slug) is the real
     // guard. This check exists to turn the race loser's error into a 409 with
@@ -651,7 +702,7 @@ pub async fn create_page(
             StatusCode::CONFLICT,
             &ctx.t("error.taken_title"),
             &message,
-            &format!("/{slug}"),
+            &ctx.link(&format!("/{slug}")),
             &ctx.t("error.taken_link"),
         );
     }
@@ -713,7 +764,7 @@ pub async fn create_page(
         },
     )
     .await;
-    Ok(see_other(&format!("/{slug}")))
+    Ok(see_other(&ctx.link(&format!("/{slug}"))))
 }
 
 /// 303 to an internal path, falling back to the wiki root.
@@ -737,7 +788,7 @@ pub async fn edit_page(
     let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
         return Ok(crate::errors::not_found());
     };
-    let locale = ctx.wiki.default_locale.clone();
+    let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
     };
@@ -749,16 +800,20 @@ pub async fn edit_page(
         });
         return refuse(
             &ctx,
-            &format!("/{slug}/edit"),
+            &ctx.link(&format!("/{slug}/edit")),
             Capability::PageEdit,
             &explanation,
         );
     }
+    let source_name = found
+        .translation_source_locale
+        .as_deref()
+        .map(|l| crate::translate::native_name(&ctx, l));
     render_form(
         &ctx,
         &FormView {
             heading: &ctx.t_with("editor.editing", &[("page", &found.title)]),
-            action: &format!("/{slug}/edit"),
+            action: &ctx.link(&format!("/{slug}/edit")),
             show_slug: false,
             slug: &slug,
             title_value: &found.title,
@@ -768,6 +823,7 @@ pub async fn edit_page(
             locked: found.locked,
             fixed_title: false,
             back_href: None,
+            translation_of: source_name.as_deref(),
         },
     )
 }
@@ -790,7 +846,7 @@ pub async fn save_page(
     let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
         return Ok(crate::errors::not_found());
     };
-    let locale = ctx.wiki.default_locale.clone();
+    let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
     };
@@ -802,7 +858,7 @@ pub async fn save_page(
         });
         return refuse(
             &ctx,
-            &format!("/{slug}/edit"),
+            &ctx.link(&format!("/{slug}/edit")),
             Capability::PageEdit,
             &explanation,
         );
@@ -824,9 +880,30 @@ pub async fn save_page(
             &ctx.t("error.conflict_title"),
             "This page changed while you were writing. Your text was not saved. \
              Open the page again, compare it with what you wrote, and re-apply your changes.",
-            &format!("/{slug}/history"),
+            &ctx.link(&format!("/{slug}/history")),
             &ctx.t("error.conflict_link"),
         );
+    }
+
+    // A translator who checked this translation against its source today
+    // says so; the staleness notice then counts from the source as it is now.
+    // Done before the no-change check: confirming needs no edit to the text.
+    if form.synced.is_some()
+        && let Some(source_locale) = found.translation_source_locale.as_deref()
+    {
+        sqlx::query!(
+            "UPDATE pages SET translation_source_revision_id = (
+                 SELECT current_revision_id FROM pages
+                 WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2
+                   AND COALESCE(locale, '') = $3 AND deleted_at IS NULL)
+             WHERE id = $4",
+            ctx.wiki.id,
+            slug,
+            source_locale,
+            found.id
+        )
+        .execute(&state.db)
+        .await?;
     }
 
     // An edit that changes nothing is not a revision. Without this every
@@ -835,7 +912,7 @@ pub async fn save_page(
         && draft.title == found.title
         && draft.summary.as_deref().unwrap_or("") == found.summary.as_deref().unwrap_or("")
     {
-        return Ok(see_other(&format!("/{slug}")));
+        return Ok(see_other(&ctx.link(&format!("/{slug}"))));
     }
 
     let revision_id = Uuid::new_v4();
@@ -889,7 +966,7 @@ pub async fn save_page(
         },
     )
     .await;
-    Ok(see_other(&format!("/{slug}")))
+    Ok(see_other(&ctx.link(&format!("/{slug}"))))
 }
 
 /// Parses a UUID that arrived in a form field. An empty or malformed value is

@@ -266,6 +266,7 @@ pub async fn edit(
             locked: page.as_ref().is_some_and(|p| p.locked),
             fixed_title: true,
             back_href: Some(&format!("/user/{}", person.username)),
+            translation_of: None,
         },
     )
 }

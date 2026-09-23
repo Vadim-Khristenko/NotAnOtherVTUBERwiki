@@ -9,6 +9,7 @@ mod display_name;
 mod errors;
 mod history;
 mod lang;
+mod locale_path;
 mod net;
 mod observe;
 mod pages;
@@ -18,6 +19,7 @@ mod profile;
 mod resolve;
 mod search;
 mod settings;
+mod translate;
 
 /// Account credentials for the command line: password hashing, temporary
 /// passwords and the username rule. Exposed on their own so the CLI can create
@@ -43,6 +45,20 @@ use tracing::instrument;
 /// carry `nosniff` so browsers never reinterpret a body against its
 /// content type.
 pub fn router(state: AppState) -> Router {
+    // The language prefix has to come off before routing, so its layer wraps
+    // the finished router instead of sitting inside it. See locale_path.rs.
+    let routes = routes(state.clone());
+    Router::new().fallback_service(
+        tower::ServiceBuilder::new()
+            .layer(axum::middleware::from_fn_with_state(
+                state,
+                locale_path::layer,
+            ))
+            .service(routes),
+    )
+}
+
+fn routes(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
@@ -123,6 +139,10 @@ pub fn router(state: AppState) -> Router {
         .route("/{slug}", get(pages::page))
         .route("/{slug}/edit", get(pages::edit_page).post(pages::save_page))
         .route("/{slug}/history", get(history::history))
+        .route(
+            "/{slug}/translate",
+            get(translate::form).post(translate::create),
+        )
         .route("/{slug}/diff", get(history::diff))
         .route("/{slug}/rev/{revision}", get(history::revision))
         .route("/{slug}/revert", post(history::revert))

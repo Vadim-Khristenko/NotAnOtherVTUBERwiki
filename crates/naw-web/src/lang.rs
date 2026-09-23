@@ -116,7 +116,18 @@ pub async fn layer(State(app): State<AppState>, req: Request<Body>, next: Next) 
         return next.run(req).await;
     }
 
-    let path = req.uri().path();
+    // The router saw `/about` for `/ru/about`; the reader must land back on
+    // the address they asked for, prefix included.
+    let routed = req.uri().path();
+    let path = match req
+        .headers()
+        .get(crate::locale_path::LOCALE_HEADER)
+        .and_then(|v| v.to_str().ok())
+    {
+        Some(locale) if routed == "/" => format!("/{locale}"),
+        Some(locale) => format!("/{locale}{routed}"),
+        None => routed.to_string(),
+    };
     let target = if rest.is_empty() {
         path.to_string()
     } else {
