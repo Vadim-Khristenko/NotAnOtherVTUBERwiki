@@ -148,9 +148,17 @@ The part that makes it a wiki rather than a blog.
 
 - [x] Page create, read, update, and archive with full revision history
 - [x] Diff viewer and one click undo
-- **Namespaces and transclusion**, with depth limits and cycle detection
-- `Template:` editing, with a preview of affected pages before publishing
-- Dependency graph, so a template edit invalidates exactly the pages that use it
+- [x] The `Template:` namespace and transclusion: `{{Infobox VTuber | name = Filian}}`,
+      parameters as `{{{field|default}}}`, `{{#if:}}` and `{{#ifeq:}}`, `<noinclude>` and
+      `<includeonly>`. Nesting stops at 16, loops are caught, and the number of calls and
+      the size of the result are capped. Curators and up edit templates
+- [x] An `:::infobox` card in the markup and a first `Infobox VTuber` template; starter
+      templates on the new page form ("VTuber article" arrives with the card and sections)
+- [x] A template edit shows on every page that uses it at once: the cache key is the hash
+      of the expanded text, so nothing needs a full flush. A template's page lists where it
+      is used
+- A preview of affected pages before a template is published
+- The other namespaces (`Talk:`, `Category:`, `File:`) and `Module:` for components
 - Categories, redirects, and slug normalisation that handles Japanese and Cyrillic
 - [x] Media upload behind a swappable storage backend. Images are recognised by their
       bytes (never SVG), stored by content hash, served with a CSP that allows nothing.
