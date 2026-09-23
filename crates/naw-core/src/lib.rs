@@ -2,6 +2,7 @@
 
 pub mod backends;
 pub mod config;
+pub mod csp;
 pub mod db;
 pub mod error;
 pub mod i18n;

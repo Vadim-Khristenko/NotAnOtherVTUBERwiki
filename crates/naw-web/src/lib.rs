@@ -7,6 +7,7 @@ mod audit;
 mod auth;
 pub mod bootstrap;
 mod chrome;
+mod csp;
 mod display_name;
 mod emotes;
 mod errors;
@@ -48,7 +49,8 @@ use tracing::instrument;
 /// oversized bodies are rejected with 413 before buffering, and a handler
 /// panic becomes a plain 500 instead of a dropped connection. Responses
 /// carry `nosniff` so browsers never reinterpret a body against its
-/// content type.
+/// content type, and a Content-Security-Policy with a per-response script
+/// nonce (see csp.rs).
 pub fn router(state: AppState) -> Router {
     // The language prefix has to come off before routing, so its layer wraps
     // the finished router instead of sitting inside it. See locale_path.rs.
@@ -226,6 +228,10 @@ fn routes(state: AppState) -> Router {
         .layer(
             tower::ServiceBuilder::new()
                 .layer(tower_http::catch_panic::CatchPanicLayer::new())
+                // Outside everything that renders a template, error pages
+                // included: the nonce a page prints must be the one its
+                // header allows.
+                .layer(axum::middleware::from_fn(csp::layer))
                 // Outermost after the panic guard, so even a request that dies
                 // downstream still gets an id in its response and its log line.
                 .layer(axum::middleware::from_fn(observe::layer))
