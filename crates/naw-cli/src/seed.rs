@@ -1,19 +1,16 @@
-//! Seeds a wiki from Markdown files. Content lives in `seeds/<flavor>/` as
-//! one file per page, so humans edit files instead of code. Flavors:
-//! `default` fits any topic, `classic` is the bare minimum, `vtuber`
-//! frames a streamer community, `filian` is baked FilianWIKI copy that
-//! needs written permission to reuse as is.
+//! Seeds a wiki from Markdown files in `seeds/<flavor>/`, one per page.
 //!
-//! Placeholders in the files come from the command line or the environment:
-//! `{wiki_name}`, `{domain}`, `{vtuber}`, `{community}`. Re-running tops up
-//! whatever is missing, so a flavor change heals itself on the next seed.
+//! Flavors: `default` for any topic, `classic` minimal, `vtuber` for a
+//! streamer community, `filian` FilianWIKI copy (reuse needs permission).
+//! Placeholders `{wiki_name}`, `{domain}`, `{vtuber}` and `{community}` come
+//! from flags or the environment. Re-running tops up what is missing.
 
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use naw_core::error::AppError;
 
-/// Everything `naw seed` needs beyond pools and directories.
+/// What `naw seed` needs beyond pools and directories.
 pub struct SeedOptions {
     pub flavor: String,
     pub slug: String,
@@ -26,12 +23,6 @@ pub struct SeedOptions {
 }
 
 /// Seeds or tops up one wiki.
-///
-/// No longer takes a skin directory or a template environment. The render cache
-/// holds the body fragment only, so the seeder produces something that is the
-/// same under every skin, and the wiki's display name is no longer baked into a
-/// cache row at all. That also retires an old bug: seeding an existing wiki with
-/// a bare `--slug` used to poison every cache row with the slug as the brand.
 pub async fn run(pool: &PgPool, seed_dir: &str, opts: &SeedOptions) -> Result<(), AppError> {
     let flavor_dir = format!("{seed_dir}/{}", opts.flavor);
     let wiki_id = match sqlx::query!("SELECT id FROM wikis WHERE slug = $1", opts.slug)
@@ -83,9 +74,7 @@ pub async fn run(pool: &PgPool, seed_dir: &str, opts: &SeedOptions) -> Result<()
         let title = first_heading(&body_md).unwrap_or_else(|| slug.clone());
         ensure_page(pool, wiki_id, &opts.locale, &slug, &title, &body_md).await?;
     }
-    // Seeded pages have to be searchable. Skipping this is how a wiki ends up
-    // with a search box that finds nothing and no obvious reason why, and the
-    // admin overview counts unindexed pages precisely to catch it.
+    // Seeded pages must be searchable.
     let indexed = naw_core::search::reindex(pool, Some(wiki_id)).await?;
     tracing::info!(
         slug = %opts.slug,
@@ -103,8 +92,8 @@ fn apply_placeholders(text: &str, opts: &SeedOptions) -> String {
         .replace("{community}", &opts.community)
 }
 
-/// Finds the first `{lowercase}` token left after substitution, so typos
-/// in placeholder names surface as a warning instead of published text.
+/// The first `{lowercase}` token left after substitution, so a typo warns
+/// instead of being published.
 fn leftover_placeholder(text: &str) -> Option<String> {
     let mut rest = text;
     while let Some(open) = rest.find('{') {
@@ -131,9 +120,7 @@ async fn seed_wiki(pool: &PgPool, opts: &SeedOptions) -> Result<Uuid, AppError> 
     let id = Uuid::new_v4();
     let aliases =
         serde_json::to_value(&opts.aliases).map_err(|err| AppError::Config(err.to_string()))?;
-    // Exactly one default wiki may exist: a second default makes Host
-    // resolution order dependent. A seed only becomes the default when none
-    // is flagged yet.
+    // One default wiki at most, or Host resolution depends on order.
     let has_default = sqlx::query!("SELECT id FROM wikis WHERE settings->>'default' = 'true'")
         .fetch_optional(pool)
         .await?
@@ -212,12 +199,7 @@ async fn seed_content(
     Ok(())
 }
 
-/// Renders the body into the cache when the current renderer version has no
-/// row for it yet. Bump `RENDERER_VERSION`, reseed, and every page heals.
-///
-/// Only the body is cached, so this no longer needs a template environment, a
-/// wiki name, a locale or a skin: the cache key is the body's content hash and
-/// nothing else. The chrome is assembled per request by the web layer.
+/// Renders the body into the cache when this renderer version has no row.
 async fn ensure_cache(pool: &PgPool, wiki_id: Uuid, body_md: &str) -> Result<(), AppError> {
     let key = naw_markdown::content_hash(body_md);
     if sqlx::query!(

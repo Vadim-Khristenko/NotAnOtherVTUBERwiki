@@ -8,9 +8,8 @@ use std::process::ExitCode;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    // .env before logging so NAW_LOG_* can live there, and logging before
-    // config so a broken config.toml is reported through the log rather than
-    // silently losing the reason.
+    // .env before logging so NAW_LOG_* can live there; logging before config so
+    // a broken config.toml is reported.
     dotenvy::dotenv().ok();
     let log = naw_core::logging::init();
     if log.trace {
@@ -175,8 +174,7 @@ async fn seed_command(raw: Vec<String>) -> ExitCode {
     }
 }
 
-/// Opens the pool, or prints why it could not and returns the failure code.
-/// Every non-serve command needs the same six lines otherwise.
+/// Opens the pool, or prints why not and returns the failure code.
 async fn pool_or_exit() -> Result<sqlx::PgPool, ExitCode> {
     let config = match load_config() {
         Ok(config) => config,
@@ -208,8 +206,6 @@ async fn grant_command(raw: Vec<String>) -> ExitCode {
     };
     match grant::run(&pool, &args).await {
         Ok(message) => {
-            // Printed rather than logged: somebody typed this at a prompt and
-            // is waiting to read the answer.
             println!("{message}");
             ExitCode::SUCCESS
         }
@@ -252,8 +248,7 @@ async fn user_command(raw: Vec<String>) -> ExitCode {
 const REINDEX_USAGE: &str =
     "usage: naw reindex [--wiki SLUG]\n  with no --wiki, rebuilds the search index for every wiki";
 
-/// Rebuilds the search index. Needed after a bulk import, after a locale
-/// change, and after any change to the weights in `naw_core::search`.
+/// Rebuilds the search index.
 async fn reindex_command(raw: Vec<String>) -> ExitCode {
     let mut slug: Option<String> = None;
     let mut i = 0;
@@ -326,8 +321,7 @@ async fn serve() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    // Before the listener: a wiki that cannot guarantee its owner should not
-    // start serving as if everything were fine.
+    // A wiki that cannot guarantee its owner does not start serving.
     match naw_web::bootstrap::ensure_owner(&state).await {
         Ok(Some((username, outcome))) => {
             tracing::info!(%username, ?outcome, "bootstrap owner ensured");

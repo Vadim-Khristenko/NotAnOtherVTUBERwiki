@@ -1,13 +1,6 @@
-//! `naw grant`: the bootstrap path for privileges.
-//!
-//! Needed because the admin panel needs an admin to reach it, and a fresh
-//! install has none. Somebody with shell access has to be able to appoint the
-//! first one, and that somebody already owns the database, so this grants
-//! privileges without asking for any of its own.
-//!
-//! Deliberately not reachable over HTTP. `install` sets `users.global_role`,
-//! which reaches every wiki on the install, and that is not a decision a web
-//! form should be able to make.
+//! `naw grant`: appoints the first admins from a shell, since the panel
+//! needs an admin to reach it. Not reachable over HTTP: `--install` changes a
+//! role that spans every wiki.
 
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -44,8 +37,7 @@ pub struct Args {
     pub revoke: bool,
 }
 
-/// Parses the flags. Returns the usage text as the error, so the caller prints
-/// one thing and exits.
+/// Parses the flags; the error is the usage text.
 pub fn parse(raw: &[String]) -> Result<Args, String> {
     let mut args = Args {
         user: String::new(),
@@ -90,9 +82,7 @@ pub fn parse(raw: &[String]) -> Result<Args, String> {
     if args.user.trim().is_empty() {
         return Err("--user is required".to_string());
     }
-    // Every combination that is not exactly one action is refused, rather than
-    // silently picking one. Granting a role and revoking it in one command is a
-    // typo, not a request.
+    // Exactly one action: two in one command is a typo, not a request.
     let actions = usize::from(args.role.is_some())
         + usize::from(args.install.is_some())
         + usize::from(args.revoke);
@@ -119,8 +109,7 @@ pub fn parse(raw: &[String]) -> Result<Args, String> {
 }
 
 async fn find_user(pool: &PgPool, username: &str) -> Result<Option<Uuid>, AppError> {
-    // Usernames are compared case insensitively, because that is how somebody
-    // types one from memory at a shell prompt.
+    // Case insensitive, as names are typed from memory.
     Ok(sqlx::query!(
         "SELECT id FROM users WHERE lower(username) = lower($1)",
         username
@@ -157,7 +146,6 @@ pub async fn run(pool: &PgPool, args: &Args) -> Result<String, AppError> {
         ));
     }
 
-    // Both remaining actions need a wiki.
     let slug = args.wiki.as_deref().unwrap_or_default();
     let Some(wiki_id) = find_wiki(pool, slug).await? else {
         return Err(AppError::Config(format!("no wiki with slug {slug}")));
@@ -180,9 +168,7 @@ pub async fn run(pool: &PgPool, args: &Args) -> Result<String, AppError> {
     }
 
     let role = args.role.as_deref().unwrap_or_default();
-    // A plain query with a bind and an explicit enum cast: the value came from
-    // the WIKI_ROLES allowlist in `parse`, and the macro cannot type a user
-    // defined enum without a custom Rust type.
+    // The value came from `WIKI_ROLES`; the macro cannot type a user enum.
     sqlx::query(
         "INSERT INTO wiki_memberships (user_id, wiki_id, role)
          VALUES ($1, $2, $3::user_wiki_role)
@@ -197,12 +183,8 @@ pub async fn run(pool: &PgPool, args: &Args) -> Result<String, AppError> {
     Ok(format!("{} is now {role} on {slug}", args.user))
 }
 
-/// Records the grant.
-///
-/// `user_id` is the account that was changed, not an actor: a command run from
-/// a shell has no signed-in actor to attribute it to, and inventing one would
-/// be worse than leaving the column null. The audit viewer shows these as
-/// anonymous, which is the truth.
+/// Records the grant. `user_id` is the changed account: a shell has no
+/// signed-in actor.
 async fn write_audit(
     pool: &PgPool,
     wiki_id: Option<Uuid>,
@@ -253,9 +235,7 @@ mod tests {
 
     #[test]
     fn exactly_one_action_is_required() {
-        // No action at all.
         assert!(parse(&flags(&["--user", "vai", "--wiki", "filian"])).is_err());
-        // Two actions, which is a typo rather than a request.
         assert!(
             parse(&flags(&[
                 "--user", "vai", "--wiki", "filian", "--role", "admin", "--revoke",
@@ -342,15 +322,12 @@ mod tests {
     fn a_missing_user_or_value_is_refused() {
         assert!(parse(&flags(&["--wiki", "filian", "--role", "admin"])).is_err());
         assert!(parse(&flags(&["--user", "   ", "--install", "root"])).is_err());
-        // A flag whose value is the next flag, which is a forgotten argument.
         assert!(parse(&flags(&["--user", "--install", "root"])).is_err());
         assert!(parse(&flags(&["--user", "vai", "--role"])).is_err());
     }
 
     #[test]
     fn an_unknown_flag_is_refused_rather_than_ignored() {
-        // Silently ignoring a typo like --global would leave the operator
-        // thinking they had granted something they had not.
         assert!(parse(&flags(&["--user", "vai", "--global", "root"])).is_err());
     }
 }

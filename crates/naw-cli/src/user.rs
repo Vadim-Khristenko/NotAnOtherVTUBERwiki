@@ -1,12 +1,6 @@
-//! `naw user`: accounts from the command line.
-//!
-//! The first account on an invite-only install cannot come from the admin
-//! panel, because the panel needs an admin, and production runs without the
-//! dev sign-in. This is that first step, and later the recovery path for a root
-//! account, which the web panel refuses to reset on purpose.
-//!
-//! Temporary passwords are printed to the terminal and nowhere else. Whoever
-//! runs this owns the database already, so printing is not a new exposure.
+//! `naw user`: accounts from the command line, for the first account and
+//! for recovering a root account the panel refuses to reset. Temporary
+//! passwords are printed to the terminal only.
 
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -14,9 +8,7 @@ use uuid::Uuid;
 use naw_core::error::AppError;
 use naw_web::credentials;
 
-/// Why a command did not run. A refusal carries its reason to the terminal;
-/// `AppError` keeps its detail out of web pages on purpose, which is the wrong
-/// call for somebody reading a prompt.
+/// Why a command did not run, with a reason meant for the terminal.
 pub enum Failure {
     Refused(String),
     App(AppError),
