@@ -5,9 +5,9 @@
   which is most of them.
 
   `snippet` is the only value rendered with `| safe`. It comes from ts_headline,
-  which escapes the surrounding text itself and adds nothing but <mark> tags.
-  The query is attacker controlled and is never marked safe: where it appears
-  inside a translated message, `t()` escapes it.
+  which escapes nothing, so the engine sanitizes it down to text and <mark>
+  tags before it gets here. The query is attacker controlled and is never marked
+  safe: where it appears inside a translated message, `t()` escapes it.
 #}
 {% block body %}
 <h1>{{ t("search.heading") }}</h1>
