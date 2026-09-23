@@ -69,6 +69,12 @@
         <span>{{ t("nav.admin") }}</span>
       </a>
       {% endif %}
+      {% if show_emotes is not defined or show_emotes %}
+      <a class="nav-link" href="/emotes" title="{{ t('nav.emotes') }}" aria-label="{{ t('nav.emotes') }}">
+        <svg class="icon" aria-hidden="true"><use href="#i-mood-smile" /></svg>
+        <span>{{ t("nav.emotes") }}</span>
+      </a>
+      {% endif %}
       {% if show_about is not defined or show_about %}
       <a class="nav-link" href="{{ base }}/about" title="{{ t('nav.about') }}" aria-label="{{ t('nav.about') }}">
         <svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>

@@ -326,6 +326,17 @@ img.emote { display: inline-block; height: 1.75em; width: auto; vertical-align: 
 .emote-budget { display: flex; align-items: center; gap: var(--s3, 0.75rem); flex-wrap: wrap; }
 .emote-budget meter { width: 12rem; }
 .admin-row-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.emote-search { display: flex; gap: var(--s2); flex-wrap: wrap; margin: var(--s3) 0; }
+.emote-search .field-input { flex: 1 1 14rem; width: auto; margin-top: 0; }
+.emote-group h2 { font-size: 1rem; margin: var(--s5) 0 var(--s2); }
+.emote-copy { font: inherit; font-size: 0.78rem; padding: 0.15rem 0.5rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink-soft); cursor: pointer; }
+.emote-copy:hover { border-color: var(--accent); color: var(--ink); }
+.emote-picker { margin: var(--s2) 0; padding: var(--s3); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elevated); }
+.emote-picker .field-input { margin-top: 0; }
+.emote-picker-list { display: flex; flex-wrap: wrap; gap: 0.3rem; max-height: 14rem; overflow-y: auto; margin-top: var(--s2); }
+.emote-pick { display: inline-grid; place-items: center; width: 2.6rem; height: 2.6rem; padding: 0.2rem; border: 1px solid transparent; border-radius: var(--radius); background: none; cursor: pointer; }
+.emote-pick:hover, .emote-pick:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.emote-pick img { max-width: 100%; max-height: 100%; width: auto; height: auto; }
 .media-md { font-family: var(--font-mono); font-size: 0.85rem; }
 .media-grid { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--s4); }
 .media-item { display: grid; gap: var(--s2); align-content: start; }

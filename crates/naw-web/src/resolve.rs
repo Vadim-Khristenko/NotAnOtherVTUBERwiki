@@ -285,6 +285,7 @@ impl Ctx {
             show_languages => header.languages,
             show_theme => header.theme,
             show_search => header.search,
+            show_emotes => header.emotes,
             footer_links => footer_links,
             lang_native => messages
                 .meta(&self.lang)

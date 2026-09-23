@@ -273,6 +273,8 @@ emotes_done_removed = "Source removed, with its emotes."
 emotes_done_already = "That source is already on the list."
 emotes_done_unreadable = "That is not a 7TV user or emote set link."
 
+chrome_emotes = "Emotes"
+
 [unindexed_warning]
 one = "{n} live page is missing from the search index and cannot be found by searching."
 other = "{n} live pages are missing from the search index and cannot be found by searching."

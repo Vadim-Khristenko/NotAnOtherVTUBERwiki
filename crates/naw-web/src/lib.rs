@@ -165,6 +165,7 @@ fn routes(state: AppState) -> Router {
         .route("/search", get(search::search_page))
         .route("/media", get(media::page))
         .route("/emotes", get(emotes::list))
+        .route("/emotes.json", get(emotes::list_json))
         .route("/admin/emotes", get(emotes::admin_page))
         .route("/admin/emotes/add", post(emotes::add))
         .route("/admin/emotes/{id}/sync", post(emotes::resync))

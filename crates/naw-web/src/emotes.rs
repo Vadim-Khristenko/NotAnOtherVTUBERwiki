@@ -529,33 +529,81 @@ pub async fn expand(state: &AppState, wiki_id: Uuid, html: String) -> Result<Str
 // Pages
 // ---------------------------------------------------------------------------
 
-/// GET /emotes: every emote of this wiki with its text.
-pub async fn list(
-    State(state): State<AppState>,
-    Extension(user): Extension<Option<CurrentUser>>,
-    headers: HeaderMap,
-) -> Result<Response, AppError> {
-    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
-    let emotes: Vec<minijinja::Value> = sqlx::query!(
-        "SELECT e.name, e.storage_key, e.width, e.height, s.label
-         FROM emotes e JOIN emote_sources s ON s.id = e.source_id
-         WHERE e.wiki_id = $1 ORDER BY lower(e.name), e.name LIMIT $2",
-        ctx.wiki.id,
+#[derive(serde::Deserialize, Default)]
+pub struct ListQuery {
+    #[serde(default)]
+    q: String,
+}
+
+/// Every emote of a wiki matching `query` (a substring of the name, any
+/// case), with its source, sorted by source and name.
+async fn find(
+    state: &AppState,
+    wiki_id: Uuid,
+    query: &str,
+) -> Result<Vec<(String, String, i32, i32, String)>, AppError> {
+    let pattern = format!(
+        "%{}%",
+        query
+            .trim()
+            .chars()
+            .take(64)
+            .collect::<String>()
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    );
+    Ok(sqlx::query!(
+        r#"SELECT e.name, e.storage_key, e.width, e.height, s.label
+           FROM emotes e JOIN emote_sources s ON s.id = e.source_id
+           WHERE e.wiki_id = $1 AND e.name ILIKE $2
+           ORDER BY s.created_at, lower(e.name), e.name LIMIT $3"#,
+        wiki_id,
+        pattern,
         LIST_MAX
     )
     .fetch_all(&state.db)
     .await?
     .into_iter()
     .map(|row| {
-        minijinja::context! {
-            name => row.name,
-            url => crate::media::url_for_key(&row.storage_key),
-            width => (row.width / 2).max(1),
-            height => (row.height / 2).max(1),
-            source => row.label,
-        }
+        (
+            row.name,
+            row.storage_key,
+            (row.width / 2).max(1),
+            (row.height / 2).max(1),
+            row.label,
+        )
     })
-    .collect();
+    .collect())
+}
+
+/// GET /emotes: every emote of this wiki with its text, searchable with `?q=`.
+pub async fn list(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<ListQuery>,
+) -> Result<Response, AppError> {
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
+    let found = find(&state, ctx.wiki.id, &query.q).await?;
+    let total = found.len();
+    let mut groups: Vec<(String, Vec<minijinja::Value>)> = Vec::new();
+    for (name, key, width, height, source) in found {
+        let emote = minijinja::context! {
+            name => name,
+            url => crate::media::url_for_key(&key),
+            width => width,
+            height => height,
+        };
+        match groups.last_mut() {
+            Some((label, list)) if *label == source => list.push(emote),
+            _ => groups.push((source, vec![emote])),
+        }
+    }
+    let groups: Vec<minijinja::Value> = groups
+        .into_iter()
+        .map(|(label, emotes)| minijinja::context! { label => label, emotes => emotes })
+        .collect();
     let template = ctx
         .skin
         .env
@@ -567,12 +615,36 @@ pub async fn list(
             ..minijinja::context! {
                 title => ctx.t("emotes.title"),
                 version => ENGINE_VERSION,
-                emotes => emotes,
+                groups => groups,
+                total => total,
+                query => query.q.trim(),
                 can_manage => ctx.actor.can(Capability::WikiSettings),
             }
         })
         .map_err(template_error)?;
     Ok(pages::html_response(html, &headers))
+}
+
+/// GET /emotes.json: `[{"n": name, "u": url, "w": width, "h": height}]`, for
+/// the editor's picker. The same for every reader, so it may be cached.
+pub async fn list_json(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
+    let list: Vec<Value> = find(&state, ctx.wiki.id, "")
+        .await?
+        .into_iter()
+        .map(|(name, key, width, height, _)| {
+            json!({ "n": name, "u": crate::media::url_for_key(&key), "w": width, "h": height })
+        })
+        .collect();
+    Ok((
+        [(axum::http::header::CACHE_CONTROL, "public, max-age=300")],
+        axum::Json(list),
+    )
+        .into_response())
 }
 
 #[allow(clippy::result_large_err)]

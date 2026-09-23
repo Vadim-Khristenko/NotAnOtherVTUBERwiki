@@ -64,10 +64,17 @@
 <button type="button" data-wrap="$" title="Inline math">$</button>
 <button type="button" data-prefix="- " title="List">&bull;</button>
 <button type="button" data-footnote title="Footnote">[^]</button>
+<button type="button" data-emotes title="{{ t('emotes.insert') }}" aria-expanded="false" aria-controls="emote-picker" hidden><svg class="icon" aria-hidden="true"><use href="#i-mood-smile" /></svg></button>
 <button type="button" data-image title="{{ t('media.insert') }}" hidden><svg class="icon" aria-hidden="true"><use href="#i-photo" /></svg></button>
 <input type="file" id="image-file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif" multiple hidden
        data-max="{{ upload_max }}" data-too-large="{{ t('media.refused_too_large', max=upload_max_mb) }}"
        data-uploading="{{ t('media.uploading', name='{name}') }}" data-failed="{{ t('media.failed') }}" />
+</div>
+<div class="emote-picker" id="emote-picker" hidden>
+  <label class="visually-hidden" for="emote-picker-q">{{ t("emotes.search") }}</label>
+  <input class="field-input" id="emote-picker-q" type="search" placeholder="{{ t('emotes.search') }}" autocomplete="off" />
+  <div class="emote-picker-list" role="listbox" aria-label="{{ t('emotes.title') }}"></div>
+  <p class="field-note emote-picker-note" data-empty="{{ t('emotes.none') }}" data-more="{{ t('emotes.picker_more', count='{n}') }}"></p>
 </div>
 {# Without a script the button above stays hidden, and this link does the
    same job on its own page: upload, then copy the Markdown it gives back. #}
@@ -173,6 +180,48 @@
     area.focus();
     area.selectionStart = area.selectionEnd = s + snippet.length;
     area.dispatchEvent(new Event("input"));
+  }
+  // Emotes: the list loads on first open, and a click inserts :name:.
+  var emoteBtn = document.querySelector("button[data-emotes]");
+  var picker = document.getElementById("emote-picker");
+  if (emoteBtn && picker && window.fetch) {
+    emoteBtn.hidden = false;
+    var pickerQ = document.getElementById("emote-picker-q");
+    var pickerList = picker.querySelector(".emote-picker-list");
+    var pickerNote = picker.querySelector(".emote-picker-note");
+    var all = null;
+    var SHOWN = 120;
+    var draw = function () {
+      var q = pickerQ.value.trim().toLowerCase();
+      var hits = all.filter(function (e) { return !q || e.n.toLowerCase().indexOf(q) !== -1; });
+      pickerList.textContent = "";
+      hits.slice(0, SHOWN).forEach(function (e) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "emote-pick";
+        b.title = ":" + e.n + ":";
+        b.setAttribute("role", "option");
+        var img = document.createElement("img");
+        img.src = e.u; img.alt = ":" + e.n + ":"; img.width = e.w; img.height = e.h;
+        img.loading = "lazy"; img.decoding = "async";
+        b.appendChild(img);
+        b.addEventListener("click", function () { insertSnippet(":" + e.n + ": "); });
+        pickerList.appendChild(b);
+      });
+      pickerNote.textContent = !all.length ? pickerNote.dataset.empty
+        : hits.length > SHOWN ? pickerNote.dataset.more.replace("{n}", hits.length - SHOWN) : "";
+    };
+    emoteBtn.addEventListener("click", function () {
+      var open = picker.hidden;
+      picker.hidden = !open;
+      emoteBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      if (!open) return;
+      if (all) { pickerQ.focus(); return; }
+      fetch("/emotes.json").then(function (r) { return r.json(); }).then(function (list) {
+        all = list; draw(); pickerQ.focus();
+      }, function () { all = []; draw(); });
+    });
+    pickerQ.addEventListener("input", function () { if (all) draw(); });
   }
   // Images: the button picks one or more files, and each goes to the server
   // as its own upload, one after another, under its own size limit. Each

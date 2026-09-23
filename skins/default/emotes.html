@@ -2,24 +2,73 @@
 {#
   Every emote this wiki has, with the text that shows it in an article.
 
-  `emotes`      name, url, width, height, source
+  `groups`      per source: label, emotes (name, url, width, height)
+  `total`       emotes shown
+  `query`       the ?q= filter, if any
   `can_manage`  whether the viewer may add or remove sources
 #}
 {% block body %}
 <h1>{{ t("emotes.title") }}</h1>
 <p>{{ t("emotes.intro") }}</p>
 {% if can_manage %}<p><a href="/admin/emotes">{{ t("emotes.manage") }}</a></p>{% endif %}
-{% if emotes %}
-<ul class="emote-grid">
-  {% for e in emotes %}
-  <li class="emote-card">
-    <img src="{{ e.url }}" alt="" width="{{ e.width }}" height="{{ e.height }}" loading="lazy" decoding="async" />
-    <code>:{{ e.name }}:</code>
-    <span class="muted-cell">{{ e.source }}</span>
-  </li>
-  {% endfor %}
-</ul>
+<form class="emote-search" method="get" action="/emotes" role="search">
+  <label class="visually-hidden" for="emote-q">{{ t("emotes.search") }}</label>
+  <input class="field-input" id="emote-q" name="q" type="search" value="{{ query }}" placeholder="{{ t('emotes.search') }}" autocomplete="off" />
+  <button class="button-preview" type="submit">{{ t("emotes.search_submit") }}</button>
+</form>
+<p class="muted-cell" id="emote-count" data-template="{{ t('emotes.count', count='{n}') }}">{{ t("emotes.count", count=total) }}</p>
+{% if groups %}
+{% for group in groups %}
+<section class="emote-group">
+  <h2>{{ group.label }}</h2>
+  <ul class="emote-grid">
+    {% for e in group.emotes %}
+    <li class="emote-card" data-name="{{ e.name | lower }}">
+      <img src="{{ e.url }}" alt="" width="{{ e.width }}" height="{{ e.height }}" loading="lazy" decoding="async" />
+      <code>:{{ e.name }}:</code>
+      <button class="emote-copy" type="button" data-copy=":{{ e.name }}:" hidden>{{ t("emotes.copy") }}</button>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}
 {% else %}
-<p class="muted-cell">{{ t("emotes.none") }}</p>
+<p class="muted-cell">{% if query %}{{ t("emotes.no_match") }}{% else %}{{ t("emotes.none") }}{% endif %}</p>
 {% endif %}
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  // Filter as you type, and copy on click. Without a script the form
+  // searches on the server and the text can be selected by hand.
+  var input = document.getElementById("emote-q");
+  var count = document.getElementById("emote-count");
+  var cards = Array.prototype.slice.call(document.querySelectorAll(".emote-card"));
+  if (input) {
+    input.addEventListener("input", function () {
+      var q = input.value.trim().toLowerCase();
+      var shown = 0;
+      cards.forEach(function (card) {
+        var hit = !q || card.dataset.name.indexOf(q) !== -1;
+        card.hidden = !hit;
+        if (hit) shown++;
+      });
+      document.querySelectorAll(".emote-group").forEach(function (group) {
+        group.hidden = !group.querySelector(".emote-card:not([hidden])");
+      });
+      if (count) count.textContent = count.dataset.template.replace("{n}", shown);
+    });
+  }
+  if (navigator.clipboard) {
+    document.querySelectorAll(".emote-copy").forEach(function (button) {
+      button.hidden = false;
+      var label = button.textContent;
+      button.addEventListener("click", function () {
+        navigator.clipboard.writeText(button.dataset.copy).then(function () {
+          button.textContent = "\u2713";
+          setTimeout(function () { button.textContent = label; }, 1200);
+        });
+      });
+    });
+  }
+})();
+</script>
 {% endblock %}

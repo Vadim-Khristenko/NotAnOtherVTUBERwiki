@@ -725,6 +725,7 @@ pub async fn chrome_settings(
             h_languages => header.languages,
             h_theme => header.theme,
             h_search => header.search,
+            h_emotes => header.emotes,
             footer_rows => rows,
             footer_customised => customised,
             offered => ctx.offered_languages(),
@@ -753,6 +754,7 @@ pub async fn save_chrome_settings(
         "languages": on("h_languages"),
         "theme": on("h_theme"),
         "search": on("h_search"),
+        "emotes": on("h_emotes"),
     });
     let offered = ctx.offered_languages();
     let mut links = Vec::new();

@@ -2,7 +2,7 @@
 //!
 //! ```json
 //! { "chrome": {
-//!     "header": { "new_page": true, "about": true, "languages": true, "theme": true, "search": true },
+//!     "header": { "new_page": true, "about": true, "languages": true, "theme": true, "search": true, "emotes": true },
 //!     "footer": [ { "href": "/about", "label": "About", "lang": "" } ]
 //! } }
 //! ```
@@ -22,6 +22,7 @@ pub struct HeaderFlags {
     pub languages: bool,
     pub theme: bool,
     pub search: bool,
+    pub emotes: bool,
 }
 
 impl Default for HeaderFlags {
@@ -32,6 +33,7 @@ impl Default for HeaderFlags {
             languages: true,
             theme: true,
             search: true,
+            emotes: true,
         }
     }
 }
@@ -56,6 +58,7 @@ pub fn header(settings: &Value) -> HeaderFlags {
         languages: flag("languages", defaults.languages),
         theme: flag("theme", defaults.theme),
         search: flag("search", defaults.search),
+        emotes: flag("emotes", defaults.emotes),
     }
 }
 
