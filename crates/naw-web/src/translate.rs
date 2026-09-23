@@ -358,7 +358,9 @@ pub async fn create(
     let page_id = Uuid::new_v4();
     let revision_id = Uuid::new_v4();
     let mut tx = state.db.begin().await?;
-    sqlx::query!(
+    // The gate saw the slot free. A translation that landed since takes it,
+    // and this one is told so rather than getting a 500.
+    match sqlx::query!(
         "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale,
                             translation_source_locale, translation_source_revision_id)
          VALUES ($1, $2, 'main', $3, $4, $5, $6, $7)",
@@ -371,7 +373,13 @@ pub async fn create(
         matched
     )
     .execute(&mut *tx)
-    .await?;
+    .await
+    {
+        Err(err) if pages::is_unique_violation(&err) => {
+            return pages::slug_taken(&ctx, &slug, false);
+        }
+        result => result?,
+    };
     sqlx::query!(
         "INSERT INTO revisions (id, page_id, author_id, body_md, content_hash, summary)
          VALUES ($1, $2, $3, $4, $5, $6)",

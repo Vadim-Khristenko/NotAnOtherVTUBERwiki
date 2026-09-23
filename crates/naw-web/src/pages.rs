@@ -86,6 +86,60 @@ pub(crate) fn notice(
     Ok((status, [HTML], html).into_response())
 }
 
+/// Somebody saved between this editor loading the page and saving it.
+pub(crate) fn edit_conflict(ctx: &Ctx, slug: &str) -> Result<Response, AppError> {
+    notice(
+        ctx,
+        StatusCode::CONFLICT,
+        &ctx.t("error.conflict_title"),
+        "This page changed while you were writing. Your text was not saved. \
+         Open the page again, compare it with what you wrote, and re-apply your changes.",
+        &ctx.link(&format!("/{slug}/history")),
+        &ctx.t("error.conflict_link"),
+    )
+}
+
+/// The slug is in use in this language, live or archived.
+pub(crate) fn slug_taken(ctx: &Ctx, slug: &str, archived: bool) -> Result<Response, AppError> {
+    let message = ctx.t(if archived {
+        "error.taken_archived"
+    } else {
+        "error.taken_live"
+    });
+    notice(
+        ctx,
+        StatusCode::CONFLICT,
+        &ctx.t("error.taken_title"),
+        &message,
+        &ctx.link(&format!("/{slug}")),
+        &ctx.t("error.taken_link"),
+    )
+}
+
+/// The page cannot move to `target_locale`: that slot holds another page.
+fn locale_taken(ctx: &Ctx, slug: &str, target_locale: &str) -> Result<Response, AppError> {
+    notice(
+        ctx,
+        StatusCode::CONFLICT,
+        &ctx.t("error.taken_title"),
+        &ctx.t_with(
+            "editor.locale_taken",
+            &[(
+                "language",
+                &crate::translate::native_name(ctx, target_locale),
+            )],
+        ),
+        &ctx.link_for(target_locale, &format!("/{slug}")),
+        &ctx.t("error.taken_link"),
+    )
+}
+
+/// Whether a write lost to a unique index: the loser of a race that the
+/// check before it could not see. That is a 409 for the person, not a 500.
+pub(crate) fn is_unique_violation(err: &sqlx::Error) -> bool {
+    matches!(err, sqlx::Error::Database(db) if db.is_unique_violation())
+}
+
 /// The answer to "you may not do this".
 ///
 /// A guest gets sent to sign in, because the honest reason is that they are not
@@ -745,9 +799,10 @@ pub async fn create_page(
     let locale = chosen_locale(&ctx, &form.locale);
 
     // The unique index on (wiki_id, namespace, locale, slug) is the real
-    // guard. This check exists to turn the race loser's error into a 409 with
-    // an explanation instead of a 500, and it covers archived pages too: a
-    // deleted slug stays taken so a restore lands back on its own address.
+    // guard. This check answers the common case with a 409 and an
+    // explanation, and it covers archived pages too: a deleted slug stays
+    // taken so a restore lands back on its own address. The loser of a race
+    // past it gets the same 409 from the insert below.
     let taken = sqlx::query!(
         "SELECT deleted_at FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2
            AND COALESCE(locale, '') = $3",
@@ -758,25 +813,13 @@ pub async fn create_page(
     .fetch_optional(&state.db)
     .await?;
     if let Some(row) = taken {
-        let message = ctx.t(if row.deleted_at.is_some() {
-            "error.taken_archived"
-        } else {
-            "error.taken_live"
-        });
-        return notice(
-            &ctx,
-            StatusCode::CONFLICT,
-            &ctx.t("error.taken_title"),
-            &message,
-            &ctx.link(&format!("/{slug}")),
-            &ctx.t("error.taken_link"),
-        );
+        return slug_taken(&ctx, &slug, row.deleted_at.is_some());
     }
 
     let page_id = Uuid::new_v4();
     let revision_id = Uuid::new_v4();
     let mut tx = state.db.begin().await?;
-    sqlx::query!(
+    match sqlx::query!(
         "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale)
          VALUES ($1, $2, 'main', $3, $4, $5)",
         page_id,
@@ -786,7 +829,11 @@ pub async fn create_page(
         locale
     )
     .execute(&mut *tx)
-    .await?;
+    .await
+    {
+        Err(err) if is_unique_violation(&err) => return slug_taken(&ctx, &slug, false),
+        result => result?,
+    };
     sqlx::query!(
         "INSERT INTO revisions (id, page_id, author_id, body_md, content_hash, summary)
          VALUES ($1, $2, $3, $4, $5, $6)",
@@ -941,15 +988,7 @@ pub async fn save_page(
     if let Some(base) = parse_uuid(&form.base_revision)
         && base != found.revision_id
     {
-        return notice(
-            &ctx,
-            StatusCode::CONFLICT,
-            &ctx.t("error.conflict_title"),
-            "This page changed while you were writing. Your text was not saved. \
-             Open the page again, compare it with what you wrote, and re-apply your changes.",
-            &ctx.link(&format!("/{slug}/history")),
-            &ctx.t("error.conflict_link"),
-        );
+        return edit_conflict(&ctx, &slug);
     }
 
     // Moving this version to another language, when the author picked one
@@ -969,29 +1008,30 @@ pub async fn save_page(
         .fetch_one(&state.db)
         .await?;
         if taken > 0 {
-            return notice(
-                &ctx,
-                StatusCode::CONFLICT,
-                &ctx.t("error.taken_title"),
-                &ctx.t_with(
-                    "editor.locale_taken",
-                    &[(
-                        "language",
-                        &crate::translate::native_name(&ctx, &target_locale),
-                    )],
-                ),
-                &ctx.link_for(&target_locale, &format!("/{slug}")),
-                &ctx.t("error.taken_link"),
-            );
+            return locale_taken(&ctx, &slug, &target_locale);
         }
         let mut tx = state.db.begin().await?;
-        sqlx::query!(
-            "UPDATE pages SET locale = $2, updated_at = now() WHERE id = $1",
+        // Only from the revision this request loaded, like the text below: a
+        // save that raced in first makes this whole edit a conflict, the move
+        // included.
+        let relocated = match sqlx::query!(
+            "UPDATE pages SET locale = $2, updated_at = now()
+             WHERE id = $1 AND current_revision_id = $3",
             found.id,
-            target_locale
+            target_locale,
+            found.revision_id
         )
         .execute(&mut *tx)
-        .await?;
+        .await
+        {
+            Err(err) if is_unique_violation(&err) => {
+                return locale_taken(&ctx, &slug, &target_locale);
+            }
+            result => result?,
+        };
+        if relocated.rows_affected() == 0 {
+            return edit_conflict(&ctx, &slug);
+        }
         naw_core::search::index_page(
             &mut tx,
             found.id,
@@ -1062,14 +1102,22 @@ pub async fn save_page(
     )
     .execute(&mut *tx)
     .await?;
-    sqlx::query!(
-        "UPDATE pages SET title = $1, current_revision_id = $2, updated_at = now() WHERE id = $3",
+    // Compare and swap on the revision this request started from. The base
+    // check above catches an editor who loaded an old page; this catches two
+    // saves racing past it at once, and an editor that sent no base at all.
+    let swapped = sqlx::query!(
+        "UPDATE pages SET title = $1, current_revision_id = $2, updated_at = now()
+         WHERE id = $3 AND current_revision_id = $4",
         draft.title,
         revision_id,
-        found.id
+        found.id,
+        found.revision_id
     )
     .execute(&mut *tx)
     .await?;
+    if swapped.rows_affected() == 0 {
+        return edit_conflict(&ctx, &slug);
+    }
     naw_core::search::index_page(
         &mut tx,
         found.id,

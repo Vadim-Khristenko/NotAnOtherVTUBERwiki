@@ -634,13 +634,20 @@ pub async fn revert(
     )
     .execute(&mut *tx)
     .await?;
-    sqlx::query!(
-        "UPDATE pages SET current_revision_id = $1, updated_at = now() WHERE id = $2",
+    // Compare and swap, as a save does: an edit that landed after this
+    // request loaded the page must not be erased by a revert racing it.
+    let swapped = sqlx::query!(
+        "UPDATE pages SET current_revision_id = $1, updated_at = now()
+         WHERE id = $2 AND current_revision_id = $3",
         revision_id,
-        found.id
+        found.id,
+        found.revision_id
     )
     .execute(&mut *tx)
     .await?;
+    if swapped.rows_affected() == 0 {
+        return pages::edit_conflict(&ctx, &slug);
+    }
     naw_core::search::index_page(
         &mut tx,
         found.id,

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pages SET current_revision_id = $1, updated_at = now()\n         WHERE id = $2 AND current_revision_id IS NOT DISTINCT FROM $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3699432de9cac54cc7ee3554fd9b5514525c448738aa999ccc920a64461766e0"
+}
