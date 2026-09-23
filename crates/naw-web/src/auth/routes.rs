@@ -193,6 +193,14 @@ pub async fn callback(
         | super::store::Outcome::Link(id) => id,
     };
 
+    match session::install_banned(&state, user_id).await {
+        Ok(false) => {}
+        Ok(true) => return render::auth_error(&super::AuthError::Suspended),
+        Err(err) => {
+            tracing::error!(error = %err, "ban check failed after a provider login");
+            return render::auth_error(&super::AuthError::Upstream("ban check failed".to_string()));
+        }
+    }
     let user_agent = headers
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok());

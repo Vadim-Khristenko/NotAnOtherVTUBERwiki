@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM user_capabilities WHERE user_id = $1 AND wiki_id = $2 AND capability = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a57b5b9eaf6f7ba94e4dbe2c0e659b2f3753b754051400813e2be4e7d3331b46"
+}

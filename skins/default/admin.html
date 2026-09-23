@@ -20,7 +20,7 @@
   that scrolls sideways above the content.
 #}
 {% macro nav_item(href, id, icon, label) %}
-  <a class="admin-nav-item" href="{{ href }}" {% if section == id or (id == "users" and section in ["user_new", "password_issued"]) %}aria-current="page"{% endif %}>
+  <a class="admin-nav-item" href="{{ href }}" {% if section == id or (id == "users" and section in ["user_new", "password_issued", "user"]) %}aria-current="page"{% endif %}>
     <svg class="icon" aria-hidden="true"><use href="#i-{{ icon }}" /></svg>
     <span>{{ label }}</span>
   </a>
@@ -220,13 +220,12 @@
         <th scope="col">{{ t("admin.email") }}</th>
         <th scope="col">{{ t("admin.logins") }}</th>
         <th scope="col">{{ t("admin.joined") }}</th>
-        <th scope="col">{{ t("admin.change") }}</th>
       </tr>
     </thead>
     <tbody>
       {% for u in users %}
       <tr>
-        <td>{{ u.username }}{% if u.is_me %} <span class="tag">{{ t("admin.you") }}</span>{% endif %}
+        <td><a class="admin-user-link" href="/admin/user/{{ u.username }}">{{ u.username }}</a>{% if u.is_me %} <span class="tag">{{ t("admin.you") }}</span>{% endif %}
           {%- if u.temporary %} <span class="tag" title="{{ t('admin.temporary_hint') }}">{{ t("admin.temporary") }}</span>{% endif %}</td>
         <td>
           {%- if u.wiki_role %}{{ u.wiki_role }}
@@ -236,31 +235,6 @@
         <td>{% if u.email_verified %}{{ t("admin.verified") }}{% else %}<span class="muted-cell">{{ t("admin.unverified") }}</span>{% endif %}</td>
         <td>{{ u.identities }}</td>
         <td>{{ u.created_at }}</td>
-        <td>
-          {% if u.is_me %}
-            <span class="muted-cell">{{ t("admin.not_your_own") }}</span>
-          {% elif grantable %}
-          <form method="post" action="/admin/users/role" class="inline-form">
-            <input type="hidden" name="user_id" value="{{ u.id }}" />
-            <label class="visually-hidden" for="role-{{ u.id }}">{{ t("admin.role_for", name=u.username) }}</label>
-            <select class="field-input" id="role-{{ u.id }}" name="role">
-              <option value="">{{ t("admin.no_membership") }}</option>
-              {% for role in grantable %}
-              <option value="{{ role }}" {% if u.wiki_role == role %}selected{% endif %}>{{ role }}</option>
-              {% endfor %}
-            </select>
-            <button class="button-preview" type="submit">{{ t("admin.apply") }}</button>
-          </form>
-          {% else %}
-            <span class="muted-cell">{{ t("admin.nothing_to_grant") }}</span>
-          {% endif %}
-          {% if u.can_reset %}
-          <form method="post" action="/admin/users/password" class="inline-form">
-            <input type="hidden" name="user_id" value="{{ u.id }}" />
-            <button class="button-preview" type="submit">{{ t("admin.password_reset") }}</button>
-          </form>
-          {% endif %}
-        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -477,6 +451,175 @@
       <button class="button-save" type="submit">{{ t("admin.save_settings") }}</button>
     </div>
   </form>
+
+{% elif section == "user" %}
+  {#
+    One account. Every block below reads from the database fresh; every
+    control is a POST back to /admin/user/{name}/... and lands here again with
+    ?done= saying what happened.
+  #}
+  {% if done %}<p class="notice {% if done in ['reason_needed', 'note_empty'] %}notice-warn{% else %}notice-ok{% endif %}" role="status">{{ t("admin.done_" ~ done) }}</p>{% endif %}
+  <header class="au-head">
+    <div class="settings-avatar" aria-hidden="true">{{ (u_display or u_name)[:1] | upper }}</div>
+    <div class="au-id">
+      <p class="au-name"><bdi>{{ u_display or u_name }}</bdi></p>
+      <p class="muted-cell">@{{ u_name }}
+        {%- if u_global != "registered" %} <span class="tag tag-root">{{ u_global }}</span>{% endif %}
+        {%- if u_role %} <span class="tag">{{ u_role }}</span>{% endif %}
+        {%- if u_temporary %} <span class="tag">{{ t("admin.temporary") }}</span>{% endif %}
+        {%- if is_me %} <span class="tag">{{ t("admin.you") }}</span>{% endif %}</p>
+    </div>
+    <a class="icon-action" href="/user/{{ u_name }}" title="{{ t('admin.au_profile') }}" aria-label="{{ t('admin.au_profile') }}"><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg></a>
+  </header>
+  {% if not manageable and manage_block %}<p class="notice" role="note">{{ t("admin.au_readonly") }} <span class="muted-cell">({{ manage_block }})</span></p>{% endif %}
+
+  <dl class="stat-grid au-stats">
+    <div class="stat"><dt>{{ t("admin.au_edits") }}</dt><dd>{{ s_edits }}</dd></div>
+    <div class="stat"><dt>{{ t("admin.au_created") }}</dt><dd>{{ s_created }}</dd></div>
+    <div class="stat"><dt>{{ t("admin.au_sessions") }}</dt><dd>{{ s_sessions }}</dd></div>
+  </dl>
+
+  <div class="settings-grid">
+    <section class="settings-card">
+      <h2><svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>{{ t("admin.au_account") }}</h2>
+      <dl class="kv">
+        <dt>{{ t("admin.joined") }}</dt><dd>{{ u_joined }}{% if u_created_by %} · {{ t("admin.au_created_by", name=u_created_by) }}{% endif %}</dd>
+        <dt>{{ t("admin.au_last_edit") }}</dt><dd>{{ s_last_edit or "-" }}</dd>
+        <dt>{{ t("admin.au_last_sign_in") }}</dt><dd>{{ s_last_sign_in or "-" }}</dd>
+        <dt>{{ t("admin.email") }}</dt><dd>{% if u_email %}<code>{{ u_email }}</code> {% if u_email_verified %}<span class="tag">{{ t("admin.verified") }}</span>{% else %}<span class="tag tag-warn">{{ t("admin.unverified") }}</span>{% endif %}{% else %}-{% endif %}</dd>
+        <dt>{{ t("admin.au_sign_in") }}</dt><dd>{% if u_has_password %}{{ t("admin.au_password") }}{% endif %}{% for p in u_identities %}{% if u_has_password or not loop.first %}, {% endif %}{{ p }}{% endfor %}{% if not u_has_password and not u_identities %}-{% endif %}</dd>
+        {% if u_aliases %}<dt>{{ t("admin.au_aliases") }}</dt><dd>{{ u_aliases | join(", ") }}</dd>{% endif %}
+      </dl>
+      {% if manageable %}
+      <div class="settings-actions">
+        {% if u_email and not u_email_verified %}
+        <form method="post" action="/admin/user/{{ u_name }}/verify-email"><button class="button-preview" type="submit">{{ t("admin.au_verify_email") }}</button></form>
+        {% endif %}
+        <form method="post" action="/admin/users/password"><input type="hidden" name="user_id" value="{{ u_id }}" /><button class="button-preview" type="submit">{{ t("admin.password_reset") }}</button></form>
+        {% if s_sessions > 0 %}
+        <form method="post" action="/admin/user/{{ u_name }}/end-sessions"><button class="button-preview" type="submit">{{ t("admin.au_end_sessions") }}</button></form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="settings-card">
+      <h2><svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>{{ t("admin.role_here") }}</h2>
+      {% if manageable and grantable %}
+      <form method="post" action="/admin/users/role" class="settings-row">
+        <input type="hidden" name="user_id" value="{{ u_id }}" />
+        <input type="hidden" name="back" value="/admin/user/{{ u_name }}" />
+        <label class="visually-hidden" for="au-role">{{ t("admin.role_here") }}</label>
+        <select class="field-input" id="au-role" name="role">
+          <option value="">{{ t("admin.no_membership") }}</option>
+          {% for role in grantable %}<option value="{{ role }}" {% if u_role == role %}selected{% endif %}>{{ role }}</option>{% endfor %}
+        </select>
+        <button class="button-preview" type="submit">{{ t("admin.apply") }}</button>
+      </form>
+      {% else %}
+      <p>{{ u_role or t("admin.registered_no_membership") }}</p>
+      {% endif %}
+      {% if recent %}
+      <h3 class="au-subhead">{{ t("admin.au_recent") }}</h3>
+      <ul class="settings-list">
+        {% for r in recent %}<li><a href="{{ r.href }}">{{ r.title }}</a> <span class="muted-cell">{{ r.at }}</span></li>{% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    <section class="settings-card settings-card-wide">
+      <h2><svg class="icon" aria-hidden="true"><use href="#i-lock-open" /></svg>{{ t("admin.au_rights") }}</h2>
+      <p class="field-note">{{ t("admin.au_rights_note") }}</p>
+      <table class="admin-table au-caps">
+        <thead><tr><th scope="col">{{ t("admin.au_capability") }}</th><th scope="col">{{ t("admin.au_by_role") }}</th><th scope="col">{{ t("admin.au_override") }}</th></tr></thead>
+        <tbody>
+          {% for c in capabilities %}
+          <tr>
+            <td>{{ c.label }}</td>
+            <td>{% if c.by_role %}<span class="tag">{{ t("admin.au_yes") }}</span>{% else %}<span class="muted-cell">{{ t("admin.au_no") }}</span>{% endif %}</td>
+            <td>
+              {% if manageable and c.editable %}
+              <form method="post" action="/admin/user/{{ u_name }}/capability" class="inline-form">
+                <input type="hidden" name="capability" value="{{ c.id }}" />
+                <select class="field-input" name="value" aria-label="{{ c.label }}">
+                  <option value="inherit" {% if c.state == "inherit" %}selected{% endif %}>{{ t("admin.au_inherit") }}</option>
+                  <option value="allow" {% if c.state == "allow" %}selected{% endif %}>{{ t("admin.au_allow") }}</option>
+                  <option value="deny" {% if c.state == "deny" %}selected{% endif %}>{{ t("admin.au_deny") }}</option>
+                </select>
+                <button class="button-preview" type="submit">{{ t("admin.apply") }}</button>
+              </form>
+              {% else %}
+              {{ t("admin.au_" ~ c.state) }}
+              {% endif %}
+              {% if c.set_by %}<span class="muted-cell">{{ t("admin.au_set_by", name=c.set_by) }}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="settings-card settings-card-wide">
+      <h2><svg class="icon" aria-hidden="true"><use href="#i-alert-triangle" /></svg>{{ t("admin.au_sanctions") }}</h2>
+      {% if manageable %}
+      <form method="post" action="/admin/user/{{ u_name }}/sanction" class="au-sanction-form">
+        <label class="field">{{ t("admin.au_kind") }}
+          <select class="field-input" name="kind">
+            <option value="mute">{{ t("admin.au_kind_mute") }}</option>
+            <option value="ban">{{ t("admin.au_kind_ban") }}</option>
+            {% if can_install_ban %}<option value="ban_install">{{ t("admin.au_kind_ban_install") }}</option>{% endif %}
+          </select>
+        </label>
+        <label class="field">{{ t("admin.au_days") }}
+          <input class="field-input" name="days" type="number" min="0" max="3650" value="0" />
+        </label>
+        <label class="field au-reason">{{ t("admin.au_reason") }}
+          <input class="field-input" name="reason" maxlength="500" required />
+        </label>
+        <div class="form-actions"><button class="button-save" type="submit">{{ t("admin.au_apply_sanction") }}</button></div>
+      </form>
+      <p class="field-note">{{ t("admin.au_sanction_note") }}</p>
+      {% endif %}
+      {% if sanctions %}
+      <ul class="au-history">
+        {% for s in sanctions %}
+        <li class="{% if s.active %}is-active{% endif %}">
+          <p><strong>{{ t("admin.au_kind_" ~ s.kind) }}</strong>
+            {% if s.active %}<span class="tag tag-warn">{{ t("admin.au_active") }}</span>{% elif s.lifted_at %}<span class="tag">{{ t("admin.au_lifted") }}</span>{% else %}<span class="tag">{{ t("admin.au_expired") }}</span>{% endif %}
+            <span class="muted-cell">{{ s.at }}{% if s.by %} · {{ s.by }}{% endif %}{% if s.until %} · {{ t("admin.au_until", date=s.until) }}{% endif %}</span></p>
+          <p>{{ s.reason }}</p>
+          {% if s.lifted_at %}<p class="muted-cell">{{ t("admin.au_lifted_on", date=s.lifted_at, name=s.lifted_by or "-") }}{% if s.lift_reason %}: {{ s.lift_reason }}{% endif %}</p>{% endif %}
+          {% if s.active and manageable and (not s.install or can_install_ban) %}
+          <form method="post" action="/admin/user/{{ u_name }}/lift/{{ s.id }}" class="settings-row">
+            <input class="field-input" name="reason" maxlength="500" placeholder="{{ t('admin.au_lift_reason') }}" aria-label="{{ t('admin.au_lift_reason') }}" />
+            <button class="button-preview" type="submit">{{ t("admin.au_lift") }}</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="field-note">{{ t("admin.au_no_sanctions") }}</p>
+      {% endif %}
+    </section>
+
+    <section class="settings-card settings-card-wide">
+      <h2><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("admin.au_notes") }}</h2>
+      <p class="field-note">{{ t("admin.au_notes_note") }}</p>
+      {% if manageable %}
+      <form method="post" action="/admin/user/{{ u_name }}/note" class="settings-stack">
+        <label class="visually-hidden" for="au-note">{{ t("admin.au_notes") }}</label>
+        <textarea class="field-input au-note" id="au-note" name="body" maxlength="2000" rows="3" required></textarea>
+        <button class="button-preview" type="submit">{{ t("admin.au_add_note") }}</button>
+      </form>
+      {% endif %}
+      {% if notes %}
+      <ul class="au-history">
+        {% for n in notes %}<li><p class="muted-cell">{{ n.at }}{% if n.author %} · {{ n.author }}{% endif %}</p><p class="au-note-body">{{ n.body }}</p></li>{% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+  </div>
 
 {% elif section == "user_new" %}
   {# Accounts on an invite-only wiki start here. The password is generated by

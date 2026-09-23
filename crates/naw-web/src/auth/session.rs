@@ -100,6 +100,11 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.id = $1
+          -- An install-wide ban ends the account's sessions where they stand.
+          AND NOT EXISTS (
+            SELECT 1 FROM sanctions b
+            WHERE b.user_id = u.id AND b.wiki_id IS NULL AND b.kind = 'ban'
+              AND b.lifted_at IS NULL AND (b.expires_at IS NULL OR b.expires_at > now()))
         "#,
         session_id
     )
@@ -167,6 +172,22 @@ pub async fn delete_others(
     .execute(&state.db)
     .await?;
     Ok(result.rows_affected())
+}
+
+/// Whether an install-wide ban keeps this account out right now.
+pub async fn install_banned(
+    state: &AppState,
+    user_id: Uuid,
+) -> Result<bool, naw_core::error::AppError> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM sanctions
+             WHERE user_id = $1 AND wiki_id IS NULL AND kind = 'ban' AND lifted_at IS NULL
+               AND (expires_at IS NULL OR expires_at > now())) AS "banned!""#,
+        user_id
+    )
+    .fetch_one(&state.db)
+    .await?)
 }
 
 /// Deletes the session row.

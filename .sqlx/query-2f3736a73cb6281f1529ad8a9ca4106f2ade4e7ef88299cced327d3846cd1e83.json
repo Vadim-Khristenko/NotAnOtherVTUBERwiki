@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET email_verified_at = now()\n         WHERE id = $1 AND email IS NOT NULL AND email_verified_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f3736a73cb6281f1529ad8a9ca4106f2ade4e7ef88299cced327d3846cd1e83"
+}

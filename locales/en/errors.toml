@@ -99,3 +99,7 @@ body = "The service you chose to sign in with did not answer properly. Wait a li
 title = "No account here yet"
 body = "Signing in worked, but this wiki is invite only for now and that sign-in is not linked to any account. Nothing was created."
 action = "How to ask for an account"
+
+[auth_failed.suspended]
+title = "This account is suspended"
+body = "Signing in worked, but the account is suspended on this install. If you think that is a mistake, write to the wiki's admins."

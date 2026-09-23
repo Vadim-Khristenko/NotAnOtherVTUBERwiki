@@ -40,7 +40,7 @@ const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; char
 /// allocation on a path that has already done two database round trips. Not
 /// worth it; the whole design here is "hand back a finished response".
 #[allow(clippy::result_large_err)]
-async fn gate(
+pub(crate) async fn gate(
     state: &AppState,
     headers: &HeaderMap,
     user: Option<&CurrentUser>,
@@ -68,7 +68,7 @@ async fn gate(
 }
 
 /// Renders `admin.html` for one section.
-fn render(
+pub(crate) fn render(
     ctx: &Ctx,
     section: &str,
     heading: &str,
@@ -242,9 +242,6 @@ pub async fn users(
         .into_iter()
         .map(|row| {
             let effective = row.wiki_role.as_deref().unwrap_or("registered");
-            let held = row.wiki_role.as_deref().and_then(WikiRole::parse);
-            let can_reset =
-                may_reset(&ctx, row.id, GlobalRole::parse(&row.global_role), held).is_ok();
             minijinja::context! {
                 id => row.id.to_string(),
                 username => row.username,
@@ -259,17 +256,8 @@ pub async fn users(
                 created_at => row.created_at.format("%Y-%m-%d").to_string(),
                 is_me => Some(row.id) == ctx.actor.user_id,
                 temporary => row.must_change_password,
-                can_reset => can_reset,
             }
         })
-        .collect();
-
-    // Only offer the roles this admin may actually hand out, so the form
-    // cannot present a choice the POST handler will refuse.
-    let grantable: Vec<&str> = WikiRole::ALL
-        .iter()
-        .filter(|role| ctx.actor.may_grant(**role))
-        .map(|role| role.as_str())
         .collect();
 
     render(
@@ -285,7 +273,6 @@ pub async fn users(
             has_next => offset + PER_PAGE < total,
             prev_page => page_no - 1,
             next_page => page_no + 1,
-            grantable => grantable,
             can_create => ctx.actor.can(Capability::UserRoleManage),
         },
     )
@@ -296,6 +283,10 @@ pub struct RoleForm {
     user_id: String,
     /// A `WikiRole` name, or the empty string to remove the membership.
     role: String,
+    /// Where to go afterwards: the person's own admin page, when the form was
+    /// there. Anything that is not an admin user page is ignored.
+    #[serde(default)]
+    back: String,
 }
 
 /// POST /admin/users/role
@@ -366,7 +357,7 @@ pub async fn set_role(
             },
         )
         .await?;
-        return Ok(pages::see_other("/admin/users"));
+        return Ok(pages::see_other(role_back(&form.back)));
     }
 
     let Some(role) = WikiRole::parse(requested) else {
@@ -404,7 +395,19 @@ pub async fn set_role(
         },
     )
     .await?;
-    Ok(pages::see_other("/admin/users"))
+    Ok(pages::see_other(role_back(&form.back)))
+}
+
+/// The page a role change returns to: the admin user page it came from, or
+/// the account list.
+fn role_back(back: &str) -> &str {
+    let ok = back.strip_prefix("/admin/user/").is_some_and(|name| {
+        !name.is_empty()
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+    });
+    if ok { back } else { "/admin/users" }
 }
 
 // ---------------------------------------------------------------------------
@@ -417,7 +420,7 @@ pub async fn set_role(
 // text; the page that shows it is no-store like the rest of the panel.
 
 /// Why this admin may not reset that account's password, if they may not.
-fn may_reset(
+pub(crate) fn may_reset(
     ctx: &Ctx,
     target: uuid::Uuid,
     target_global: GlobalRole,
@@ -1756,9 +1759,14 @@ pub async fn reload(
 /// The variants a kind has wording for, so the gallery can preview each one.
 fn variants_of(kind: crate::errors::Kind) -> &'static [&'static str] {
     match kind {
-        crate::errors::Kind::AuthFailed => {
-            &["bad_request", "cancelled", "expired", "upstream", "closed"]
-        }
+        crate::errors::Kind::AuthFailed => &[
+            "bad_request",
+            "cancelled",
+            "expired",
+            "upstream",
+            "closed",
+            "suspended",
+        ],
         _ => &[],
     }
 }

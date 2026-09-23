@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT capability, allowed FROM user_capabilities WHERE user_id = $1 AND wiki_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "capability",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_capabilities",
+            "name": "capability"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "allowed",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "user_capabilities",
+            "name": "allowed"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "ced8c7d2c291f0018fb6c5b833b083307143952221f60944fa24c513544aeda1"
+}

@@ -2,6 +2,7 @@
 
 mod account;
 mod admin;
+mod admin_user;
 mod audit;
 mod auth;
 pub mod bootstrap;
@@ -99,6 +100,28 @@ fn routes(state: AppState) -> Router {
             get(admin::new_user).post(admin::create_user),
         )
         .route("/admin/users/password", post(admin::reset_password))
+        .route("/admin/user/{name}", get(admin_user::show))
+        .route(
+            "/admin/user/{name}/capability",
+            post(admin_user::set_capability),
+        )
+        .route(
+            "/admin/user/{name}/sanction",
+            post(admin_user::add_sanction),
+        )
+        .route(
+            "/admin/user/{name}/lift/{id}",
+            post(admin_user::lift_sanction),
+        )
+        .route("/admin/user/{name}/note", post(admin_user::add_note))
+        .route(
+            "/admin/user/{name}/verify-email",
+            post(admin_user::verify_email),
+        )
+        .route(
+            "/admin/user/{name}/end-sessions",
+            post(admin_user::end_sessions),
+        )
         .route("/admin/pages", get(admin::pages_list))
         .route("/admin/pages/{action}", post(admin::page_action))
         .route("/admin/audit", get(admin::audit_log))

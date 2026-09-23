@@ -79,6 +79,8 @@ pub enum AuthError {
     /// The sign-in was fine, but it would create an account and registration
     /// is closed. Nothing was written.
     RegistrationClosed,
+    /// The sign-in was fine, but the account is under an install-wide ban.
+    Suspended,
 }
 
 impl IntoResponse for AuthError {
@@ -103,6 +105,7 @@ impl IntoResponse for AuthError {
                 StatusCode::FORBIDDEN,
                 "accounts on this wiki are created by its admins",
             ),
+            AuthError::Suspended => (StatusCode::FORBIDDEN, "this account is suspended"),
         };
         if status == StatusCode::SEE_OTHER {
             return (

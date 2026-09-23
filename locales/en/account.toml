@@ -21,6 +21,7 @@ error_cancelled = "The last sign-in was cancelled. Nothing was created."
 error_expired = "That sign-in link had expired. This one will work."
 error_missing = "Enter both your username and your password."
 error_password = "That username and password do not match an account."
+error_suspended = "This account is suspended. If you think that is a mistake, write to the wiki's admins."
 error_throttled = "Too many attempts. Wait fifteen minutes and try again."
 
 password_title = "Change your password"

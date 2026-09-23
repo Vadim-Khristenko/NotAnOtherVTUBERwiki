@@ -38,6 +38,7 @@ pub fn auth_error(err: &AuthError) -> Response {
         // 403 and not 401: signing in again with the same provider changes
         // nothing, only an admin creating the account does.
         AuthError::RegistrationClosed => (StatusCode::FORBIDDEN, "closed"),
+        AuthError::Suspended => (StatusCode::FORBIDDEN, "suspended"),
     };
     // No body: the reason shown to the reader comes from the language pack, and
     // an upstream detail is exactly the kind of text that must not reach the page.

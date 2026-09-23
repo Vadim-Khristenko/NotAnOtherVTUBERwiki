@@ -218,6 +218,11 @@ pub async fn password_login(
         return again(StatusCode::UNAUTHORIZED, "error_password");
     };
     throttle::clear_account(&state.valkey, &username).await;
+    // The password was right; the account is suspended. Saying so is fair to
+    // its owner and tells an attacker nothing they did not just prove.
+    if session::install_banned(&state, row.id).await? {
+        return again(StatusCode::FORBIDDEN, "error_suspended");
+    }
 
     let user_agent = headers
         .get(header::USER_AGENT)

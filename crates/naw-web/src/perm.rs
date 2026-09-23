@@ -65,6 +65,54 @@ impl Capability {
             Self::WikiSettings => "wiki.settings",
         }
     }
+
+    pub const ALL: [Capability; 9] = [
+        Self::PageCreate,
+        Self::PageEdit,
+        Self::PageDelete,
+        Self::PageLock,
+        Self::RevisionPatrol,
+        Self::AuditRead,
+        Self::AdminPanel,
+        Self::UserRoleManage,
+        Self::WikiSettings,
+    ];
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|cap| cap.as_str() == raw)
+    }
+
+    /// Whether this capability writes to the wiki. A mute or a ban takes these
+    /// away whatever the role or an override says.
+    pub fn is_write(self) -> bool {
+        matches!(
+            self,
+            Self::PageCreate
+                | Self::PageEdit
+                | Self::PageDelete
+                | Self::PageLock
+                | Self::RevisionPatrol
+        )
+    }
+
+    /// Capabilities only an owner may hand to someone individually. Each of
+    /// them is a way to change who may do what, so granting one is granting
+    /// power over the granter.
+    pub fn owner_only(self) -> bool {
+        matches!(
+            self,
+            Self::AdminPanel | Self::UserRoleManage | Self::WikiSettings
+        )
+    }
+}
+
+/// An active sanction on this wiki, as far as permissions are concerned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sanction {
+    /// May read, may not publish.
+    Mute,
+    /// May read, and nothing else: no writing, no panel.
+    Ban,
 }
 
 /// Per-wiki role. Mirrors the `user_wiki_role` enum from migration 0001.
@@ -214,6 +262,10 @@ pub struct Actor {
     /// `effective_role` encodes.
     pub membership: Option<WikiRole>,
     pub rules: Rules,
+    /// Individual grants and denials on this wiki, over the role.
+    pub overrides: Vec<(Capability, bool)>,
+    /// The strongest active sanction on this wiki, if any.
+    pub sanction: Option<Sanction>,
 }
 
 impl Actor {
@@ -228,6 +280,8 @@ impl Actor {
             global: GlobalRole::Registered,
             membership: None,
             rules,
+            overrides: Vec::new(),
+            sanction: None,
         }
     }
 
@@ -271,6 +325,23 @@ impl Actor {
     }
 
     pub fn can(&self, cap: Capability) -> bool {
+        if self.global == GlobalRole::Root {
+            return true;
+        }
+        // Sanctions first: nothing an override grants survives a mute or a ban.
+        match self.sanction {
+            Some(Sanction::Ban) => return false,
+            Some(Sanction::Mute) if cap.is_write() => return false,
+            _ => {}
+        }
+        if let Some((_, allowed)) = self.overrides.iter().find(|(c, _)| *c == cap) {
+            return *allowed;
+        }
+        self.can_by_role(cap)
+    }
+
+    /// What the role alone allows, before sanctions and overrides.
+    pub fn can_by_role(&self, cap: Capability) -> bool {
         if self.global == GlobalRole::Root {
             return true;
         }
@@ -344,6 +415,36 @@ pub async fn resolve(
     .and_then(|row| row.role)
     .as_deref()
     .and_then(WikiRole::parse);
+    let overrides = sqlx::query!(
+        "SELECT capability, allowed FROM user_capabilities WHERE user_id = $1 AND wiki_id = $2",
+        user.id,
+        wiki_id
+    )
+    .fetch_all(db)
+    .await?
+    .into_iter()
+    .filter_map(|row| Capability::parse(&row.capability).map(|cap| (cap, row.allowed)))
+    .collect();
+    // A ban outranks a mute. Install-wide bans never reach here: the session
+    // layer refuses those accounts before any permission is asked.
+    let sanction = sqlx::query_scalar!(
+        "SELECT kind FROM sanctions
+         WHERE user_id = $1 AND wiki_id = $2 AND lifted_at IS NULL
+           AND (expires_at IS NULL OR expires_at > now())",
+        user.id,
+        wiki_id
+    )
+    .fetch_all(db)
+    .await?
+    .into_iter()
+    .map(|kind| {
+        if kind == "ban" {
+            Sanction::Ban
+        } else {
+            Sanction::Mute
+        }
+    })
+    .max_by_key(|s| matches!(s, Sanction::Ban));
     Ok(Actor {
         user_id: Some(user.id),
         username: Some(user.username.clone()),
@@ -352,12 +453,57 @@ pub async fn resolve(
         global: GlobalRole::parse(&user.global_role),
         membership,
         rules,
+        overrides,
+        sanction,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overrides_and_sanctions_sit_on_top_of_the_role() {
+        let mut editor = actor(GlobalRole::Registered, None);
+        assert!(editor.can(Capability::PageEdit));
+        assert!(!editor.can(Capability::PageLock));
+        editor.overrides = vec![(Capability::PageLock, true), (Capability::PageEdit, false)];
+        assert!(
+            editor.can(Capability::PageLock),
+            "an allow adds to the role"
+        );
+        assert!(!editor.can(Capability::PageEdit), "a deny takes from it");
+        editor.overrides.clear();
+        editor.sanction = Some(Sanction::Mute);
+        assert!(!editor.can(Capability::PageEdit));
+        assert!(!editor.can(Capability::PageCreate));
+        let mut admin = actor(GlobalRole::Registered, Some(WikiRole::Admin));
+        admin.sanction = Some(Sanction::Mute);
+        assert!(
+            admin.can(Capability::AdminPanel),
+            "a mute is about publishing"
+        );
+        admin.sanction = Some(Sanction::Ban);
+        assert!(
+            !admin.can(Capability::AdminPanel),
+            "a ban leaves reading only"
+        );
+        let mut muted_but_allowed = actor(GlobalRole::Registered, None);
+        muted_but_allowed.overrides = vec![(Capability::PageEdit, true)];
+        muted_but_allowed.sanction = Some(Sanction::Mute);
+        assert!(
+            !muted_but_allowed.can(Capability::PageEdit),
+            "no override beats a sanction"
+        );
+    }
+
+    #[test]
+    fn capabilities_round_trip_through_their_names() {
+        for cap in Capability::ALL {
+            assert_eq!(Capability::parse(cap.as_str()), Some(cap));
+        }
+        assert_eq!(Capability::parse("nope"), None);
+    }
     use serde_json::json;
 
     fn actor(global: GlobalRole, membership: Option<WikiRole>) -> Actor {
@@ -369,6 +515,8 @@ mod tests {
             global,
             membership,
             rules: Rules::default(),
+            overrides: Vec::new(),
+            sanction: None,
         }
     }
 

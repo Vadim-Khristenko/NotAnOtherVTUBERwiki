@@ -1,0 +1,144 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.kind, s.reason, s.wiki_id, s.created_at, s.expires_at,\n                  s.lifted_at, s.lift_reason,\n                  c.username AS \"by?\", l.username AS \"lifted_by?\",\n                  (s.lifted_at IS NULL AND (s.expires_at IS NULL OR s.expires_at > now())) AS \"active!\"\n           FROM sanctions s\n           LEFT JOIN users c ON c.id = s.created_by\n           LEFT JOIN users l ON l.id = s.lifted_by\n           WHERE s.user_id = $1 AND (s.wiki_id = $2 OR s.wiki_id IS NULL)\n           ORDER BY s.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sanctions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sanctions",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sanctions",
+            "name": "reason"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "wiki_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sanctions",
+            "name": "wiki_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sanctions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sanctions",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "lifted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sanctions",
+            "name": "lifted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "lift_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sanctions",
+            "name": "lift_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "by?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "lifted_by?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "active!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "07196e096e8404ef98ed6c3135a12f4abd9c4516a1e2f2aeeca30df504647590"
+}
