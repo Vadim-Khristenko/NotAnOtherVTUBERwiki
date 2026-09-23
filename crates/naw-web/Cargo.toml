@@ -33,5 +33,6 @@ cookie.workspace = true
 chrono.workspace = true
 ipnetwork.workspace = true
 reqwest.workspace = true
+url = "2"
 jsonwebtoken.workspace = true
 async-trait.workspace = true

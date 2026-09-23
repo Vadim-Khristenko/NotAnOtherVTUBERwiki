@@ -51,7 +51,7 @@ sqlx = { version = "0.9.0", default-features = false, features = [
 ] }
 
 # --- auth (rustls everywhere, no OpenSSL)
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "socks"] }
 # jsonwebtoken 11 makes the crypto backend an explicit choice. rust_crypto is
 # pure Rust, so a Windows build needs no cmake or nasm the way aws_lc_rs does.
 # `use_pem` is off: keys arrive as JWKs from a provider's JWKS, never as PEM.

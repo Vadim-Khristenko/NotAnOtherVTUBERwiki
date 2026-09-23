@@ -44,6 +44,10 @@ pub struct Config {
     /// Storage all 7TV emotes may take across the install, in bytes.
     #[serde(default = "default_emote_budget_bytes")]
     pub emote_budget_bytes: u64,
+    /// A local proxy that outside fetches fall back to when the direct path
+    /// fails or stalls, as `socks5://host:port` or `http://host:port`.
+    #[serde(default)]
+    pub fetch_proxy: Option<String>,
     /// Defaults for account changes; the admin panel can override each value.
     #[serde(default)]
     pub accounts: AccountPolicy,
@@ -164,6 +168,7 @@ impl Default for Config {
             upload_max_bytes: default_upload_max_bytes(),
             avatar_max_bytes: default_avatar_max_bytes(),
             emote_budget_bytes: default_emote_budget_bytes(),
+            fetch_proxy: None,
             auth: AuthConfig::default(),
         }
     }
@@ -300,6 +305,19 @@ fn default_upload_max_bytes() -> usize {
     20 * 1024 * 1024
 }
 
+/// Accepts `socks5://` and `http://` proxies. `socks5h://` is refused: the
+/// proxy would resolve names itself, past the engine's check that a fetch
+/// never reaches a private address.
+fn check_fetch_proxy(raw: &str) -> Result<String, AppError> {
+    if raw.starts_with("socks5://") || raw.starts_with("http://") {
+        Ok(raw.to_string())
+    } else {
+        Err(AppError::Config(format!(
+            "NAW_FETCH_PROXY must be socks5:// or http://, got {raw:?} (socks5h:// would bypass the private address check)"
+        )))
+    }
+}
+
 fn default_emote_budget_bytes() -> u64 {
     1024 * 1024 * 1024
 }
@@ -384,6 +402,7 @@ impl fmt::Debug for Config {
             .field("upload_max_bytes", &self.upload_max_bytes)
             .field("avatar_max_bytes", &self.avatar_max_bytes)
             .field("emote_budget_bytes", &self.emote_budget_bytes)
+            .field("fetch_proxy", &self.fetch_proxy.as_ref().map(|_| "set"))
             .field("auth", &self.auth)
             .finish()
     }
@@ -494,6 +513,14 @@ impl Config {
                     "NAW_EMOTE_BUDGET_BYTES must be a number of bytes, got {raw:?}"
                 ))
             })?;
+        }
+        if let Ok(raw) = std::env::var("NAW_FETCH_PROXY") {
+            let raw = raw.trim();
+            cfg.fetch_proxy = if raw.is_empty() {
+                None
+            } else {
+                Some(check_fetch_proxy(raw)?)
+            };
         }
         cfg.bootstrap_owner = BootstrapOwner::from_env()?;
         cfg.check_dev_login()?;

@@ -7,8 +7,6 @@
 //! in the pictures after the render cache.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
-use std::time::Duration;
 
 use axum::extract::{Extension, Form, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -31,19 +29,6 @@ const MAX_FILE: usize = 2 * 1024 * 1024;
 const IN_FLIGHT: usize = 6;
 /// Emotes shown on the public list.
 const LIST_MAX: i64 = 3000;
-
-fn client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(10))
-            .redirect(reqwest::redirect::Policy::limited(3))
-            .user_agent(crate::auth::http::USER_AGENT)
-            .build()
-            .unwrap_or_default()
-    })
-}
 
 /// A 7TV source an admin entered.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,23 +103,16 @@ struct RemoteSet {
     emotes: Vec<Remote>,
 }
 
-async fn get_json(url: &str) -> Result<Value, String> {
-    let response = client()
-        .get(url)
-        .send()
+/// Largest 7TV API answer read; a full set of 1000 emotes is well below it.
+const JSON_MAX: usize = 8 * 1024 * 1024;
+
+async fn get_json(state: &AppState, url: &str) -> Result<Value, String> {
+    crate::fetch::get_json(state, url, JSON_MAX)
         .await
-        .map_err(|e| format!("7TV did not answer: {}", e.without_url()))?;
-    let status = response.status();
-    if status == reqwest::StatusCode::NOT_FOUND {
-        return Err("7TV does not know this user or set".into());
-    }
-    if !status.is_success() {
-        return Err(format!("7TV answered {status}"));
-    }
-    response
-        .json::<Value>()
-        .await
-        .map_err(|_| "7TV sent something that is not JSON".into())
+        .map_err(|err| match err {
+            crate::fetch::FetchError::Status(404) => "7TV does not know this user or set".into(),
+            err => format!("7TV: {err}"),
+        })
 }
 
 /// The 2x WebP (sharp at text height, keeps animation), else any WebP.
@@ -170,11 +148,11 @@ fn pick_file(emote: &Value) -> Option<Remote> {
     })
 }
 
-async fn fetch_set(source: &Source) -> Result<RemoteSet, String> {
+async fn fetch_set(state: &AppState, source: &Source) -> Result<RemoteSet, String> {
     let (set_id, owner) = match source {
         Source::Set(id) => (id.clone(), None),
         Source::User(id) => {
-            let user = get_json(&format!("{API}/users/{id}")).await?;
+            let user = get_json(state, &format!("{API}/users/{id}")).await?;
             let connections = user
                 .get("connections")
                 .and_then(Value::as_array)
@@ -200,7 +178,7 @@ async fn fetch_set(source: &Source) -> Result<RemoteSet, String> {
             (set, name)
         }
     };
-    let set = get_json(&format!("{API}/emote-sets/{set_id}")).await?;
+    let set = get_json(state, &format!("{API}/emote-sets/{set_id}")).await?;
     let set_name = set
         .get("name")
         .and_then(Value::as_str)
@@ -234,27 +212,10 @@ struct Stored {
 }
 
 async fn download(state: AppState, remote: Remote) -> Result<Stored, String> {
-    let response = client()
-        .get(&remote.url)
-        .send()
+    let bytes = crate::fetch::get(&state, &remote.url, MAX_FILE)
         .await
-        .map_err(|e| format!("download failed: {}", e.without_url()))?;
-    if !response.status().is_success() {
-        return Err(format!("download answered {}", response.status()));
-    }
-    if response
-        .content_length()
-        .is_some_and(|len| len as usize > MAX_FILE)
-    {
-        return Err("file too large".into());
-    }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|_| "download cut off".to_string())?;
-    if bytes.len() > MAX_FILE {
-        return Err("file too large".into());
-    }
+        .map_err(|err| format!("download: {err}"))?
+        .bytes;
     let Some(kind) = crate::media::sniff(&bytes) else {
         return Err("not an image".into());
     };
@@ -269,7 +230,7 @@ async fn download(state: AppState, remote: Remote) -> Result<Stored, String> {
     {
         state
             .storage
-            .put(&key, bytes.to_vec())
+            .put(&key, bytes)
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -340,7 +301,7 @@ async fn run_sync(
     source: &Source,
 ) -> Result<(), String> {
     let db_err = |e: sqlx::Error| format!("database: {e}");
-    let remote = fetch_set(source).await?;
+    let remote = fetch_set(state, source).await?;
 
     // The first source to claim a name keeps it.
     let taken: HashSet<String> = sqlx::query_scalar!(

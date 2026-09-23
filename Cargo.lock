@@ -1554,6 +1554,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "unicode-segmentation",
+ "url",
  "uuid",
 ]
 
