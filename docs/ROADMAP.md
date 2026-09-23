@@ -158,7 +158,11 @@ The part that makes it a wiki rather than a blog.
       of the expanded text, so nothing needs a full flush. A template's page lists where it
       is used
 - A preview of affected pages before a template is published
-- The other namespaces (`Talk:`, `Category:`, `File:`) and `Module:` for components
+- The other namespaces (`Talk:`, `Category:`) and `Module:` for components
+- Infobox fields as a YAML block the template validates against its own schema, so an
+  editor can offer a form and the values become queryable data
+- Paths the engine uses itself (`admin`, `account`, `search` and so on) refused as page
+  addresses, with a clear message
 - Categories, redirects, and slug normalisation that handles Japanese and Cyrillic
 - [x] Media upload behind a swappable storage backend. Images are recognised by their
       bytes (never SVG), stored by content hash, served with a CSP that allows nothing.
@@ -264,8 +268,11 @@ Make editing pleasant, without ever putting it on the reader path.
 - [x] The `snackers` skin, pinks and purples, dark mode by default
 - Admin UI for skin variables as CSS custom properties
 - Per page layout overrides
+- Error page overrides: `errors/409_conflict`, `errors/404_not_found` and so on, per skin
+  and per wiki, over the generic error page
 - Core component library: infobox, navbox, hatnote, tabs
-- `Template:Infobox VTuber` and `Module:StreamArchive` as the first real components
+- [x] `Template:Infobox VTuber` as the first real template
+- `Module:StreamArchive` as the first real component
 - [x] 7TV emotes: admins add 7TV users or emote sets, which are the allowlist; each
       file is downloaded once into local storage under a 1 GB budget, and `:name:` in
       an article shows it. `/emotes` lists them all.
