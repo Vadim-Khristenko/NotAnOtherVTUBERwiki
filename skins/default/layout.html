@@ -318,7 +318,9 @@ a.button-save, a.button-preview { display: inline-flex; align-items: center; jus
 .settings-stack .field-input { width: 100%; }
 .media-form { margin: var(--s4) 0; }
 /* An emote sits in the line like a word: text height, never taller. */
-img.emote { display: inline-block; height: 1.75em; width: auto; vertical-align: middle; margin: -0.25em 0.05em 0; border-radius: 0; }
+/* Line height, like an emote in chat. `.content img` sets height: auto for
+ * article pictures, so this needs the same scope to win. */
+.content img.emote, img.emote { display: inline-block; height: 1.375em; width: auto; max-width: none; vertical-align: -0.3em; margin: 0 0.05em; border-radius: 0; }
 .emote-grid { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: var(--s3, 0.75rem); }
 .emote-card { display: grid; justify-items: center; gap: 0.3rem; padding: var(--s3, 0.75rem); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elevated); text-align: center; }
 .emote-card img { height: 2.5rem; width: auto; }
