@@ -1,10 +1,17 @@
 <footer class="site-footer">
   <div class="footer-inner">
     <nav class="footer-nav">
+      {# Admins set these in Admin > Header and footer; until then, the four
+         translated defaults. #}
+      {% if footer_links is defined and footer_links is not none %}
+      {% for link in footer_links %}<a href="{{ link.href }}">{{ link.label }}</a>
+      {% endfor %}
+      {% else %}
       <a href="{{ base }}/about">{{ t("footer.about") }}</a>
       <a href="{{ base }}/privacy">{{ t("footer.privacy") }}</a>
       <a href="{{ base }}/terms">{{ t("footer.terms") }}</a>
       <a href="{{ base }}/license">{{ t("footer.license") }}</a>
+      {% endif %}
     </nav>
     <p class="engine-note">{{ t("footer.engine", version=version) }}{% if footer_note is defined and footer_note %} · {{ footer_note }}{% endif %}</p>
   </div>

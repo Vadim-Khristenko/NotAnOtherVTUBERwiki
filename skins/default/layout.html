@@ -354,6 +354,10 @@ a.button-save, a.button-preview { display: inline-flex; align-items: center; jus
 .profile-empty-mine .button-save { display: inline-flex; align-items: center; gap: var(--s2); margin-top: var(--s2); text-decoration: none; }
 .profile-empty-icon { width: 2.2rem; height: 2.2rem; color: var(--accent); }
 .profile-recent { margin-top: var(--s6); }
+.admin-form-wide { max-width: 48rem; }
+.footer-rows { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 1.6fr) 8rem; gap: var(--s2); align-items: center; }
+.footer-rows-head { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+@media (max-width: 40rem) { .footer-rows { grid-template-columns: 1fr; } .footer-rows-head { display: none; } }
 /* Admin: accounts. */
 .admin-actions { margin: 0 0 var(--s4); }
 .admin-actions .button-save { display: inline-flex; align-items: center; gap: var(--s2); text-decoration: none; }

@@ -738,6 +738,157 @@ pub async fn reset_password(
 }
 
 // ---------------------------------------------------------------------------
+// Header and footer
+// ---------------------------------------------------------------------------
+
+/// GET /admin/chrome
+#[instrument(skip(state, user))]
+pub async fn chrome_settings(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    Query(query): Query<SavedQuery>,
+) -> Result<Response, AppError> {
+    let ctx = match gate(&state, &headers, user.as_ref()).await {
+        Ok(ctx) => ctx,
+        Err(response) => return Ok(response),
+    };
+    if !ctx.actor.can(Capability::WikiSettings) {
+        return Ok((StatusCode::FORBIDDEN, "wiki settings need admin rights").into_response());
+    }
+    let header = crate::chrome::header(&ctx.wiki.settings);
+    let saved_links = crate::chrome::footer(&ctx.wiki.settings);
+    let customised = saved_links.is_some();
+    // Always MAX rows, filled from what is saved, so adding a link is typing
+    // into an empty row rather than a script adding one.
+    let mut rows: Vec<minijinja::Value> = saved_links
+        .unwrap_or_default()
+        .into_iter()
+        .map(|l| minijinja::context! { href => l.href, label => l.label, lang => l.lang })
+        .collect();
+    while rows.len() < crate::chrome::MAX_FOOTER_LINKS {
+        rows.push(minijinja::context! { href => "", label => "", lang => "" });
+    }
+    render(
+        &ctx,
+        "chrome",
+        &ctx.t("admin.chrome"),
+        minijinja::context! {
+            h_new_page => header.new_page,
+            h_about => header.about,
+            h_languages => header.languages,
+            h_theme => header.theme,
+            h_search => header.search,
+            footer_rows => rows,
+            footer_customised => customised,
+            offered => ctx.offered_languages(),
+            saved => query.saved.is_some(),
+            refused => query.refused.filter(|n| *n > 0),
+        },
+    )
+}
+
+/// POST /admin/chrome
+#[instrument(skip(state, user, form))]
+pub async fn save_chrome_settings(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    Form(form): Form<std::collections::HashMap<String, String>>,
+) -> Result<Response, AppError> {
+    let ctx = match gate(&state, &headers, user.as_ref()).await {
+        Ok(ctx) => ctx,
+        Err(response) => return Ok(response),
+    };
+    if !ctx.actor.can(Capability::WikiSettings) {
+        return Ok((StatusCode::FORBIDDEN, "wiki settings need admin rights").into_response());
+    }
+    let on = |key: &str| form.contains_key(key);
+    let header = json!({
+        "new_page": on("h_new_page"),
+        "about": on("h_about"),
+        "languages": on("h_languages"),
+        "theme": on("h_theme"),
+        "search": on("h_search"),
+    });
+    let offered = ctx.offered_languages();
+    let mut links = Vec::new();
+    let mut refused = 0;
+    for i in 0..crate::chrome::MAX_FOOTER_LINKS {
+        let get = |name: &str| {
+            form.get(&format!("{name}_{i}"))
+                .map(|v| v.trim().to_string())
+                .unwrap_or_default()
+        };
+        let (href, label, lang) = (get("href"), get("label"), get("lang").to_ascii_lowercase());
+        if href.is_empty() && label.is_empty() {
+            continue;
+        }
+        if !crate::chrome::href_is_safe(&href) || label.is_empty() || label.chars().count() > 60 {
+            refused += 1;
+            continue;
+        }
+        let lang = if offered.contains(&lang) {
+            lang
+        } else {
+            String::new()
+        };
+        links.push(json!({ "href": href, "label": label, "lang": lang }));
+    }
+    // "Reset" puts the translated defaults back by forgetting the list.
+    let footer = if on("footer_reset") {
+        Value::Null
+    } else {
+        Value::Array(links)
+    };
+
+    let mut settings = ctx.wiki.settings.clone();
+    if !settings.is_object() {
+        settings = json!({});
+    }
+    let object = settings.as_object_mut().expect("just ensured an object");
+    let mut chrome = object
+        .get("chrome")
+        .cloned()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    chrome["header"] = header.clone();
+    if footer.is_null() {
+        if let Some(map) = chrome.as_object_mut() {
+            map.remove("footer");
+        }
+    } else {
+        chrome["footer"] = footer.clone();
+    }
+    object.insert("chrome".to_string(), chrome);
+    sqlx::query!(
+        "UPDATE wikis SET settings = $2 WHERE id = $1",
+        ctx.wiki.id,
+        settings
+    )
+    .execute(&state.db)
+    .await?;
+    audit::record(
+        &state.db,
+        audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action: "wiki.chrome",
+            entity_type: "wiki",
+            entity_id: Some(ctx.wiki.id),
+            meta: json!({ "header": header, "footer": footer, "refused_links": refused }),
+        },
+    )
+    .await?;
+    let target = if refused > 0 {
+        format!("/admin/chrome?saved=1&refused={refused}")
+    } else {
+        "/admin/chrome?saved=1".to_string()
+    };
+    Ok(pages::see_other(&target))
+}
+
+// ---------------------------------------------------------------------------
 // Install: account rules
 // ---------------------------------------------------------------------------
 //
@@ -787,6 +938,9 @@ pub async fn account_rules(
 pub struct SavedQuery {
     #[serde(default)]
     saved: Option<String>,
+    /// How many submitted rows were dropped as unsafe or incomplete.
+    #[serde(default)]
+    refused: Option<u32>,
 }
 
 #[derive(Debug, serde::Deserialize)]

@@ -300,6 +300,25 @@ impl Ctx {
         use crate::perm::Capability;
         let messages = &self.skin.messages;
         let offered = self.offered_languages();
+        let header = crate::chrome::header(&self.wiki.settings);
+        // A saved footer replaces the translated defaults. Local links keep
+        // the reader's article language; a link meant for one interface
+        // language shows only there.
+        let footer_links: Option<Vec<minijinja::Value>> =
+            crate::chrome::footer(&self.wiki.settings).map(|links| {
+                links
+                    .into_iter()
+                    .filter(|l| l.lang.is_empty() || l.lang == self.lang)
+                    .map(|l| {
+                        let href = if l.href.starts_with('/') {
+                            self.link(&l.href)
+                        } else {
+                            l.href
+                        };
+                        minijinja::context! { href => href, label => l.label }
+                    })
+                    .collect()
+            });
         // Code plus the language's name in itself, so the switcher can say
         // "Русский" to the person looking for it rather than "RU".
         let language_options: Vec<minijinja::Value> = offered
@@ -334,6 +353,12 @@ impl Ctx {
             // The content language, for a lang attribute on the article itself
             // when it differs from the chrome.
             content_lang => self.content_locale.clone(),
+            show_new_page => header.new_page,
+            show_about => header.about,
+            show_languages => header.languages,
+            show_theme => header.theme,
+            show_search => header.search,
+            footer_links => footer_links,
             lang_native => messages
                 .meta(&self.lang)
                 .map(|m| m.native_name.clone())

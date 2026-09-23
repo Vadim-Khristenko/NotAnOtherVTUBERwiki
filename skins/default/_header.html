@@ -26,6 +26,7 @@
 
     {# The toggles must precede the panels they control: CSS can only reach
        later siblings. #}
+    {% if show_search is not defined or show_search %}
     <input class="panel-toggle" type="checkbox" id="search-toggle"
            aria-controls="site-search" />
     <label class="icon-button search-button" for="search-toggle"
@@ -33,6 +34,7 @@
       <svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>
       <span class="visually-hidden">{{ t("nav.search") }}</span>
     </label>
+    {% endif %}
 
     <input class="panel-toggle" type="checkbox" id="menu-toggle"
            aria-controls="site-nav" />
@@ -43,6 +45,7 @@
       <span class="visually-hidden">{{ t("nav.menu") }}</span>
     </label>
 
+    {% if show_search is not defined or show_search %}
     <form class="header-search" id="site-search" method="get" action="{{ base }}/search" role="search">
       <label class="visually-hidden" for="header-q">{{ t("nav.search_this", wiki=wiki_name) }}</label>
       <svg class="icon header-search-icon" aria-hidden="true"><use href="#i-search" /></svg>
@@ -51,9 +54,10 @@
              value="{% if query is defined %}{{ query }}{% endif %}" />
       <button type="submit" class="header-search-go">{{ t("nav.search") }}</button>
     </form>
+    {% endif %}
 
     <nav class="site-nav" id="site-nav" aria-label="{{ t('nav.main') }}">
-      {% if can_create is defined and can_create %}
+      {% if can_create is defined and can_create and (show_new_page is not defined or show_new_page) %}
       <a class="nav-link" href="{{ base }}/new" title="{{ t('nav.new_page') }}" aria-label="{{ t('nav.new_page') }}">
         <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
         <span>{{ t("nav.new_page") }}</span>
@@ -65,12 +69,14 @@
         <span>{{ t("nav.admin") }}</span>
       </a>
       {% endif %}
+      {% if show_about is not defined or show_about %}
       <a class="nav-link" href="{{ base }}/about" title="{{ t('nav.about') }}" aria-label="{{ t('nav.about') }}">
         <svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>
         <span>{{ t("nav.about") }}</span>
       </a>
+      {% endif %}
 
-      {% if language_options is defined and language_options | length > 1 %}
+      {% if language_options is defined and language_options | length > 1 and (show_languages is not defined or show_languages) %}
       {#
         Language menu. A dropdown rather than a row of codes, because a row of
         codes stops working somewhere past five languages, and this engine is
@@ -110,12 +116,14 @@
       </details>
       {% endif %}
 
+      {% if show_theme is not defined or show_theme %}
       <button class="nav-link theme-toggle" id="theme-toggle" type="button"
               title="{{ t('nav.toggle_theme') }}">
         <svg class="icon icon-sun" aria-hidden="true"><use href="#i-sun" /></svg>
         <svg class="icon icon-moon" aria-hidden="true"><use href="#i-moon" /></svg>
         <span class="nav-drawer-label">{{ t("nav.toggle_theme") }}</span>
       </button>
+      {% endif %}
 
       {% if signed_in is defined and signed_in %}
       <div class="nav-account">

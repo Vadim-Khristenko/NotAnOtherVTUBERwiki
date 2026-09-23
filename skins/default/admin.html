@@ -43,6 +43,7 @@
       {{ nav_item("/admin/users", "users", "users", t("admin.accounts")) }}
       <p class="admin-nav-group">{{ t("admin.group_look") }}</p>
       {{ nav_item("/admin/languages", "languages", "language", t("admin.languages")) }}
+      {{ nav_item("/admin/chrome", "chrome", "menu-2", t("admin.chrome")) }}
       {{ nav_item("/admin/errors", "errors", "alert-triangle", t("admin.errors")) }}
       <p class="admin-nav-group">{{ t("admin.group_setup") }}</p>
       {{ nav_item("/admin/wiki", "wiki", "settings", t("admin.settings")) }}
@@ -413,6 +414,44 @@
     <p class="field-note">{{ t("admin.stored_note") }}</p>
     <pre class="settings-dump">{{ raw_settings }}</pre>
   </section>
+{% elif section == "chrome" %}
+  <p class="field-note">{{ t("admin.chrome_note") }}</p>
+  {% if saved %}<p class="notice notice-ok" role="status">{{ t("admin.chrome_saved") }}</p>{% endif %}
+  {% if refused %}<p class="notice notice-warn" role="alert">{{ tn("admin.chrome_refused", refused) }}</p>{% endif %}
+  <form method="post" action="/admin/chrome" class="admin-form admin-form-wide">
+    <fieldset class="perm-set">
+      <legend>{{ t("admin.chrome_header") }}</legend>
+      <label class="check"><input type="checkbox" name="h_search" value="1" {% if h_search %}checked{% endif %} /> {{ t("admin.chrome_search") }}</label>
+      <label class="check"><input type="checkbox" name="h_new_page" value="1" {% if h_new_page %}checked{% endif %} /> {{ t("admin.chrome_new_page") }}</label>
+      <label class="check"><input type="checkbox" name="h_about" value="1" {% if h_about %}checked{% endif %} /> {{ t("admin.chrome_about") }}</label>
+      <label class="check"><input type="checkbox" name="h_languages" value="1" {% if h_languages %}checked{% endif %} /> {{ t("admin.chrome_languages") }}</label>
+      <label class="check"><input type="checkbox" name="h_theme" value="1" {% if h_theme %}checked{% endif %} /> {{ t("admin.chrome_theme") }}</label>
+      <p class="field-note">{{ t("admin.chrome_admin_note") }}</p>
+    </fieldset>
+    <fieldset class="perm-set">
+      <legend>{{ t("admin.chrome_footer") }}</legend>
+      <p class="field-note">{% if footer_customised %}{{ t("admin.chrome_footer_custom") }}{% else %}{{ t("admin.chrome_footer_default") }}{% endif %}</p>
+      <div class="footer-rows">
+        <span class="footer-rows-head">{{ t("admin.chrome_link_label") }}</span>
+        <span class="footer-rows-head">{{ t("admin.chrome_link_href") }}</span>
+        <span class="footer-rows-head">{{ t("admin.chrome_link_lang") }}</span>
+        {% for row in footer_rows %}
+        <input class="field-input" name="label_{{ loop.index0 }}" value="{{ row.label }}" maxlength="60" aria-label="{{ t('admin.chrome_link_label') }} {{ loop.index }}" />
+        <input class="field-input" name="href_{{ loop.index0 }}" value="{{ row.href }}" maxlength="500" placeholder="/about" aria-label="{{ t('admin.chrome_link_href') }} {{ loop.index }}" />
+        <select class="field-input" name="lang_{{ loop.index0 }}" aria-label="{{ t('admin.chrome_link_lang') }} {{ loop.index }}">
+          <option value="">{{ t("admin.chrome_link_everyone") }}</option>
+          {% for code in offered %}<option value="{{ code }}" {% if row.lang == code %}selected{% endif %}>{{ code }}</option>{% endfor %}
+        </select>
+        {% endfor %}
+      </div>
+      <p class="field-note">{{ t("admin.chrome_link_note") }}</p>
+      <label class="check"><input type="checkbox" name="footer_reset" value="1" /> {{ t("admin.chrome_footer_reset") }}</label>
+    </fieldset>
+    <div class="form-actions">
+      <button class="button-save" type="submit">{{ t("admin.save_settings") }}</button>
+    </div>
+  </form>
+
 {% elif section == "accounts" %}
   {# Install-wide: accounts are shared by every wiki here. Values saved on this
      page override the defaults the server was started with. #}

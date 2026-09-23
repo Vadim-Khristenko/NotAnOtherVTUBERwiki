@@ -5,6 +5,7 @@ mod admin;
 mod audit;
 mod auth;
 pub mod bootstrap;
+mod chrome;
 mod display_name;
 mod errors;
 mod history;
@@ -106,6 +107,10 @@ fn routes(state: AppState) -> Router {
             get(admin::wiki_settings).post(admin::save_wiki_settings),
         )
         .route("/admin/reindex", post(admin::reindex))
+        .route(
+            "/admin/chrome",
+            get(admin::chrome_settings).post(admin::save_chrome_settings),
+        )
         .route(
             "/admin/accounts",
             get(admin::account_rules).post(admin::save_account_rules),
