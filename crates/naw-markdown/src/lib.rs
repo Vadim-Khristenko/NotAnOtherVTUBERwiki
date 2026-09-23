@@ -43,7 +43,7 @@ pub fn render_html(markdown: &str) -> String {
 /// collapsible quote and the like). Depth 8 is far past sane authoring and
 /// stops a malicious nesting chain from recursing on input size.
 fn render_html_with_depth(markdown: &str, depth: usize) -> String {
-    use pulldown_cmark::{Event, Options, Parser};
+    use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
     if depth > 8 {
         return String::new();
@@ -76,6 +76,45 @@ fn render_html_with_depth(markdown: &str, depth: usize) -> String {
         Event::Html(html) | Event::InlineHtml(html) => is_allowed_raw_html(html),
         _ => true,
     });
+    // Images from anywhere but this wiki's own uploads become plain links. An
+    // outside image would tell its host who read the article and when, and it
+    // can change under the article after review. The stack pairs each image's
+    // end with the choice made at its start.
+    let mut image_is_link: Vec<bool> = Vec::new();
+    let parser = parser.map(move |event| match event {
+        Event::Start(Tag::Image {
+            link_type,
+            dest_url,
+            title,
+            id,
+        }) => {
+            let local = is_local_image(&dest_url);
+            image_is_link.push(!local);
+            if local {
+                Event::Start(Tag::Image {
+                    link_type,
+                    dest_url,
+                    title,
+                    id,
+                })
+            } else {
+                Event::Start(Tag::Link {
+                    link_type,
+                    dest_url,
+                    title,
+                    id,
+                })
+            }
+        }
+        Event::End(TagEnd::Image) => {
+            if image_is_link.pop().unwrap_or(false) {
+                Event::End(TagEnd::Link)
+            } else {
+                Event::End(TagEnd::Image)
+            }
+        }
+        other => other,
+    });
 
     let mut dirty = String::with_capacity(mapped.len());
     pulldown_cmark::html::push_html(&mut dirty, parser);
@@ -97,6 +136,9 @@ fn render_html_with_depth(markdown: &str, depth: usize) -> String {
     // Footnotes move into the `fn-` namespace before heading ids are
     // assigned, so `# 1` and `[^1]` never share one anchor.
     dirty = namespace_footnote_ids(&dirty);
+    // Every image waits until it is scrolled to, and decodes off the main
+    // thread: an article may hold a hundred of them.
+    dirty = dirty.replace("<img src=", "<img loading=\"lazy\" decoding=\"async\" src=");
     let mut anchored = add_heading_ids(&dirty);
     // Last writer wins nothing: every id in the document must be unique, no
     // matter whether it came from a heading, a footnote or an author attr.
@@ -116,8 +158,15 @@ fn render_html_with_depth(markdown: &str, depth: usize) -> String {
     ammonia::Builder::default()
         .add_generic_attributes(["id", "class", "tabindex"])
         .add_tag_attributes("details", ["open"])
+        .add_tag_attributes("img", ["loading", "decoding"])
         .clean(&anchored)
         .to_string()
+}
+
+/// An image stored by this wiki: `/media/` and nothing that could leave the
+/// site, such as `//host` or a scheme.
+fn is_local_image(url: &str) -> bool {
+    url.starts_with("/media/") && !url.contains("//") && !url.contains('\\')
 }
 
 /// The only raw HTML tag the parser lets through. Everything else stays
@@ -1325,7 +1374,7 @@ fn slugify(text: &str) -> String {
 /// Skin and chrome changes no longer count. The cache holds the body fragment
 /// only, so a footer edit is not a new rendering, and the same article under
 /// two skins is one cache row instead of two.
-pub const RENDERER_VERSION: i32 = 12;
+pub const RENDERER_VERSION: i32 = 13;
 
 /// A rendered body fragment plus the key it is cached under.
 pub struct RenderedBody {
@@ -1365,6 +1414,29 @@ pub fn render_body(body_md: &str) -> RenderedBody {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_local_images_render_as_images() {
+        let local = render_html("![Filian](/media/ab/abc.png)");
+        assert!(local.contains("<img"), "{local}");
+        assert!(local.contains(r#"loading="lazy""#), "{local}");
+        assert!(local.contains(r#"src="/media/ab/abc.png""#), "{local}");
+        let outside = render_html("![tracker](https://example.com/pixel.png)");
+        assert!(!outside.contains("<img"), "{outside}");
+        assert!(
+            outside.contains(r#"href="https://example.com/pixel.png""#),
+            "{outside}"
+        );
+        assert!(outside.contains(">tracker</a>"), "{outside}");
+        for sneaky in [
+            "//evil.example/x.png",
+            "/media//evil.example/x.png",
+            "/mediax/y.png",
+        ] {
+            let html = render_html(&format!("![x]({sneaky})"));
+            assert!(!html.contains("<img"), "{sneaky}: {html}");
+        }
+    }
 
     #[test]
     fn renders_headings_and_paragraphs() {
