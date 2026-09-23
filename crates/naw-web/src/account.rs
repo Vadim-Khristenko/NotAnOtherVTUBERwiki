@@ -226,11 +226,7 @@ pub async fn password_login(
     } else {
         next
     };
-    Ok(routes::sign_in_response(
-        &state,
-        &session_id.to_string(),
-        &target,
-    ))
+    Ok(routes::sign_in_response(&state, &session_id, &target))
 }
 
 /// The change password page, carrying the destination along.
@@ -348,7 +344,8 @@ pub async fn change_password(
     .execute(&state.db)
     .await?;
     // Sign out every other device; this one just proved who it is.
-    let keep = session::session_id_from_headers(&headers);
+    let keep =
+        session::session_id_from_headers(&headers, crate::auth::routes::secure_cookies(&state));
     let ended = session::delete_others(&state, user.id, keep).await?;
     crate::audit::record_or_log(
         &state.db,

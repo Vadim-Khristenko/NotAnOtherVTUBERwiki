@@ -119,7 +119,8 @@ pub async fn page(
         })
         .collect();
 
-    let current_session = session::session_id_from_headers(&headers);
+    let current_session =
+        session::session_id_from_headers(&headers, crate::auth::routes::secure_cookies(&state));
     let sessions = sqlx::query!(
         "SELECT id, created_at, ip::text AS ip, user_agent
          FROM sessions WHERE user_id = $1 AND expires_at > now()
@@ -232,7 +233,8 @@ pub async fn end_other_sessions(
     let Some(user) = user else {
         return Ok(sign_in_first());
     };
-    let keep = session::session_id_from_headers(&headers);
+    let keep =
+        session::session_id_from_headers(&headers, crate::auth::routes::secure_cookies(&state));
     let ended = session::delete_others(&state, user.id, keep).await?;
     crate::audit::record_or_log(
         &state.db,

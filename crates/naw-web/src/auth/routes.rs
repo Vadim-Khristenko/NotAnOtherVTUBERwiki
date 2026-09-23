@@ -203,7 +203,7 @@ pub async fn callback(
         }
     };
 
-    sign_in_response(&state, &session_id.to_string(), &flow.next)
+    sign_in_response(&state, &session_id, &flow.next)
 }
 
 /// 303 to `next` with the session cookie attached.
@@ -265,12 +265,12 @@ pub async fn dev_login(
         }
     };
     let next = safe_next(params.get("next").map(String::as_str));
-    sign_in_response(&state, &session_id.to_string(), &next)
+    sign_in_response(&state, &session_id, &next)
 }
 
 /// POST /logout: delete the session row, clear the cookie, 303 to /.
 pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if let Some(session_id) = session::session_id_from_headers(&headers) {
+    if let Some(session_id) = session::session_id_from_headers(&headers, secure_cookies(&state)) {
         session::delete(&state, session_id).await;
     }
     let mut response = Redirect::to("/").into_response();

@@ -1,5 +1,10 @@
-//! Cookie sessions in the `sessions` table. The cookie holds a random UUID
-//! and the server owns the lookup; expired rows are deleted on sight.
+//! Cookie sessions in the `sessions` table.
+//!
+//! The cookie carries a random 256-bit token; the table keeps only a digest
+//! of it (as the row id), so a database dump or backup holds no usable
+//! session. On https the cookie is `__Host-` prefixed, which a browser only
+//! accepts from this host, with no Domain, so a sibling subdomain cannot
+//! plant one. Expired rows are deleted on sight.
 
 use axum::body::Body;
 use axum::extract::State;
@@ -12,7 +17,34 @@ use uuid::Uuid;
 
 use naw_core::state::AppState;
 
+/// The cookie name on plain http, for local development.
 pub const SESSION_COOKIE: &str = "naw_session";
+/// The cookie name on https.
+pub const SECURE_SESSION_COOKIE: &str = "__Host-naw_session";
+
+fn cookie_name(secure: bool) -> &'static str {
+    if secure {
+        SECURE_SESSION_COOKIE
+    } else {
+        SESSION_COOKIE
+    }
+}
+
+/// The row id of a session token: the first 16 bytes of its SHA-256.
+pub fn id_of(token: &str) -> Uuid {
+    let digest = crate::auth::token_hash(token);
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    Uuid::from_bytes(bytes)
+}
+
+/// Whether a cookie value has the shape of a token this engine issues.
+fn looks_like_token(value: &str) -> bool {
+    value.len() == 43
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
 
 /// The signed-in user, attached to every request as `Option<CurrentUser>`.
 #[derive(Clone, Debug)]
@@ -35,7 +67,7 @@ pub struct CurrentUser {
 
 /// Path=/, HttpOnly, SameSite=Lax, Secure on https, Max-Age from the TTL.
 fn build_cookie(value: &str, max_age_secs: i64, secure: bool) -> Cookie<'static> {
-    let mut cookie = Cookie::build((SESSION_COOKIE, value.to_owned()))
+    let mut cookie = Cookie::build((cookie_name(secure), value.to_owned()))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
@@ -51,7 +83,7 @@ pub fn session_cookie(value: &str, ttl_hours: i64, secure: bool) -> String {
 }
 
 pub fn clear_cookie(secure: bool) -> String {
-    let base = Cookie::build(SESSION_COOKIE)
+    let base = Cookie::build(cookie_name(secure))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
@@ -65,17 +97,14 @@ pub fn clear_cookie(secure: bool) -> String {
     }
 }
 
-/// Reads the session id from the Cookie header, if any.
-pub fn session_id_from_headers(headers: &HeaderMap) -> Option<Uuid> {
+/// The session row id for the token in the Cookie header, if any.
+pub fn session_id_from_headers(headers: &HeaderMap, secure: bool) -> Option<Uuid> {
+    let name = cookie_name(secure);
     let raw = headers.get(header::COOKIE)?.to_str().ok()?;
-    for pair in raw.split(';') {
-        let mut parts = pair.trim().splitn(2, '=');
-        if parts.next() == Some(SESSION_COOKIE) {
-            let value = parts.next()?.trim();
-            return value.parse::<Uuid>().ok();
-        }
-    }
-    None
+    raw.split(';')
+        .filter_map(|pair| pair.trim().split_once('='))
+        .find(|(key, value)| *key == name && looks_like_token(value.trim()))
+        .map(|(_, value)| id_of(value.trim()))
 }
 
 /// Loads the session with its user; an expired row is deleted.
@@ -122,18 +151,19 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
 }
 
 pub async fn load_from_cookie(state: &AppState, headers: &HeaderMap) -> Option<CurrentUser> {
-    let session_id = session_id_from_headers(headers)?;
+    let session_id = session_id_from_headers(headers, crate::auth::routes::secure_cookies(state))?;
     load(state, session_id).await
 }
 
-/// Inserts a fresh session row and returns its id.
+/// Inserts a fresh session row and returns its token, the cookie value.
 pub async fn create(
     state: &AppState,
     user_id: Uuid,
     ip: Option<std::net::IpAddr>,
     user_agent: Option<&str>,
-) -> Result<Uuid, naw_core::error::AppError> {
-    let id = Uuid::new_v4();
+) -> Result<String, naw_core::error::AppError> {
+    let token = crate::auth::random_token();
+    let id = id_of(&token);
     let expires = chrono::Duration::hours(state.config.auth.session_ttl_hours);
     sqlx::query!(
         "INSERT INTO sessions (id, user_id, expires_at, ip, user_agent) VALUES ($1, $2, $3, $4::inet, $5)",
@@ -145,7 +175,7 @@ pub async fn create(
     )
     .execute(&state.db)
     .await?;
-    Ok(id)
+    Ok(token)
 }
 
 /// Ends every session of `user_id` except `keep`.
@@ -295,26 +325,61 @@ mod tests {
     }
 
     #[test]
-    fn session_id_parses_from_a_browser_header() {
-        let id = "6f9619ff-8b86-d011-b42d-00cf4fc964ff";
+    fn https_cookies_are_host_prefixed() {
+        let secure = session_cookie("token", 720, true);
+        assert!(secure.starts_with("__Host-naw_session=token"), "{secure}");
+        assert!(secure.contains("Secure") && secure.contains("Path=/"));
+        assert!(!secure.contains("Domain"), "{secure}");
+        assert!(clear_cookie(true).starts_with("__Host-naw_session="));
+    }
+
+    fn cookie_header(value: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert(
             header::COOKIE,
-            header::HeaderValue::from_str(&format!("other=1; naw_session={id}; theme=dark"))
-                .expect("header"),
+            header::HeaderValue::from_str(value).expect("header"),
         );
-        assert_eq!(session_id_from_headers(&headers), Some(id.parse().unwrap()));
-        let mut broken = HeaderMap::new();
-        broken.insert(
-            header::COOKIE,
-            header::HeaderValue::from_static("naw_session=not-a-uuid"),
+        headers
+    }
+
+    #[test]
+    fn the_row_id_is_a_digest_of_the_token() {
+        let token = crate::auth::random_token();
+        let headers = cookie_header(&format!("other=1; naw_session={token}; theme=dark"));
+        assert_eq!(
+            session_id_from_headers(&headers, false),
+            Some(id_of(&token))
         );
-        assert_eq!(session_id_from_headers(&broken), None);
-        let mut empty = HeaderMap::new();
-        empty.insert(
-            header::COOKIE,
-            header::HeaderValue::from_static("theme=dark"),
-        );
-        assert_eq!(session_id_from_headers(&empty), None);
+        // The id is not the token and does not contain it.
+        assert!(!id_of(&token).to_string().contains(&token[..8]));
+        assert_eq!(id_of(&token), id_of(&token));
+        assert_ne!(id_of(&token), id_of(&crate::auth::random_token()));
+    }
+
+    #[test]
+    fn only_the_cookie_for_the_scheme_counts() {
+        let token = crate::auth::random_token();
+        // On https a plain-named cookie, which any sibling subdomain could
+        // set, is ignored.
+        let plain = cookie_header(&format!("naw_session={token}"));
+        assert_eq!(session_id_from_headers(&plain, true), None);
+        let host = cookie_header(&format!("__Host-naw_session={token}"));
+        assert_eq!(session_id_from_headers(&host, true), Some(id_of(&token)));
+    }
+
+    #[test]
+    fn values_that_are_not_tokens_are_ignored() {
+        for bad in [
+            "naw_session=6f9619ff-8b86-d011-b42d-00cf4fc964ff",
+            "naw_session=not-a-token",
+            "naw_session=",
+            "theme=dark",
+        ] {
+            assert_eq!(
+                session_id_from_headers(&cookie_header(bad), false),
+                None,
+                "{bad}"
+            );
+        }
     }
 }
