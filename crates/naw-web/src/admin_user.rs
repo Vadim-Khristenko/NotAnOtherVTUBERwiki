@@ -95,10 +95,13 @@ pub async fn show(
                   WHERE r.page_id = p.id ORDER BY r.created_at LIMIT 1) = $1) AS "created!",
              (SELECT max(r.created_at) FROM revisions r JOIN pages p ON p.id = r.page_id
                 WHERE r.author_id = $1 AND p.wiki_id = $2) AS last_edit,
-             (SELECT max(created_at) FROM sessions WHERE user_id = $1) AS last_sign_in,
-             (SELECT count(*) FROM sessions WHERE user_id = $1 AND expires_at > now()) AS "sessions!""#,
+             (SELECT last_sign_in_at FROM users WHERE id = $1) AS last_sign_in,
+             (SELECT count(*) FROM sessions WHERE user_id = $1 AND expires_at > now()
+                AND last_seen_at > now() - make_interval(days => $3)) AS "sessions!",
+             (SELECT max(last_seen_at) FROM sessions WHERE user_id = $1) AS last_seen"#,
         t.id,
-        ctx.wiki.id
+        ctx.wiki.id,
+        crate::auth::session::ACTIVE_DAYS as i32
     )
     .fetch_one(&state.db)
     .await?;
@@ -275,13 +278,17 @@ pub async fn show(
             s_last_edit => fmt_opt(stats.last_edit),
             s_last_sign_in => fmt_opt(stats.last_sign_in),
             s_sessions => stats.sessions,
+            s_last_seen => fmt_opt(stats.last_seen),
+            active_days => crate::auth::session::ACTIVE_DAYS,
             capabilities => capabilities,
             sanctions => sanctions,
             notes => notes,
             recent => recent,
             is_me => ctx.actor.user_id == Some(t.id),
             manageable => manageable.is_ok(),
-            manage_block => manageable.err(),
+            manage_block => manageable.err().map(|key| ctx.t(key)),
+            account_manageable => account_reach.is_ok(),
+            account_block => account_reach.err().map(|key| ctx.t(key)),
             can_install_ban => matches!(ctx.actor.global, GlobalRole::Root | GlobalRole::Staff),
             can_manage_rights => manage_rights,
             grantable => grantable,

@@ -107,11 +107,19 @@ pub fn session_id_from_headers(headers: &HeaderMap, secure: bool) -> Option<Uuid
         .map(|(_, value)| id_of(value.trim()))
 }
 
-/// Loads the session with its user; an expired row is deleted.
+/// How stale `last_seen_at` may get before a request writes it again. A write
+/// per request would cost more than the answer is worth.
+const TOUCH_EVERY: chrono::TimeDelta = chrono::TimeDelta::minutes(5);
+
+/// A session nobody used for this long does not count as a signed-in device.
+pub const ACTIVE_DAYS: i64 = 14;
+
+/// Loads the session with its user; an expired row is deleted. A used
+/// session is touched, which also moves its expiry forward.
 pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
     let row = sqlx::query!(
         r#"
-        SELECT s.expires_at, u.id AS user_id, u.username,
+        SELECT s.expires_at, s.last_seen_at, u.id AS user_id, u.username,
                u.email AS email_opt,
                (u.email_verified_at IS NOT NULL) AS email_verified,
                u.global_role, u.locale, u.must_change_password, u.display_name,
@@ -136,6 +144,16 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
             .execute(&state.db)
             .await;
         return None;
+    }
+    if chrono::Utc::now() - row.last_seen_at > TOUCH_EVERY {
+        let ttl = chrono::Duration::hours(state.config.auth.session_ttl_hours);
+        let _ = sqlx::query!(
+            "UPDATE sessions SET last_seen_at = now(), expires_at = GREATEST(expires_at, $2) WHERE id = $1",
+            session_id,
+            chrono::Utc::now() + ttl
+        )
+        .execute(&state.db)
+        .await;
     }
     Some(CurrentUser {
         id: row.user_id,
@@ -175,6 +193,19 @@ pub async fn create(
     )
     .execute(&state.db)
     .await?;
+    let _ = sqlx::query!(
+        "UPDATE users SET last_sign_in_at = now() WHERE id = $1",
+        user_id
+    )
+    .execute(&state.db)
+    .await;
+    // Expired rows of this account go on the way in; nothing else reaps them.
+    let _ = sqlx::query!(
+        "DELETE FROM sessions WHERE user_id = $1 AND expires_at <= now()",
+        user_id
+    )
+    .execute(&state.db)
+    .await;
     Ok(token)
 }
 

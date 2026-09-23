@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, created_at, ip::text AS ip, user_agent\n         FROM sessions WHERE user_id = $1 AND expires_at > now()\n         ORDER BY created_at DESC LIMIT $2",
+  "query": "SELECT id, created_at, last_seen_at, ip::text AS ip, user_agent\n         FROM sessions WHERE user_id = $1 AND expires_at > now()\n         ORDER BY last_seen_at DESC LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -27,12 +27,23 @@
       },
       {
         "ordinal": 2,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "last_seen_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "ip",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "user_agent",
         "type_info": "Text",
         "origin": {
@@ -52,9 +63,10 @@
     "nullable": [
       false,
       false,
+      false,
       null,
       true
     ]
   },
-  "hash": "f947e87282961394314ced125ebe2fc929edfd4128c0e1d5186ed7ccfd7afe4d"
+  "hash": "97da1b1d2fa6bece4bc209dfc8a34160a5d5834d6f47763cafe780ffb5551d42"
 }

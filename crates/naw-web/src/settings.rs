@@ -122,9 +122,9 @@ pub async fn page(
     let current_session =
         session::session_id_from_headers(&headers, crate::auth::routes::secure_cookies(&state));
     let sessions = sqlx::query!(
-        "SELECT id, created_at, ip::text AS ip, user_agent
+        "SELECT id, created_at, last_seen_at, ip::text AS ip, user_agent
          FROM sessions WHERE user_id = $1 AND expires_at > now()
-         ORDER BY created_at DESC LIMIT $2",
+         ORDER BY last_seen_at DESC LIMIT $2",
         user.id,
         SESSIONS_SHOWN
     )
@@ -137,6 +137,7 @@ pub async fn page(
                 device => device_label(row.user_agent.as_deref()),
                 ip => row.ip.map(|ip| ip.trim_end_matches("/32").trim_end_matches("/128").to_string()),
                 since => row.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+                seen => row.last_seen_at.format("%Y-%m-%d %H:%M UTC").to_string(),
                 current => Some(row.id) == current_session,
             }
         })

@@ -30,6 +30,8 @@ identity_since = "с {date}"
 link_with = "Привязать {provider}"
 
 sessions = "Где открыт аккаунт"
+session_seen = "активность {when}"
+session_since = "вход {when}"
 device_unknown = "Неизвестное устройство"
 this_device = "это устройство"
 end_others = "Выйти на всех остальных"

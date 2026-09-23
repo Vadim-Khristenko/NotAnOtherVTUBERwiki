@@ -144,7 +144,7 @@
       <li>
         <strong>{% if s.device %}{{ s.device }}{% else %}{{ t("settings.device_unknown") }}{% endif %}</strong>
         {% if s.current %}<span class="tag">{{ t("settings.this_device") }}</span>{% endif %}
-        <span class="muted-cell">{{ s.since }}{% if s.ip %} · {{ s.ip }}{% endif %}</span>
+        <span class="muted-cell">{{ t("settings.session_seen", when=s.seen) }} · {{ t("settings.session_since", when=s.since) }}{% if s.ip %} · {{ s.ip }}{% endif %}</span>
       </li>
       {% endfor %}
     </ul>

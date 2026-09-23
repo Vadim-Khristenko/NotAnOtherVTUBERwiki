@@ -30,6 +30,8 @@ identity_since = "since {date}"
 link_with = "Link {provider}"
 
 sessions = "Signed in on"
+session_seen = "active {when}"
+session_since = "signed in {when}"
 device_unknown = "Unknown device"
 this_device = "this device"
 end_others = "Sign out everywhere else"
