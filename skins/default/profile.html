@@ -1,0 +1,67 @@
+{% extends "layout.html" %}
+{#
+  A person's profile on this wiki.
+
+  `person_username`, `person_name`   the address and the name to show
+  `person_role`, `person_global`     role on this wiki (or none) and install role
+  `person_joined`, `person_edits`    account age and article edits here
+  `recent`                           latest edits: slug, title, at, summary
+  `body`                             the profile text, already rendered, or ""
+  `has_profile`                      whether the person has written one
+  `is_me`, `can_edit_profile`        what the viewer may do here
+#}
+{% block body %}
+<header class="profile-head">
+  <div class="settings-avatar profile-avatar" aria-hidden="true">{{ person_name[:1] | upper }}</div>
+  <div class="profile-id">
+    <h1><bdi>{{ person_name }}</bdi></h1>
+    <p class="profile-handle">@{{ person_username }}
+      {%- if person_global != "registered" %} <span class="tag tag-root">{{ person_global }}</span>{% endif %}
+      {%- if person_role %} <span class="tag">{{ person_role }}</span>{% endif %}</p>
+  </div>
+  <div class="profile-actions">
+    {% if can_edit_profile and has_profile %}
+    <a class="icon-action" href="/user/{{ person_username }}/edit" title="{{ t('profile.edit') }}" aria-label="{{ t('profile.edit') }}">
+      <svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg></a>
+    {% endif %}
+    {% if is_me %}
+    <a class="icon-action" href="/settings" title="{{ t('settings.title') }}" aria-label="{{ t('settings.title') }}">
+      <svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg></a>
+    {% endif %}
+  </div>
+</header>
+
+<dl class="profile-stats">
+  <div><dt>{{ t("profile.joined") }}</dt><dd>{{ person_joined }}</dd></div>
+  <div><dt>{{ t("profile.edits") }}</dt><dd>{{ person_edits }}</dd></div>
+</dl>
+
+{% if has_profile %}
+<div class="profile-body">{{ body | safe }}</div>
+{% elif is_me %}
+<section class="profile-empty profile-empty-mine">
+  <svg class="icon profile-empty-icon" aria-hidden="true"><use href="#i-user" /></svg>
+  <h2>{{ t("profile.empty_mine_title") }}</h2>
+  <p>{{ t("profile.empty_mine_body") }}</p>
+  <a class="button-save" href="/user/{{ person_username }}/edit">
+    <svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("profile.create") }}</a>
+</section>
+{% else %}
+<section class="profile-empty">
+  <p>{{ t("profile.empty_other", name=person_name) }}</p>
+  {% if can_edit_profile %}<p><a href="/user/{{ person_username }}/edit">{{ t("profile.create_for") }}</a></p>{% endif %}
+</section>
+{% endif %}
+
+{% if recent %}
+<section class="profile-recent">
+  <h2>{{ t("profile.recent") }}</h2>
+  <ul class="settings-list">
+    {% for r in recent %}
+    <li><a href="/{{ r.slug }}">{{ r.title }}</a>
+      <span class="muted-cell">{{ r.at }}{% if r.summary %} · {{ r.summary }}{% endif %}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

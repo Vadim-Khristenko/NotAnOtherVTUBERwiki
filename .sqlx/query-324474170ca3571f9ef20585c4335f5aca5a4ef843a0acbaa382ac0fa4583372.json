@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.username FROM user_aliases a JOIN users u ON u.id = a.user_id\n         WHERE lower(a.alias) = $1\n           AND ($2::bigint = 0 OR a.created_at > now() - make_interval(days => $2::int))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "324474170ca3571f9ef20585c4335f5aca5a4ef843a0acbaa382ac0fa4583372"
+}

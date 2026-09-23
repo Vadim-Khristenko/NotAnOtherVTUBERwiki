@@ -1,0 +1,22 @@
+# Profiles: /user/{name}.
+
+joined = "Here since"
+edits = "Article edits"
+recent = "Recent edits"
+edit = "Edit the profile"
+create = "Write my profile"
+create_for = "Start this profile"
+back = "Back to the profile"
+editing = "Profile: {name}"
+empty_mine_title = "Tell people who you are"
+empty_mine_body = "Your profile is your own page on the wiki: what you watch, what you work on, how to reach you. Nobody else can write it."
+empty_other = "{name} has not written anything about themselves yet."
+not_yours = "Only its owner and the wiki's moderators can edit a profile."
+conflict = "The profile changed while you were writing. Your text was not saved; open it again and re-apply your changes."
+starter = """
+## About me
+
+## What I work on here
+
+## Where to find me
+"""

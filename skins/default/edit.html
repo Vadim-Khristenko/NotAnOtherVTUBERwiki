@@ -1,7 +1,9 @@
 {% extends "layout.html" %}
 {% block body %}
 <h1>{{ form_title }}</h1>
-{% if not show_slug and slug %}
+{% if back_href %}
+<nav class="crumbs"><a href="{{ back_href }}">{{ t("nav.read") }}</a></nav>
+{% elif not show_slug and slug %}
 <nav class="crumbs"><a href="/{{ slug }}">{{ t("nav.read") }}</a> ·
   <a href="/{{ slug }}/history">{{ t("nav.history") }}</a></nav>
 {% endif %}
@@ -22,13 +24,17 @@
 <input class="field-input" name="slug" value="{{ slug }}" maxlength="100" required />
 </label>
 {% endif %}
+{% if fixed_title %}
+<input type="hidden" name="title" value="{{ title_value }}" />
+{% else %}
 <label class="field">{{ t("editor.title") }}
 <input class="field-input" name="title" value="{{ title_value }}" maxlength="200" required />
 </label>
+{% endif %}
 <label class="field">{{ t("editor.summary") }}
 <input class="field-input" name="summary" value="{{ summary_value }}" maxlength="200" />
 </label>
-<label class="check"><input type="checkbox" name="minor" value="1" /> {{ t("editor.minor") }}</label>
+{% if not fixed_title %}<label class="check"><input type="checkbox" name="minor" value="1" /> {{ t("editor.minor") }}</label>{% endif %}
 <div class="toolbar" role="toolbar" aria-label="Formatting">
 <button type="button" data-wrap="**" title="Bold"><b>B</b></button>
 <button type="button" data-wrap="*" title="Italic"><i>I</i></button>

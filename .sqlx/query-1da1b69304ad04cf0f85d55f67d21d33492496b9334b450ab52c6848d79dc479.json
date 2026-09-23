@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND deleted_at IS NULL) AS \"live!\",\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND deleted_at IS NOT NULL) AS \"archived!\",\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND is_locked) AS \"locked!\",\n          (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id\n             WHERE p.wiki_id = $1) AS \"revisions!\",\n          (SELECT count(*) FROM wiki_memberships WHERE wiki_id = $1) AS \"members!\",\n          (SELECT count(*) FROM users) AS \"accounts!\",\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND deleted_at IS NULL\n             AND search_vector IS NULL) AS \"unindexed!\"\n        ",
+  "query": "\n        SELECT\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL) AS \"live!\",\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NOT NULL) AS \"archived!\",\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND is_locked) AS \"locked!\",\n          (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id\n             WHERE p.wiki_id = $1) AS \"revisions!\",\n          (SELECT count(*) FROM wiki_memberships WHERE wiki_id = $1) AS \"members!\",\n          (SELECT count(*) FROM users) AS \"accounts!\",\n          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main'\n             AND deleted_at IS NULL AND search_vector IS NULL) AS \"unindexed!\"\n        ",
   "describe": {
     "columns": [
       {
@@ -61,5 +61,5 @@
       null
     ]
   },
-  "hash": "a29b56b4b61b3f8492649cf1830c9c93d5f57e736a713ec1421e0b43dfe1adbf"
+  "hash": "1da1b69304ad04cf0f85d55f67d21d33492496b9334b450ab52c6848d79dc479"
 }

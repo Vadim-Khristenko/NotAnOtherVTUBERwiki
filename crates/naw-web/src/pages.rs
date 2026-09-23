@@ -49,7 +49,7 @@ pub async fn fallback() -> Response {
 }
 
 /// Renders `message.html`, the shared page for "we will not do that".
-fn notice(
+pub(crate) fn notice(
     ctx: &Ctx,
     status: StatusCode,
     heading: &str,
@@ -146,7 +146,7 @@ pub(crate) fn slug_is_valid(slug: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-fn bad_request(message: &str) -> Response {
+pub(crate) fn bad_request(message: &str) -> Response {
     (StatusCode::UNPROCESSABLE_ENTITY, message.to_string()).into_response()
 }
 
@@ -223,7 +223,7 @@ pub(crate) fn render_shell(ctx: &Ctx, shell: &Shell<'_>) -> Result<String, AppEr
 /// On a miss it renders once and stores the row. `ON CONFLICT DO NOTHING`
 /// covers the race where two readers miss the same revision at the same moment:
 /// both render, one insert wins, and the output is identical either way.
-async fn cached_body(
+pub(crate) async fn cached_body(
     state: &AppState,
     wiki_id: Uuid,
     body_md: &str,
@@ -256,7 +256,7 @@ async fn cached_body(
 
 /// Stores the rendering for a body that was just saved, so the author's
 /// redirect lands on a cache hit instead of rendering again.
-async fn warm_cache(state: &AppState, wiki_id: Uuid, body_md: &str) {
+pub(crate) async fn warm_cache(state: &AppState, wiki_id: Uuid, body_md: &str) {
     let rendered = naw_markdown::render_body(body_md);
     let result = sqlx::query!(
         "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html)
@@ -285,7 +285,7 @@ async fn warm_cache(state: &AppState, wiki_id: Uuid, body_md: &str) {
 /// `Cache-Control: private` is the other half: the document can carry a
 /// username, so a shared proxy must never keep a copy to hand to the next
 /// person.
-fn html_response(html: String, headers: &HeaderMap) -> Response {
+pub(crate) fn html_response(html: String, headers: &HeaderMap) -> Response {
     use sha2::{Digest, Sha256};
     let etag = format!("\"{}\"", hex::encode(Sha256::digest(html.as_bytes())));
     let fresh = headers
@@ -486,16 +486,16 @@ pub struct NewForm {
 }
 
 /// Validated form values, shared by create and save.
-struct Draft {
-    title: String,
-    summary: Option<String>,
-    body_md: String,
+pub(crate) struct Draft {
+    pub title: String,
+    pub summary: Option<String>,
+    pub body_md: String,
 }
 
 /// Returns the reason as plain text rather than a built response: validation
 /// has no business knowing about HTTP status codes, and the caller turns the
 /// reason into one.
-fn validate(title: &str, summary: &str, body_md: &str) -> Result<Draft, &'static str> {
+pub(crate) fn validate(title: &str, summary: &str, body_md: &str) -> Result<Draft, &'static str> {
     let title = title.trim().to_string();
     if title.is_empty() || title.chars().count() > TITLE_MAX {
         return Err("title: 1 to 200 characters");
@@ -515,19 +515,24 @@ fn validate(title: &str, summary: &str, body_md: &str) -> Result<Draft, &'static
 }
 
 /// Renders the editor.
-struct FormView<'a> {
-    heading: &'a str,
-    action: &'a str,
-    show_slug: bool,
-    slug: &'a str,
-    title_value: &'a str,
-    summary_value: &'a str,
-    body_md: &'a str,
-    base_revision: &'a str,
-    locked: bool,
+pub(crate) struct FormView<'a> {
+    pub heading: &'a str,
+    pub action: &'a str,
+    pub show_slug: bool,
+    pub slug: &'a str,
+    pub title_value: &'a str,
+    pub summary_value: &'a str,
+    pub body_md: &'a str,
+    pub base_revision: &'a str,
+    pub locked: bool,
+    /// The title is not the author's to choose (a profile is titled with the
+    /// person's name), so it travels as a hidden field.
+    pub fixed_title: bool,
+    /// Where "back" goes, for pages that are not addressed by `slug`.
+    pub back_href: Option<&'a str>,
 }
 
-fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, AppError> {
+pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, AppError> {
     let template = ctx
         .skin
         .env
@@ -548,6 +553,8 @@ fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, AppError> {
                 body_md => view.body_md,
                 base_revision => view.base_revision,
                 locked => view.locked,
+                fixed_title => view.fixed_title,
+                back_href => view.back_href,
             }
         })
         .map_err(template_error)?;
@@ -585,6 +592,8 @@ pub async fn new_page(
             body_md: "",
             base_revision: "",
             locked: false,
+            fixed_title: false,
+            back_href: None,
         },
     )
 }
@@ -757,6 +766,8 @@ pub async fn edit_page(
             body_md: &found.body_md,
             base_revision: &found.revision_id.to_string(),
             locked: found.locked,
+            fixed_title: false,
+            back_href: None,
         },
     )
 }

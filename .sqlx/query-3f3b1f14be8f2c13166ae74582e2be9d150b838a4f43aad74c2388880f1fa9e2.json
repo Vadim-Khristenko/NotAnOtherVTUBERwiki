@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE r.author_id = $1 AND p.wiki_id = $2 AND p.namespace = 'main'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3f3b1f14be8f2c13166ae74582e2be9d150b838a4f43aad74c2388880f1fa9e2"
+}

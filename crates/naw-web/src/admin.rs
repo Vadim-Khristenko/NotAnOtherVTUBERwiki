@@ -114,15 +114,15 @@ pub async fn overview(
     let stats = sqlx::query!(
         r#"
         SELECT
-          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND deleted_at IS NULL) AS "live!",
-          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND deleted_at IS NOT NULL) AS "archived!",
-          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND is_locked) AS "locked!",
+          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL) AS "live!",
+          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NOT NULL) AS "archived!",
+          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND is_locked) AS "locked!",
           (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id
              WHERE p.wiki_id = $1) AS "revisions!",
           (SELECT count(*) FROM wiki_memberships WHERE wiki_id = $1) AS "members!",
           (SELECT count(*) FROM users) AS "accounts!",
-          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND deleted_at IS NULL
-             AND search_vector IS NULL) AS "unindexed!"
+          (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main'
+             AND deleted_at IS NULL AND search_vector IS NULL) AS "unindexed!"
         "#,
         ctx.wiki.id
     )
@@ -878,7 +878,7 @@ pub async fn pages_list(
                (p.search_vector IS NOT NULL) AS "indexed!",
                (SELECT count(*) FROM revisions r WHERE r.page_id = p.id) AS "revisions!"
         FROM pages p
-        WHERE p.wiki_id = $1
+        WHERE p.wiki_id = $1 AND p.namespace = 'main'
           AND ($2::text IS NULL OR lower(p.slug) LIKE $2 OR lower(p.title) LIKE $2)
         ORDER BY p.updated_at DESC
         LIMIT $3 OFFSET $4
@@ -891,7 +891,7 @@ pub async fn pages_list(
     .fetch_all(&state.db)
     .await?;
     let total = sqlx::query!(
-        r#"SELECT count(*) AS "count!" FROM pages p WHERE p.wiki_id = $1
+        r#"SELECT count(*) AS "count!" FROM pages p WHERE p.wiki_id = $1 AND p.namespace = 'main'
            AND ($2::text IS NULL OR lower(p.slug) LIKE $2 OR lower(p.title) LIKE $2)"#,
         ctx.wiki.id,
         filter

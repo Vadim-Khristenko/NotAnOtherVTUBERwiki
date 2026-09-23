@@ -22,6 +22,7 @@ const TEMPLATES: &[&str] = &[
     "login.html",
     "password.html",
     "settings.html",
+    "profile.html",
     "message.html",
     "search.html",
     "history.html",

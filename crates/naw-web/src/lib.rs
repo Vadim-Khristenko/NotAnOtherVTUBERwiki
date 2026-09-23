@@ -14,6 +14,7 @@ mod observe;
 mod pages;
 mod perm;
 mod policy;
+mod profile;
 mod resolve;
 mod search;
 mod settings;
@@ -101,6 +102,8 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/errors", get(admin::error_gallery))
         .route("/admin/errors/{kind}", get(admin::error_preview))
         .route("/search", get(search::search_page))
+        .route("/user/{name}", get(profile::show))
+        .route("/user/{name}/edit", get(profile::edit).post(profile::save))
         .route("/lang", post(pages::set_language))
         .route("/", get(pages::home))
         .route("/new", get(pages::new_page).post(pages::create_page))
