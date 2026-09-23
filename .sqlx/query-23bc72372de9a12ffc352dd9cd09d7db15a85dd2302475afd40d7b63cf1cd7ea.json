@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT e.name, e.storage_key, e.width, e.height, s.label\n         FROM emotes e JOIN emote_sources s ON s.id = e.source_id\n         WHERE e.wiki_id = $1 ORDER BY lower(e.name), e.name LIMIT $2",
+  "query": "SELECT e.name, e.storage_key, e.width, e.height, s.label\n           FROM emotes e JOIN emote_sources s ON s.id = e.source_id\n           WHERE e.wiki_id = $1 AND e.name ILIKE $2\n           ORDER BY s.created_at, lower(e.name), e.name LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -62,6 +62,7 @@
     "parameters": {
       "Left": [
         "Uuid",
+        "Text",
         "Int8"
       ]
     },
@@ -73,5 +74,5 @@
       false
     ]
   },
-  "hash": "b562304d5eb9be160b89005d6934b242846ada702a92d131df32506e2bd165ac"
+  "hash": "23bc72372de9a12ffc352dd9cd09d7db15a85dd2302475afd40d7b63cf1cd7ea"
 }

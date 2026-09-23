@@ -77,7 +77,7 @@ pub async fn show(
     };
 
     let account = sqlx::query!(
-        r#"SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at,
+        r#"SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at AS "created_at!",
                   u.must_change_password, (u.password_hash IS NOT NULL) AS "has_password!",
                   c.username AS "created_by?"
            FROM users u LEFT JOIN users c ON c.id = u.created_by

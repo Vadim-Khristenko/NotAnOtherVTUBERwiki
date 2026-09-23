@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at,\n                  u.must_change_password, (u.password_hash IS NOT NULL) AS \"has_password!\",\n                  c.username AS \"created_by?\"\n           FROM users u LEFT JOIN users c ON c.id = u.created_by\n           WHERE u.id = $1",
+  "query": "SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at AS \"created_at!\",\n                  u.must_change_password, (u.password_hash IS NOT NULL) AS \"has_password!\",\n                  c.username AS \"created_by?\"\n           FROM users u LEFT JOIN users c ON c.id = u.created_by\n           WHERE u.id = $1",
   "describe": {
     "columns": [
       {
@@ -49,7 +49,7 @@
       },
       {
         "ordinal": 4,
-        "name": "created_at",
+        "name": "created_at!",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
@@ -97,11 +97,11 @@
       true,
       true,
       true,
-      false,
-      false,
+      true,
+      true,
       null,
-      true
+      false
     ]
   },
-  "hash": "51b3594e6af7f75b14803f96787714cfab81bfc9f70aa07d972484aa3ff0156e"
+  "hash": "c005697ba58a1a045323012e1451a9c536d0d1a59a6fd0e7d0b81570bce47b31"
 }
