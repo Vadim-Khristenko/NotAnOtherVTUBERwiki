@@ -498,28 +498,6 @@ pub fn negotiate_with(header: &str, available: &dyn Fn(&str) -> bool) -> Option<
     None
 }
 
-/// Escapes a value for HTML text and attribute content.
-///
-/// Messages carry markup, so `t()` hands MiniJinja a string already marked as
-/// safe. That makes escaping the *interpolated* values this module's job, and
-/// not a detail a template author can forget: `search.nothing` embeds a visitor
-/// supplied query inside `<strong>`, and without this an article title of
-/// `<img onerror=...>` in a search box would execute.
-fn escape_html(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
-    for ch in raw.chars() {
-        match ch {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            other => out.push(other),
-        }
-    }
-    out
-}
-
 /// Replaces `{name}` with the matching argument, escaped.
 ///
 /// Deliberately not a template engine. An unknown placeholder is left exactly
@@ -542,7 +520,7 @@ fn interpolate(template: &str, args: &[(String, String)]) -> String {
             Some(close) => {
                 let name = &after[..close];
                 match args.iter().find(|(k, _)| k == name) {
-                    Some((_, value)) => out.push_str(&escape_html(value)),
+                    Some((_, value)) => out.push_str(&crate::html::escape(value)),
                     None => {
                         out.push('{');
                         out.push_str(name);
@@ -790,11 +768,11 @@ mod tests {
 
     #[test]
     fn every_dangerous_character_in_an_argument_is_escaped() {
-        assert_eq!(escape_html("<>&\"'"), "&lt;&gt;&amp;&quot;&#39;");
+        assert_eq!(crate::html::escape("<>&\"'"), "&lt;&gt;&amp;&quot;&#39;");
         // Cyrillic and emoji are not markup and must pass through untouched:
         // escaping them would mangle half the wiki's content.
-        assert_eq!(escape_html("Филиан 🍪"), "Филиан 🍪");
-        assert_eq!(escape_html(""), "");
+        assert_eq!(crate::html::escape("Филиан 🍪"), "Филиан 🍪");
+        assert_eq!(crate::html::escape(""), "");
     }
 
     #[test]

@@ -5,6 +5,7 @@ pub mod config;
 pub mod csp;
 pub mod db;
 pub mod error;
+pub mod html;
 pub mod i18n;
 pub mod logging;
 pub mod search;

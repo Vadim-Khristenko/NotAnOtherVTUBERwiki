@@ -23,4 +23,3 @@ chrono.workspace = true
 object_store.workspace = true
 async-trait.workspace = true
 minijinja.workspace = true
-ammonia.workspace = true

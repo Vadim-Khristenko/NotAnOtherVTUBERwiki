@@ -125,20 +125,45 @@ pub fn normalize(raw: &str) -> Option<String> {
     Some(trimmed.chars().take(QUERY_MAX).collect())
 }
 
-/// Reduces a `ts_headline` snippet to text and `<mark>`.
+/// Where `ts_headline` marks a match: two private use characters, given to
+/// it as `chr(57344)` and `chr(57345)`.
+const MATCH_OPEN: char = '\u{E000}';
+const MATCH_CLOSE: char = '\u{E001}';
+
+/// Turns a `ts_headline` result into safe HTML.
 ///
-/// `ts_headline` does not escape anything. It runs over the raw Markdown
-/// source, which still holds whatever HTML the author typed, and the parser
-/// only drops what it recognises as a well formed tag: an unquoted
-/// `<img src=x onerror=alert(1)>` splits into words and comes out byte for
-/// byte. The PostgreSQL manual says as much, the output is not safe for a web
-/// page. The whitelist here is the `<mark>` the query itself adds, nothing
-/// else, no attributes.
+/// `ts_headline` escapes nothing and runs over the raw Markdown, author HTML
+/// included, so the whole snippet is escaped as text and only then gains
+/// `<mark>` tags, always balanced whatever markers the text itself contains.
 pub fn clean_snippet(raw: &str) -> String {
-    ammonia::Builder::empty()
-        .add_tags(["mark"])
-        .clean(raw)
-        .to_string()
+    let mut out = String::with_capacity(raw.len() + 32);
+    let mut open = false;
+    let mut text = String::new();
+    let flush = |text: &mut String, out: &mut String| {
+        out.push_str(&crate::html::escape(text));
+        text.clear();
+    };
+    for c in raw.chars() {
+        match c {
+            MATCH_OPEN if !open => {
+                flush(&mut text, &mut out);
+                out.push_str("<mark>");
+                open = true;
+            }
+            MATCH_CLOSE if open => {
+                flush(&mut text, &mut out);
+                out.push_str("</mark>");
+                open = false;
+            }
+            MATCH_OPEN | MATCH_CLOSE => {}
+            c => text.push(c),
+        }
+    }
+    flush(&mut text, &mut out);
+    if open {
+        out.push_str("</mark>");
+    }
+    out
 }
 
 /// The PostgreSQL backend.
@@ -186,7 +211,7 @@ impl SearchBackend for Postgres {
                           ELSE left(r.body_md, 200000) END,
                      parsed.tsq,
                      'MaxWords=34, MinWords=14, ShortWord=3, MaxFragments=2,
-                      FragmentDelimiter= … , StartSel=<mark>, StopSel=</mark>'
+                      FragmentDelimiter= … , StartSel=' || chr(57344) || ', StopSel=' || chr(57345)
                    ) AS "snippet!",
                    GREATEST(ts_rank_cd(p.search_vector, parsed.tsq), COALESCE(hit.rank, 0)) * 8
                      + similarity(p.title, $2) AS "score!"
@@ -571,38 +596,40 @@ mod tests {
     }
 
     #[test]
-    fn a_snippet_keeps_its_marks_and_nothing_else() {
-        // The shape ts_headline really returns for an unquoted payload: the
-        // tag split into words, passed through untouched, a match marked.
+    fn a_snippet_keeps_its_marks_and_escapes_everything_else() {
+        // ts_headline passes an unquoted tag through byte for byte.
         let raw =
-            "Audit page. <mark>zxqneedle</mark> <img src=x onerror=alert(document.domain)> text";
+            "Audit page. \u{E000}zxqneedle\u{E001} <img src=x onerror=alert(document.domain)> text";
         let clean = clean_snippet(raw);
         assert!(clean.contains("<mark>zxqneedle</mark>"), "{clean}");
-        assert!(!clean.contains("<img"), "{clean}");
-        assert!(!clean.contains("onerror"), "{clean}");
+        assert!(
+            clean.contains("&lt;img src=x onerror=alert(document.domain)&gt;"),
+            "{clean}"
+        );
     }
 
     #[test]
-    fn a_snippet_escapes_stray_markup_and_attributes_on_marks() {
+    fn only_the_markers_become_tags() {
         let clean = clean_snippet(
-            "<mark onmouseover=x>a</mark> <script>alert(1)</script> 1 < 2 <a href=javascript:x>l</a>",
+            "<mark onmouseover=x>\u{E000}a\u{E001}</mark> <script>alert(1)</script> 1 < 2 <a href=javascript:x>l</a>",
         );
         assert!(clean.contains("<mark>a</mark>"), "{clean}");
-        assert!(!clean.contains("<script"), "{clean}");
-        assert!(!clean.contains("<a"), "{clean}");
-        assert!(!clean.contains("onmouseover"), "{clean}");
-        assert!(clean.contains("1 &lt; 2"), "{clean}");
-        // Nothing but the two mark tags may open an element.
         let opened = clean.matches('<').count();
         let marks = clean.matches("<mark>").count() + clean.matches("</mark>").count();
         assert_eq!(opened, marks, "{clean}");
+        assert!(clean.contains("1 &lt; 2"), "{clean}");
     }
 
     #[test]
-    fn a_fragment_cut_inside_a_tag_does_not_leak_it() {
-        // MaxFragments can end a snippet mid tag, with no closing bracket.
-        let clean = clean_snippet("<mark>zxq</mark> tail <img src=x onerror=alert(1)");
-        assert!(!clean.contains("<img"), "{clean}");
-        assert!(!clean.contains("onerror"), "{clean}");
+    fn markers_in_the_text_cannot_unbalance_the_tags() {
+        assert_eq!(
+            clean_snippet("\u{E001}a\u{E000}\u{E000}b"),
+            "a<mark>b</mark>"
+        );
+        let clean = clean_snippet("\u{E000}zxq\u{E001} tail <img src=x onerror=alert(1)");
+        assert_eq!(
+            clean,
+            "<mark>zxq</mark> tail &lt;img src=x onerror=alert(1)"
+        );
     }
 }

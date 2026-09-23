@@ -413,12 +413,12 @@ fn render_block(block: &CustomBlock, depth: usize, state: &mut BlockState) -> St
             if rendered_body.is_empty() {
                 format!(
                     "<details class=\"details\"><summary>{}</summary></details>",
-                    escape_html_text(&block.title)
+                    naw_core::html::escape(&block.title)
                 )
             } else {
                 format!(
                     "<details class=\"details\"><summary>{}</summary>\n{rendered_body}\n</details>",
-                    escape_html_text(&block.title)
+                    naw_core::html::escape(&block.title)
                 )
             }
         }
@@ -429,31 +429,16 @@ fn render_block(block: &CustomBlock, depth: usize, state: &mut BlockState) -> St
             if rendered_body.is_empty() {
                 format!(
                     "<details class=\"quote\"><summary>{}</summary></details>",
-                    escape_html_text(&block.title)
+                    naw_core::html::escape(&block.title)
                 )
             } else {
                 format!(
                     "<details class=\"quote\"><summary>{}</summary>\n<blockquote>\n{rendered_body}\n</blockquote>\n</details>",
-                    escape_html_text(&block.title)
+                    naw_core::html::escape(&block.title)
                 )
             }
         }
     }
-}
-
-fn escape_html_text(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            _ => out.push(c),
-        }
-    }
-    out
 }
 
 /// Maps `__italic__` to `*italic*` before parsing. pulldown-cmark hardwires
