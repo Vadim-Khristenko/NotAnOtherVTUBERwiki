@@ -9,17 +9,21 @@ If you want to know why the technology is what it is, read [STACK.md](STACK.md).
 
 ## Where we are
 
-**Pre-alpha.** There is no public release yet. What exists, as of 2026-09-20:
+**Closed alpha.** There is no public release yet. What exists, as of 2026-09-23:
 
 - A design that has survived one full review, a database schema, and the decisions written
   down with their reasons. This is still the most valuable part.
-- A running engine, locally. Pages render and serve from cache, the editor works, the
-  wiki resolver serves several wikis from one install, and skins apply.
-- Sign-in through GitHub, Discord and Telegram OIDC, with sessions, an identity store and
-  an audit trail. Password login and email verification are not built yet.
-- `filian.wiki` and `snackers.wiki` are live, both pointing at a landing page rather than
-  at the engine. Cloudflare is DNS only on both, deliberately: its proxy ranges are blocked
-  in Russia, and a large part of this community reads from there.
+- A running engine, in a closed alpha at `alpha.filian.wiki`. Accounts are handed out by
+  hand; `filian.wiki` explains how to ask for one. Pages render and serve from cache,
+  history, diffs, restore and search work, and one wiki carries articles in several
+  languages (`/ru/about`).
+- Sign-in with a username and password, and through GitHub, Discord and Telegram OIDC.
+  Registration can be closed, so providers only sign in people who already have an
+  account. Email verification is not built yet.
+- An admin panel: accounts with per-person rights, sanctions and notes, pages, the audit
+  log, wiki settings, languages, header and footer, error pages.
+- Cloudflare is DNS only on every domain, deliberately: its proxy ranges are blocked in
+  Russia, and a large part of this community reads from there.
 
 Editing a design document costs an afternoon. Editing a database schema after a thousand
 wikis depend on it costs a year. That is why the order below looks slow at the start.
@@ -100,9 +104,10 @@ The skeleton everything else hangs on.
 - [x] Shared error type and shared application state
 - [x] Configuration from file and environment, secrets never logged
 - [x] Migrations, and the SQLx offline workflow wired into CI
-- [ ] Authentication, partly landed. Sessions, the identity store and sign-in
-      with GitHub, Discord and Telegram OIDC all work. Password login with
-      Argon2id and email verification do not exist yet.
+- [ ] Authentication, mostly landed. Sessions, the identity store, sign-in with
+      GitHub, Discord and Telegram OIDC, and password login with Argon2id all
+      work, with throttling and admin-issued temporary passwords. Registration
+      can be open or closed. Email verification does not exist yet.
       **Deviation from this plan, on purpose:** sessions live in the Postgres
       `sessions` table, not in Valkey. The cookie carries a random UUID and the
       server owns the lookup, so a session survives a cache flush and can be
@@ -110,7 +115,9 @@ The skeleton everything else hangs on.
       verifiers instead, where a TTL is the whole point.
 - [ ] Role based access control, namespace aware. Enforced since 2026-09-22:
       capabilities over a per-install and a per-wiki role, guests read only by
-      default, switches per wiki. Namespace awareness is not in yet.
+      default, switches per wiki, per-person allow and deny overrides, and
+      sanctions (mute, wiki ban, install ban). Namespace awareness is not in
+      yet, beyond profiles living in their own namespace.
 - [x] The wiki resolver, so one install can serve many wikis
 - [x] The Markdown pipeline with raw HTML disabled at the parser
 - [ ] The render job pipeline. The cache and the render-on-miss path work; the
@@ -135,6 +142,7 @@ The part that makes it a wiki rather than a blog.
 - Dependency graph, so a template edit invalidates exactly the pages that use it
 - Categories, redirects, and slug normalisation that handles Japanese and Cyrillic
 - Media upload behind a swappable storage backend
+- Profiles at `/user/{name}`: a page of one's own, in the same editor and history
 - [ ] Recent changes, patrolling, watchlists. Patrolling works; the other two do not exist yet
 - [ ] Audit log with a retention policy. The log is written and browsable; retention is not in
 - [x] Search behind a swappable backend, PostgreSQL full text first
@@ -212,7 +220,9 @@ Make editing pleasant, without ever putting it on the reader path.
 - Autosave locally and on the server, with three way merge on conflict
 - Component picker that inserts a template or component with a prop form
 - Component editor: source, live preview, build log, version history
-- Admin panel: roles, sponsor privileges, skin variables, webhooks, audit log
+- Admin panel: roles, sponsor privileges, skin variables, webhooks, audit log.
+  The server rendered panel exists (accounts, rights, sanctions, pages, audit log,
+  settings, languages, header and footer); the Vue part does not.
 - Plain Markdown fallback that is fully functional without JavaScript
 
 **Done when:** an editor can do everything from a phone in Lockdown Mode, including saving.
@@ -221,8 +231,10 @@ Make editing pleasant, without ever putting it on the reader path.
 
 ## Phase 7 · Skinning and FilianWIKI
 
-- Skin loader with template inheritance and per wiki asset isolation
-- The `snackers` skin, pinks and purples, dark mode by default
+- [x] Skin loader with template inheritance: a skin ships only what it changes,
+      usually just a `_theme.html`, and reloads on the fly. Per wiki asset isolation
+      is not in yet.
+- [x] The `snackers` skin, pinks and purples, dark mode by default
 - Admin UI for skin variables as CSS custom properties
 - Per page layout overrides
 - Core component library: infobox, navbox, hatnote, tabs
@@ -243,7 +255,9 @@ The things that decide whether anyone finds the wiki.
 - `sitemap.xml`, `robots.txt`, canonical URLs
 - Antispam: registration CAPTCHA, external link limits, new user heuristics
 - Notifications and digest email
-- Internationalisation: engine UI translated, per page locale routing
+- [x] Internationalisation: engine UI translated (English and Russian packs, on
+      the fly), per page locale routing by path or subdomain, translations with
+      staleness notices
 - Offline PWA reader mode
 - Sponsor integrations: Ko-fi and Patreon webhooks
 
@@ -261,7 +275,8 @@ The things that decide whether anyone finds the wiki.
 - Backup automation with retention
 - `/metrics` endpoint, dashboards in an optional profile
 - k6 suite and the benchmark document with methodology
-- Deploy FilianWIKI
+- [ ] Deploy FilianWIKI. The closed alpha runs behind the frp tunnel; the public launch
+      waits for open registration.
 
 **Done when:** the thing survives being on the public internet.
 
