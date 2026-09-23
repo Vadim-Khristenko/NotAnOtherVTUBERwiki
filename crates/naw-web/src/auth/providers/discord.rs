@@ -1,11 +1,5 @@
-//! Discord, OAuth2 with an OIDC userinfo endpoint.
-//!
-//! The token endpoint accepts only `application/x-www-form-urlencoded` and
-//! rejects JSON outright. PKCE is S256 only, `plain` is refused.
-//!
-//! Identity comes from the OIDC userinfo call rather than `/users/@me`: it is
-//! one request, it carries `email_verified` as a real boolean, and `sub` is the
-//! same stable snowflake either way.
+//! Discord: OAuth2 with PKCE (S256) and the OIDC userinfo endpoint, which
+//! carries `email_verified` as a boolean.
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -95,8 +89,7 @@ impl LoginProvider for Discord {
             ));
         }
 
-        // Only a confirmed address counts. store.rs treats a present email as
-        // provider certified, so an unconfirmed one must arrive as None.
+        // Only a verified address may arrive; store.rs trusts a present email.
         let email = info
             .email
             .filter(|_| info.email_verified)
@@ -197,7 +190,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_missing_email_verified_field_defaults_to_unverified() {
-        // serde(default) on a bool is false, and that is the safe direction.
         let identity = complete_with(r#"{"sub":"2","email":"x@example.test"}"#)
             .await
             .expect("completes");
@@ -209,8 +201,6 @@ mod tests {
         let identity = complete_with(r#"{"sub":"99","preferred_username":"  "}"#)
             .await
             .expect("completes");
-        // username::sanitize would otherwise get an empty string and fall back
-        // to a random name; a stable provider-derived handle is kinder.
         assert_eq!(identity.handle, "discord-99");
     }
 

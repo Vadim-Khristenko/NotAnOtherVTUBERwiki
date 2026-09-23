@@ -1,16 +1,9 @@
-//! `finish_login`: one transaction that turns a provider `Identity` into
-//! a signed-in user.
+//! `finish_login`: one transaction from a provider `Identity` to an account.
 //!
-//! Four paths, per the guide:
-//! 1. known identity: touch `last_login_at`, log in as that user;
-//! 2. unknown identity in link mode: attach to the session user;
-//! 3. unknown identity, auto-link on and the email is provider certified:
-//!    attach to the user with that email;
-//! 4. otherwise: create the user plus the identity row, unless registration
-//!    is closed, in which case nothing is written and the caller shows the
-//!    "no account yet" page.
-//!
-//! Tokens never reach this module: `Identity.raw` is a trimmed profile.
+//! 1. Known identity: sign in.
+//! 2. Link mode: attach to the signed-in account.
+//! 3. Auto-link: attach to the account with the same verified email.
+//! 4. Otherwise create the account, unless registration is closed.
 
 use serde_json::json;
 use uuid::Uuid;
@@ -21,11 +14,10 @@ use naw_core::state::AppState;
 use super::types::{AuthError, Identity};
 use super::username;
 
-/// Postgres unique violation. Anything else from the driver is our bug.
+/// Postgres unique violation.
 const UNIQUE_VIOLATION: &str = "23505";
 
-/// The `users.email` column is unique on `lower(email)`, so every write goes
-/// through here first.
+/// `users.email` is unique on `lower(email)`.
 fn normalize_email(email: &str) -> String {
     email.trim().to_lowercase()
 }
@@ -33,11 +25,8 @@ fn normalize_email(email: &str) -> String {
 /// How the login resolved, for the audit trail.
 #[derive(Debug)]
 pub enum Outcome {
-    /// Existing account signed in.
     Login(Uuid),
-    /// Fresh account created.
     Register(Uuid),
-    /// Identity attached to an existing account.
     Link(Uuid),
 }
 
@@ -66,9 +55,7 @@ async fn attach_identity(
     .execute(tx)
     .await
     .map_err(|err| {
-        // Only 23505 on UNIQUE (provider, provider_user_id) means the
-        // identity is taken. Any other database error is our problem, not
-        // the user's, and must not be reported as a conflict.
+        // Only a unique violation means the identity is taken.
         let conflict = err
             .as_database_error()
             .and_then(|db| db.code())
@@ -113,7 +100,7 @@ pub async fn finish_login(
         .await
         .map_err(|_| AuthError::Upstream("transaction start failed".to_string()))?;
 
-    // 1. Known identity, straight in.
+    // 1. Known identity.
     if let Some(row) = sqlx::query!(
         "SELECT user_id FROM oauth_identities
          WHERE provider = $1 AND provider_user_id = $2",
@@ -147,7 +134,7 @@ pub async fn finish_login(
         return Ok(Outcome::Login(row.user_id));
     }
 
-    // 2. Link mode: attach to the signed-in user.
+    // 2. Link mode.
     if let Some(user_id) = link_user_id {
         let exists = sqlx::query!("SELECT 1 AS one FROM users WHERE id = $1", user_id)
             .fetch_optional(&mut *tx)
@@ -166,13 +153,8 @@ pub async fn finish_login(
         return Ok(Outcome::Link(user_id));
     }
 
-    // 3. Auto-link on a provider certified email.
-    //
-    // Both sides have to be certified. The provider vouches for the incoming
-    // address via `email_verified`, and the target account only counts when
-    // it confirmed the same address itself: otherwise anyone could register
-    // with an unverified `victim@host`, sit on the row, and collect the
-    // victim's real identity the next time they sign in elsewhere.
+    // 3. Auto-link. Both sides must be verified, or anyone could park an
+    // unverified `victim@host` and collect the victim's identity later.
     let certified = match (&identity.email, identity.email_verified, auto_link_allowed) {
         (Some(email), true, true) => Some(normalize_email(email)),
         _ => None,
@@ -198,11 +180,8 @@ pub async fn finish_login(
         }
     }
 
-    // 4. Fresh account.
-    //
-    // Closed registration stops here, after the paths that sign in or link an
-    // existing account and before anything is written. The dev provider is
-    // exempt: it only runs on a laptop, and a closed laptop is useless.
+    // 4. New account. Closed registration stops here, before any write; the
+    // dev provider is exempt.
     let closed = state.config.auth.registration == naw_core::config::Registration::Closed;
     if closed && identity.provider != super::types::ProviderId::Dev {
         tracing::info!(
@@ -211,11 +190,8 @@ pub async fn finish_login(
         );
         return Err(AuthError::RegistrationClosed);
     }
-    //
-    // An unverified provider email is not written to `users.email`: parking
-    // an address nobody proved ownership of would block the real owner from
-    // ever claiming it, and the column is unique on lower(email). The
-    // address stays on the identity row and the user confirms it in settings.
+    // An unverified email is not written to `users.email`, where it would
+    // block its real owner.
     let user_id = Uuid::new_v4();
     let email = identity
         .email

@@ -1,17 +1,8 @@
 //! The first owner, from the environment.
 //!
-//! A fresh invite-only install has nobody who can open the admin panel, and in
-//! production the dev sign-in is off (and refuses to run anywhere public). This
-//! closes that gap without a back door: the operator names the account and its
-//! password in the service's environment, and startup makes sure it exists with
-//! every right there is.
-//!
-//! What startup guarantees, every time:
-//! - the account exists, holds the `root` install role, and is `owner` of
-//!   every wiki on the install;
-//! - it has a password. The one from the environment is written only while the
-//!   account has none, so an owner who changed theirs is never reset by a
-//!   restart, and a leaked old environment file stops being a key once they do.
+//! At startup the configured account is ensured to exist with the `root`
+//! install role and `owner` of every wiki. Its password is written only while
+//! it has none, so a restart never resets a changed one.
 
 use naw_core::config::BootstrapOwner;
 use naw_core::error::AppError;
@@ -20,7 +11,7 @@ use uuid::Uuid;
 
 use crate::auth::{password, username};
 
-/// What startup did, for one log line.
+/// What startup did.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
     Created,
@@ -28,8 +19,7 @@ pub enum Outcome {
     AlreadyOwner,
 }
 
-/// Refuses a bootstrap configuration that would create a weak or unusable
-/// account. Checked before anything touches the database.
+/// Refuses a weak or unusable configuration before touching the database.
 fn validate(owner: &BootstrapOwner) -> Result<(), AppError> {
     if !username::is_valid(&owner.username) {
         return Err(AppError::Config(format!(
@@ -47,8 +37,7 @@ fn validate(owner: &BootstrapOwner) -> Result<(), AppError> {
     )
 }
 
-/// Makes sure the bootstrap owner exists with every right. Returns `None` when
-/// no bootstrap owner is configured.
+/// Ensures the bootstrap owner; `None` when none is configured.
 pub async fn ensure_owner(state: &AppState) -> Result<Option<(String, Outcome)>, AppError> {
     let Some(owner) = state.config.bootstrap_owner.as_ref() else {
         return Ok(None);
@@ -68,8 +57,7 @@ pub async fn ensure_owner(state: &AppState) -> Result<Option<(String, Outcome)>,
         None => {
             let hash = password::hash(owner.password.clone()).await?;
             let id = Uuid::new_v4();
-            // Not a temporary password: the operator chose it, so there is
-            // nothing to force a change on.
+            // Chosen by the operator, so not temporary.
             sqlx::query!(
                 "INSERT INTO users (id, username, password_hash, password_changed_at, global_role)
                  VALUES ($1, $2, $3, now(), 'root')",
@@ -106,9 +94,7 @@ pub async fn ensure_owner(state: &AppState) -> Result<Option<(String, Outcome)>,
             (row.id, outcome)
         }
     };
-    // Owner of every wiki too. Root already holds every capability, but the
-    // membership is what the admin panel shows, and it keeps the account the
-    // owner if its install role is ever changed by hand.
+    // The membership is what the admin panel shows.
     sqlx::query(
         "INSERT INTO wiki_memberships (user_id, wiki_id, role)
          SELECT $1, id, 'owner'::user_wiki_role FROM wikis
@@ -149,7 +135,7 @@ mod tests {
         assert!(validate(&owner("VAI Prog", "a long enough password")).is_err());
         assert!(validate(&owner("vai", "short")).is_err());
         assert!(validate(&owner("vaiprog-owner", "vaiprog-owner")).is_err());
-        // The refusal must not quote the password back into the log.
+        // The refusal must not quote the password.
         let err = validate(&owner("vai", "tiny"))
             .expect_err("refused")
             .to_string();

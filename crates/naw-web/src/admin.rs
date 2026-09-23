@@ -1,15 +1,8 @@
-//! The admin panel.
+//! The admin panel: one template with sections.
 //!
-//! One template with sections rather than five templates, so the panel's own
-//! navigation lives in one place and cannot drift between pages.
-//!
-//! **Why every mutation here is a POST.** The session cookie is
-//! `SameSite=Lax`, which means a browser will not attach it to a cross-site
-//! POST. That is the CSRF defence for this whole panel, and it only holds while
-//! nothing that changes state is reachable by GET: Lax *does* attach the cookie
-//! to a top-level cross-site navigation, so a `GET /admin/users/role?...` link
-//! in a Discord message would work exactly as the attacker intended. Adding a
-//! mutating GET here reopens the hole silently. Do not.
+//! Every mutation is a POST. `SameSite=Lax` keeps the session cookie off
+//! cross-site POSTs, which is the CSRF defence here, and it only holds while
+//! nothing that changes state is reachable by GET.
 
 use axum::extract::{Extension, Form, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -29,16 +22,8 @@ use crate::resolve::{Ctx, context};
 const PER_PAGE: i64 = 50;
 const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; charset=utf-8");
 
-/// Resolves the request and refuses anybody without `AdminPanel`.
-///
-/// Returns `Err(Response)` with the refusal already rendered, so every handler
-/// below is one `match` away from being safe and none of them can forget the
-/// check.
-///
-/// clippy objects to the 128-byte error variant. Boxing it would put a
-/// `Box<Response>` unwrap at every one of the nine call sites to save an
-/// allocation on a path that has already done two database round trips. Not
-/// worth it; the whole design here is "hand back a finished response".
+/// Resolves the request and refuses anybody without `AdminPanel`, returning
+/// the rendered refusal as `Err`.
 #[allow(clippy::result_large_err)]
 pub(crate) async fn gate(
     state: &AppState,
@@ -53,9 +38,7 @@ pub(crate) async fn gate(
         Err(err) => return Err(err.into_response()),
     };
     if !ctx.actor.can(Capability::AdminPanel) {
-        // A guest is sent to sign in; somebody already signed in is told no.
-        // Leaking whether a panel exists is not a concern: the path is in the
-        // public source tree.
+        // A guest is sent to sign in; anyone else is told no.
         if !ctx.actor.is_signed_in() {
             return Err(
                 pages::redirect_response(StatusCode::SEE_OTHER, "/login?next=/admin")
@@ -199,9 +182,7 @@ pub async fn users(
     };
     let page_no = query.page.unwrap_or(1).max(1);
     let offset = (page_no - 1) * PER_PAGE;
-    // An empty filter has to mean "everybody", and a filter has to be a
-    // substring match rather than a prefix, because admins search for the part
-    // of a name they remember.
+    // Empty means everybody; otherwise a substring match.
     let filter = query
         .q
         .as_deref()
@@ -245,9 +226,7 @@ pub async fn users(
             minijinja::context! {
                 id => row.id.to_string(),
                 username => row.username,
-                // Parsed rather than passed through, so a value the CHECK
-                // constraint should have refused shows up as "registered"
-                // here instead of being displayed as if it meant something.
+                // Parsed, so a value outside the enum shows as "registered".
                 global_role => GlobalRole::parse(&row.global_role).as_str(),
                 wiki_role => row.wiki_role.clone(),
                 effective_role => effective,
@@ -281,10 +260,9 @@ pub async fn users(
 #[derive(Debug, serde::Deserialize)]
 pub struct RoleForm {
     user_id: String,
-    /// A `WikiRole` name, or the empty string to remove the membership.
+    /// A `WikiRole` name, or empty to remove the membership.
     role: String,
-    /// Where to go afterwards: the person's own admin page, when the form was
-    /// there. Anything that is not an admin user page is ignored.
+    /// Where to return: only an admin user page is honoured.
     #[serde(default)]
     back: String,
 }
@@ -307,15 +285,13 @@ pub async fn set_role(
     let Some(target_id) = pages::parse_uuid(&form.user_id) else {
         return Ok((StatusCode::UNPROCESSABLE_ENTITY, "user_id: expected an id").into_response());
     };
-    // Nobody demotes themselves by accident, and more importantly nobody
-    // locks the last admin out of their own wiki with a stray click.
+    // Nobody demotes themselves, least of all the last admin.
     if Some(target_id) == ctx.actor.user_id {
         return Ok((StatusCode::CONFLICT, "you cannot change your own role here").into_response());
     }
 
-    // What the target currently holds. Demoting a peer is refused for the same
-    // reason promoting to a peer is: an admin must not be able to remove
-    // another admin and take sole control.
+    // Demoting a peer is refused like promoting to one, so no admin can take
+    // sole control.
     let current = sqlx::query!(
         r#"SELECT role::text AS role FROM wiki_memberships WHERE user_id = $1 AND wiki_id = $2"#,
         target_id,
@@ -371,8 +347,7 @@ pub async fn set_role(
             .into_response());
     }
 
-    // The enum cast is what keeps this safe: `role` came from `WikiRole`, whose
-    // spellings are the enum's, so an unknown value cannot reach the database.
+    // `role` came from `WikiRole`, so only enum spellings reach the cast.
     sqlx::query(
         "INSERT INTO wiki_memberships (user_id, wiki_id, role)
          VALUES ($1, $2, $3::user_wiki_role)
@@ -398,8 +373,7 @@ pub async fn set_role(
     Ok(pages::see_other(role_back(&form.back)))
 }
 
-/// The page a role change returns to: the admin user page it came from, or
-/// the account list.
+/// The admin user page a role change came from, or the account list.
 fn role_back(back: &str) -> &str {
     let ok = back.strip_prefix("/admin/user/").is_some_and(|name| {
         !name.is_empty()
@@ -414,10 +388,8 @@ fn role_back(back: &str) -> &str {
 // Accounts made by an admin
 // ---------------------------------------------------------------------------
 //
-// On an invite-only wiki this is where accounts come from. The password is
-// generated here, shown to the admin exactly once, and has to be replaced by
-// its owner on the first sign-in. It is never logged and never stored in plain
-// text; the page that shows it is no-store like the rest of the panel.
+// The temporary password is shown once, never logged or stored in plain
+// text, and must be replaced at the first sign-in.
 
 /// Why this admin may not reset that account's password, if they may not.
 pub(crate) fn may_reset(
@@ -429,14 +401,11 @@ pub(crate) fn may_reset(
     if !ctx.actor.can(Capability::UserRoleManage) {
         return Err("resetting passwords needs admin rights");
     }
-    // Your own password is changed on the account page, which asks for the
-    // current one. A reset here would skip that check.
+    // Your own password is changed on the account page, which asks for it.
     if Some(target) == ctx.actor.user_id {
         return Err("change your own password on the account page");
     }
     match target_global {
-        // The install owner is recovered from the command line, never from a
-        // web form somebody else might be sitting at.
         GlobalRole::Root => return Err("root accounts are reset from the command line"),
         GlobalRole::Staff if ctx.actor.global != GlobalRole::Root => {
             return Err("only root may reset a staff account");
@@ -451,8 +420,7 @@ pub(crate) fn may_reset(
     Ok(())
 }
 
-/// A plausible email: one @, something on both sides, no spaces, not absurdly
-/// long. Whether it exists is the mail server's business.
+/// One `@`, something on both sides, no spaces, a sane length.
 fn email_is_plausible(email: &str) -> bool {
     let Some((local, domain)) = email.split_once('@') else {
         return false;
@@ -472,8 +440,8 @@ pub struct NewUserForm {
     username: String,
     #[serde(default)]
     email: String,
-    /// Checkbox: the admin vouches for the address, so a provider sign-in that
-    /// confirms the same address links to this account.
+    /// The admin vouches for the address, so a provider sign-in with the same
+    /// verified address links to this account.
     #[serde(default)]
     trust_email: Option<String>,
     /// A `WikiRole` name, or empty for no membership.
@@ -576,8 +544,7 @@ pub async fn create_user(
     let email = form.email.trim().to_lowercase();
     let refuse = |status, key| render_new_user(&ctx, status, &form, Some(key));
 
-    // Reserved names are allowed here on purpose: they exist so that only an
-    // admin can hand them out, and this is an admin handing one out.
+    // Reserved names are allowed: only an admin may hand them out, and this is one.
     if !crate::auth::username::is_valid(&username) {
         return refuse(StatusCode::UNPROCESSABLE_ENTITY, "user_bad_name");
     }
@@ -624,8 +591,7 @@ pub async fn create_user(
         }
     }
     sqlx::query!(
-        // No locale: the new account follows its owner's browser until they
-        // pick a language in their settings.
+        // No locale: the account follows its owner's browser until they choose.
         "INSERT INTO users (id, username, email, email_verified_at, password_hash,
                             must_change_password, created_by, global_role)
          VALUES ($1, $2, $3, $4, $5, true, $6, 'registered')",
@@ -722,8 +688,7 @@ pub async fn reset_password(
     )
     .execute(&state.db)
     .await?;
-    // Whoever holds a session for this account now holds it without knowing the
-    // password. End them all: the new password is the only way back in.
+    // Existing sessions would outlive the reset; end them all.
     let ended = crate::auth::session::delete_others(&state, target_id, None).await?;
     audit::record(
         &state.db,
@@ -762,8 +727,7 @@ pub async fn chrome_settings(
     let header = crate::chrome::header(&ctx.wiki.settings);
     let saved_links = crate::chrome::footer(&ctx.wiki.settings);
     let customised = saved_links.is_some();
-    // Always MAX rows, filled from what is saved, so adding a link is typing
-    // into an empty row rather than a script adding one.
+    // Always MAX rows, so adding a link needs no script.
     let mut rows: Vec<minijinja::Value> = saved_links
         .unwrap_or_default()
         .into_iter()
@@ -838,7 +802,6 @@ pub async fn save_chrome_settings(
         };
         links.push(json!({ "href": href, "label": label, "lang": lang }));
     }
-    // "Reset" puts the translated defaults back by forgetting the list.
     let footer = if on("footer_reset") {
         Value::Null
     } else {
@@ -895,8 +858,7 @@ pub async fn save_chrome_settings(
 // Install: account rules
 // ---------------------------------------------------------------------------
 //
-// Accounts are shared by every wiki on the install, so their rules belong to
-// the install owner, not to one wiki's admins.
+// Accounts are shared by every wiki, so these belong to the install owner.
 
 /// GET /admin/accounts
 #[instrument(skip(state, user))]
@@ -941,7 +903,7 @@ pub async fn account_rules(
 pub struct SavedQuery {
     #[serde(default)]
     saved: Option<String>,
-    /// How many submitted rows were dropped as unsafe or incomplete.
+    /// Submitted rows dropped as unsafe or incomplete.
     #[serde(default)]
     refused: Option<u32>,
 }
@@ -1095,9 +1057,7 @@ pub struct PageActionForm {
     page_id: String,
 }
 
-/// The four page actions, which differ only in the column they set and the
-/// capability they need. One handler with a parsed action keeps the
-/// permission check from being written four times and forgotten once.
+/// The four page actions, sharing one handler and one permission check.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PageAction {
     Lock,
@@ -1157,13 +1117,10 @@ pub async fn page_action(
         return Ok((StatusCode::UNPROCESSABLE_ENTITY, "page_id: expected an id").into_response());
     };
 
-    // The wiki_id in the WHERE clause is the tenancy check. Without it an
-    // admin of one wiki could archive a page on another by posting its id.
+    // `wiki_id` in the WHERE clause is the tenancy check.
     let slug = match action {
         PageAction::Lock | PageAction::Unlock => {
-            // "Lock" here is protection at moderator level, as it always was.
-            // The ladder still applies: nobody loosens a protection set above
-            // them, and a curator cannot lock at moderator level.
+            // "Lock" is protection at moderator level, under the usual ladder.
             let Some(current) = sqlx::query!(
                 "SELECT is_locked, edit_level FROM pages WHERE id = $1 AND wiki_id = $2",
                 page_id,
@@ -1213,8 +1170,7 @@ pub async fn page_action(
         .map(|row| row.slug),
     };
     let Some(slug) = slug else {
-        // Either the page is not on this wiki, or it was already in the state
-        // the action would have put it in. Neither is worth a different answer.
+        // Not on this wiki, or already in that state.
         return Ok((StatusCode::NOT_FOUND, "nothing to change").into_response());
     };
 
@@ -1261,9 +1217,7 @@ pub async fn audit_log(
         .filter(|q| !q.is_empty())
         .map(|q| format!("%{}%", q.to_lowercase()));
 
-    // Install-wide rows (wiki_id NULL) are the auth events: registration and
-    // sign-in belong to no single wiki, and an admin looking at "what
-    // happened" needs to see them next to the page edits.
+    // Install-wide rows (wiki_id NULL) are the auth events.
     let rows = sqlx::query!(
         r#"
         SELECT a.id, a.action, a.entity_type, a.entity_id, a.meta, a.created_at,
@@ -1379,8 +1333,7 @@ pub struct WikiForm {
     name: String,
     default_locale: String,
     home_slug: String,
-    // Unchecked boxes are simply absent from a form post, which is why every
-    // switch is an Option rather than a bool.
+    // Unchecked boxes are absent from the post.
     #[serde(default)]
     anonymous_create: Option<String>,
     #[serde(default)]
@@ -1433,9 +1386,7 @@ pub async fn save_wiki_settings(
             .into_response());
     }
 
-    // Merge rather than replace. `aliases` and `default` live in the same
-    // object and are not on this form, so writing a fresh object here would
-    // silently unhost the wiki.
+    // Merge: `aliases` and `default` live in the same object.
     let mut settings = ctx.wiki.settings.clone();
     if !settings.is_object() {
         settings = json!({});
@@ -1464,9 +1415,7 @@ pub async fn save_wiki_settings(
     .execute(&state.db)
     .await?;
 
-    // The stemmer is baked into every stored tsvector, so a locale change
-    // makes the whole index wrong until it is rebuilt. Doing it here rather
-    // than leaving a note in the panel means search is never quietly broken.
+    // The stemmer is baked into every tsvector, so a locale change reindexes.
     let reindexed = if locale_changed {
         naw_core::search::reindex(&state.db, Some(ctx.wiki.id)).await?
     } else {
@@ -1493,9 +1442,7 @@ pub async fn save_wiki_settings(
     Ok(pages::see_other("/admin/wiki"))
 }
 
-/// A permissive BCP 47 shape check: letters, then optional dash-separated
-/// subtags. Enough to keep junk out of a column the search configuration is
-/// derived from, without pretending to be a full language tag parser.
+/// A permissive BCP 47 shape check: letters, then dash-separated subtags.
 fn locale_is_sane(locale: &str) -> bool {
     if locale.is_empty() || locale.len() > 20 {
         return false;
@@ -1518,11 +1465,7 @@ pub struct ReindexForm {
     confirm: Option<String>,
 }
 
-/// POST /admin/reindex
-///
-/// The manual escape hatch for a search index that drifted: after a bulk
-/// import, after changing the weights in `search::index_page`, or after a
-/// locale change that did not go through the settings form.
+/// POST /admin/reindex, for an index that drifted.
 #[instrument(skip(state, user))]
 pub async fn reindex(
     State(state): State<AppState>,
@@ -1560,12 +1503,8 @@ pub async fn reindex(
 // Languages and skin
 // ---------------------------------------------------------------------------
 
-/// GET /admin/languages
-///
-/// Every installed language pack with its metadata and how complete it is,
-/// which of them this wiki offers, and the state of the skin itself: when it
-/// last loaded and whether the last reload failed. A failed reload is otherwise
-/// invisible, because the site keeps serving the previous files.
+/// GET /admin/languages: installed packs, which this wiki offers, and the
+/// skin's last load and last failed reload.
 #[instrument(skip(state, user))]
 pub async fn languages(
     State(state): State<AppState>,
@@ -1631,11 +1570,8 @@ pub async fn languages(
     )
 }
 
-/// POST /admin/languages
-///
-/// Stores which installed languages this wiki offers, as the list of those it
-/// does *not*: a pack installed tomorrow is then offered by default, rather
-/// than hidden until somebody remembers to tick it.
+/// POST /admin/languages. Stored as the languages not offered, so a pack
+/// installed later is offered by default.
 #[instrument(skip(state, user))]
 pub async fn save_languages(
     State(state): State<AppState>,
@@ -1650,8 +1586,7 @@ pub async fn save_languages(
     if !ctx.actor.can(Capability::WikiSettings) {
         return Ok((StatusCode::FORBIDDEN, "not allowed").into_response());
     }
-    // Repeated keys (`offer=en&offer=ru`) do not survive axum's `Form` into a
-    // Vec, so the body is decoded by hand. It is a short list of language codes.
+    // Repeated keys do not survive axum's `Form` into a Vec.
     let offered: Vec<String> = form_values(&body, "offer");
     let installed: Vec<String> = ctx
         .skin
@@ -1660,8 +1595,7 @@ pub async fn save_languages(
         .into_iter()
         .map(str::to_string)
         .collect();
-    // The wiki's own content language cannot be switched off: it is what every
-    // page falls back to, and hiding it would strand readers with no chrome.
+    // The wiki's content language cannot be switched off.
     let disabled: Vec<String> = installed
         .iter()
         .filter(|code| !offered.contains(code) && **code != ctx.wiki.default_locale)
@@ -1704,7 +1638,7 @@ pub async fn save_languages(
     Ok(pages::see_other("/admin/languages"))
 }
 
-/// Every value of one key in an urlencoded body, decoded.
+/// Every value of one key in an urlencoded body.
 fn form_values(body: &[u8], key: &str) -> Vec<String> {
     let Ok(text) = std::str::from_utf8(body) else {
         return Vec::new();
@@ -1740,12 +1674,8 @@ fn percent_decode(value: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// POST /admin/reload
-///
-/// Reloads the skin and every language pack now, even when the watcher saw no
-/// change: a file restored from a backup can carry an old modification time.
-/// A broken file leaves the running version in place and shows up on the
-/// languages page, exactly as it would from the watcher.
+/// POST /admin/reload: reloads the skin and packs now, even when nothing
+/// looks changed. A broken file keeps the running version.
 #[instrument(skip(state, user))]
 pub async fn reload(
     State(state): State<AppState>,
@@ -1779,7 +1709,7 @@ pub async fn reload(
 // Error pages
 // ---------------------------------------------------------------------------
 
-/// The variants a kind has wording for, so the gallery can preview each one.
+/// The variants a kind has wording for.
 fn variants_of(kind: crate::errors::Kind) -> &'static [&'static str] {
     match kind {
         crate::errors::Kind::AuthFailed => &[
@@ -1794,12 +1724,7 @@ fn variants_of(kind: crate::errors::Kind) -> &'static [&'static str] {
     }
 }
 
-/// GET /admin/errors
-///
-/// Every kind of error page, with whether the skin ships its own template for
-/// it. With the skin watcher on, a skin author edits `errors/<kind>.html` and
-/// reloads the preview to see it, with no server restart and without having to
-/// break something on purpose.
+/// GET /admin/errors: every error kind, and whether the skin ships its own.
 #[instrument(skip(state, user))]
 pub async fn error_gallery(
     State(state): State<AppState>,
@@ -1837,11 +1762,8 @@ pub struct PreviewQuery {
     variant: Option<String>,
 }
 
-/// GET /admin/errors/{kind}
-///
-/// Renders one error page exactly as a reader would see it, with a sample
-/// detail and a placeholder request id. Served as a 200: it is a preview, and a
-/// real 500 status on an admin page would only confuse a proxy or a monitor.
+/// GET /admin/errors/{kind}: one error page as a reader sees it, served as a
+/// 200 since it is a preview.
 #[instrument(skip(state, user))]
 pub async fn error_preview(
     State(state): State<AppState>,
@@ -1922,8 +1844,6 @@ mod tests {
         assert_eq!(PageAction::parse(""), None);
         assert_eq!(PageAction::parse("LOCK"), None);
 
-        // Locking and archiving are different levels of trust, so they must
-        // not collapse onto one capability.
         assert_eq!(PageAction::Lock.capability(), Capability::PageLock);
         assert_eq!(PageAction::Archive.capability(), Capability::PageDelete);
     }
@@ -1937,8 +1857,6 @@ mod tests {
 
     #[test]
     fn junk_never_reaches_the_locale_column() {
-        // This value decides the search configuration and ends up in an html
-        // lang attribute, so it has to be boring by the time it is stored.
         for bad in [
             "",
             "e",

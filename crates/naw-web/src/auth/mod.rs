@@ -1,13 +1,5 @@
-//! Session and OAuth plumbing for the web layer.
-//!
-//! House rules from the auth guide:
-//! provider tokens are never stored, the cache never serves logged-in
-//! chrome, and every error shown to the user is generic while the detail
-//! lands in the log.
-//!
-//! The provider round trip is live. What is still idle carries its own
-//! narrow `dead_code` allowance at the definition, so that anything newly
-//! unused here fails the build instead of hiding behind a module-wide waiver.
+//! Sessions and OAuth for the web layer. Provider tokens are never stored,
+//! and errors shown to people are generic while the log has the detail.
 
 pub mod http;
 pub mod jwks;
@@ -36,8 +28,7 @@ pub fn pkce_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
-/// 32 random bytes, base64url without padding. Verifiers, states and tokens
-/// all come from here.
+/// 32 random bytes, base64url without padding.
 pub fn random_token() -> String {
     use rand::RngCore;
     let mut bytes = [0u8; 32];
@@ -45,7 +36,7 @@ pub fn random_token() -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
-/// Constant-time comparison for token hashing on the read side.
+/// SHA-256 of a token, as stored.
 pub fn token_hash(value: &str) -> [u8; 32] {
     Sha256::digest(value.as_bytes()).into()
 }
@@ -56,7 +47,6 @@ mod tests {
 
     /// RFC 7636 Appendix B vector.
     const RFC_VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-    /// RFC 7636 Appendix B vector.
     const RFC_CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 
     #[test]

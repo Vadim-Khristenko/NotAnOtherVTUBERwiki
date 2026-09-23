@@ -1,11 +1,8 @@
-//! Protecting a page: who may edit it.
+//! Page protection: the lowest role that may edit.
 //!
-//! A protection level is a role: "curator" means curators and up may edit,
-//! "moderator" moderators and up, and so on. Curators and up set it from the
-//! article itself, never above their own role, and never loosen a protection
-//! set above them (`Actor::may_protect`). Kept in two columns: `edit_level`
-//! holds the role, `is_locked` stays true while any level is set, so older
-//! readers of the lock still see it.
+//! Set by curators and up, never above their own role and never loosening a
+//! level set above them (`Actor::may_protect`). `edit_level` holds the role;
+//! `is_locked` stays true while any level is set, for older readers.
 
 use axum::extract::{Extension, Form, Path, State};
 use axum::http::HeaderMap;
@@ -28,8 +25,8 @@ pub const LEVELS: [WikiRole; 4] = [
     WikiRole::Owner,
 ];
 
-/// The levels this actor may choose for a page currently at `current`, for
-/// the protect form. Empty when they may not change it at all.
+/// The levels this actor may choose for a page at `current`; empty when they
+/// may not change it.
 pub fn choices(ctx: &Ctx, current: Option<WikiRole>) -> Vec<minijinja::Value> {
     if !ctx.actor.may_protect(current, None) {
         return Vec::new();

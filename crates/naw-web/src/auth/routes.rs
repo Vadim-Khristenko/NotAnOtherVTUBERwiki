@@ -1,13 +1,9 @@
-//! Auth HTTP routes: `/login`, the provider round trip, `/logout` and the
-//! loopback dev provider.
+//! Auth routes: the provider round trip, `/logout` and the loopback dev
+//! provider.
 //!
-//! The round trip is two handlers. `start` mints a single-use state plus a
-//! PKCE pair, parks them in Valkey and bounces the browser to the provider.
-//! `callback` takes that state back, lets the provider turn the code into an
-//! `Identity`, and hands it to `store::finish_login`.
-//!
-//! Errors stay generic on the page and detailed in the log, and every response
-//! here is `no-store` via the session layer.
+//! `start` stores a single-use state and PKCE pair in Valkey and redirects to
+//! the provider; `callback` takes the state back, lets the provider turn the
+//! code into an `Identity`, and hands it to `store::finish_login`.
 
 use std::collections::BTreeMap;
 
@@ -27,7 +23,7 @@ fn is_loopback(addr: Option<&SocketAddr>) -> bool {
     addr.map(|a| a.ip().is_loopback()).unwrap_or(false)
 }
 
-/// `Secure` on the session cookie tracks the scheme of the public base URL.
+/// `Secure` follows the scheme of the public base URL.
 pub(crate) fn secure_cookies(state: &AppState) -> bool {
     state
         .config
@@ -38,11 +34,8 @@ pub(crate) fn secure_cookies(state: &AppState) -> bool {
         .starts_with("https://")
 }
 
-/// The exact string registered in each provider console.
-///
-/// Derived from `auth.base_url` rather than the request Host header on
-/// purpose: a provider compares this against its own allow list, and letting a
-/// client-supplied header shape it would be an open invitation.
+/// The callback registered with each provider, from `auth.base_url` and
+/// never from the Host header.
 fn callback_uri(state: &AppState, provider: ProviderId) -> Option<String> {
     let base = state.config.auth.base_url.as_deref()?.trim_end_matches('/');
     if base.is_empty() {
@@ -51,11 +44,9 @@ fn callback_uri(state: &AppState, provider: ProviderId) -> Option<String> {
     Some(format!("{base}/auth/{}/callback", provider.as_str()))
 }
 
-/// GET /auth/{provider}: mint state and PKCE, then 302 to the provider.
-///
-/// `?mode=link` attaches the new identity to the signed-in user instead of
-/// logging in. It needs a session; without one it degrades to a plain login
-/// rather than failing, because the only thing lost is the linking intent.
+/// GET /auth/{provider}: state and PKCE, then 302 to the provider.
+/// `?mode=link` attaches the identity to the signed-in user; without a
+/// session it is a plain sign-in.
 pub async fn start(
     State(state): State<AppState>,
     Path(slug): Path<String>,
@@ -120,7 +111,6 @@ pub async fn start(
         Ok(url) => url,
         Err(err) => return render::auth_error(&err),
     };
-    // 302 for the outbound leg, 303 after the callback. Keeps logs honest.
     (StatusCode::FOUND, [(header::LOCATION, url)]).into_response()
 }
 
@@ -147,8 +137,7 @@ pub async fn callback(
         ));
     };
 
-    // The state is taken before anything else and is single use, so a replayed
-    // callback dies here rather than minting a second session.
+    // The state is single use, so a replayed callback dies here.
     let Some(state_token) = query.get("state").filter(|token| !token.is_empty()) else {
         return render::auth_error(&super::AuthError::BadRequest("callback carried no state"));
     };
@@ -231,10 +220,8 @@ pub(crate) fn sign_in_response(state: &AppState, session_value: &str, next: &str
     response
 }
 
-/// GET /auth/dev: loopback-only instant sign-in as the fixed `dev` user.
-/// Refuses when the flag is off (404), when base_url is https or off
-/// loopback. Defense in depth: `Config::check_dev_login` already refuses to
-/// start with the flag on an https base url or a public bind.
+/// GET /auth/dev: loopback-only sign-in as the `dev` user. Also refused by
+/// `Config::check_dev_login` at startup where it could be public.
 pub async fn dev_login(
     State(state): State<AppState>,
     Query(params): Query<BTreeMap<String, String>>,
@@ -312,7 +299,6 @@ mod tests {
             base_url: Some("https://snackers.wiki/".to_string()),
             ..AuthConfig::default()
         });
-        // Trailing slash must not produce a double slash in the path.
         let base = cfg.auth.base_url.as_deref().unwrap().trim_end_matches('/');
         assert_eq!(
             format!("{base}/auth/{}/callback", ProviderId::Github.as_str()),

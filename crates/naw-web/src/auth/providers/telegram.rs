@@ -1,19 +1,8 @@
-//! Telegram, a full OIDC authorization code flow with PKCE.
+//! Telegram: OIDC authorization code flow with PKCE.
 //!
-//! Three things make it unlike GitHub and Discord:
-//!
-//! 1. There is no userinfo endpoint. Every claim comes out of the id_token, so
-//!    the JWT verification in `super::super::jwks` is the whole identity path
-//!    rather than a nicety.
-//! 2. The client pair goes in an `Authorization: Basic` header, not the body.
-//! 3. **There is no email, ever.** Telegram offers a phone number and nothing
-//!    else, so a Telegram-only account reaches `store::finish_login` with no
-//!    address and links one later in settings.
-//!
-//! `client_id` is the bot id from BotFather, and it doubles as the `aud` claim.
-//!
-//! Verified against the live discovery document on 2026-09-20:
-//! `https://oauth.telegram.org/.well-known/openid-configuration`.
+//! Every claim comes from the verified id_token (there is no userinfo), the
+//! client pair goes in a Basic header, and there is never an email.
+//! `client_id` is the bot id and doubles as `aud`.
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -32,11 +21,7 @@ const AUTHORIZE: &str = "https://oauth.telegram.org/auth";
 const TOKEN: &str = "https://oauth.telegram.org/token";
 const JWKS_URI: &str = "https://oauth.telegram.org/.well-known/jwks.json";
 
-/// `phone` is offered and deliberately not requested: a wiki login has no use
-/// for a phone number, and asking for one is a worse consent screen.
-/// `telegram:bot_access` is also on offer and is the likely path to letting the
-/// bot DM a user for login confirmations; it stays out until that flow is built
-/// and its semantics are confirmed.
+/// `phone` and `telegram:bot_access` are offered and not requested.
 const SCOPE: &str = "openid profile";
 
 pub struct Telegram {
@@ -53,15 +38,14 @@ impl Telegram {
     }
 }
 
-/// The id_token claims we read. `aud` and `exp` are checked by the verifier, so
-/// they are absent here on purpose.
+/// The claims read; `aud` and `exp` are checked by the verifier.
 #[derive(Deserialize)]
 struct Claims {
     sub: String,
     name: Option<String>,
     preferred_username: Option<String>,
     picture: Option<String>,
-    /// OIDC allows a nonce claim; when the provider echoes ours it must match.
+    /// When the provider echoes a nonce it must match ours.
     nonce: Option<String>,
 }
 
@@ -91,13 +75,11 @@ impl LoginProvider for Telegram {
                 redirect_uri: params.redirect_uri,
                 code_verifier: params.code_verifier,
                 accept_json: false,
-                // Telegram wants base64(client_id:client_secret) in a header.
                 use_basic_auth: true,
             },
         )
         .await?;
 
-        // Surface a body-level error before complaining about a missing token.
         if let Some(error) = &tokens.error {
             let detail = tokens.error_description.clone().unwrap_or_default();
             return Err(AuthError::Upstream(format!(
@@ -126,7 +108,7 @@ impl LoginProvider for Telegram {
         )
         .await?;
 
-        // A replayed id_token from another login attempt fails here.
+        // A replayed id_token from another attempt fails here.
         if let (Some(expected), Some(got)) = (params.nonce, claims.nonce.as_deref())
             && expected != got
         {
@@ -148,7 +130,6 @@ impl LoginProvider for Telegram {
         Ok(Identity {
             provider: ProviderId::Telegram,
             provider_user_id: claims.sub.clone(),
-            // Telegram has no email to give. Not "unverified", absent.
             email: None,
             email_verified: false,
             display_name: claims.name.filter(|name| !name.trim().is_empty()),
@@ -252,8 +233,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_missing_id_token_fails_loudly_because_it_is_the_only_identity() {
-        // An access_token alone is useless: Telegram has no userinfo endpoint,
-        // so silently continuing would mean a login with no subject.
+        // Without userinfo, an access token alone gives no subject.
         let err = complete_with(r#"{"access_token":"only-this","token_type":"Bearer"}"#)
             .await
             .expect_err("no id_token means no identity");
@@ -288,8 +268,6 @@ mod tests {
 
     #[tokio::test]
     async fn an_unverifiable_id_token_never_produces_an_identity() {
-        // kid oidc-1, but the JWKS served here is empty, so verification must
-        // fail rather than fall back to trusting the payload.
         let forged = "eyJhbGciOiJSUzI1NiIsImtpZCI6Im9pZGMtMSJ9.eyJpc3MiOiJodHRwczovL29hdXRoLnRlbGVncmFtLm9yZyIsImF1ZCI6IjgxMDAwMDAwMDAiLCJzdWIiOiI5OTkiLCJleHAiOjk5OTk5OTk5OTl9.forged";
         let body = format!(r#"{{"access_token":"a","id_token":"{forged}"}}"#);
         let err = complete_with(&body)

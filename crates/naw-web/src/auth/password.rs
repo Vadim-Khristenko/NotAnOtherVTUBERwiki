@@ -1,9 +1,5 @@
-//! Local passwords: Argon2id hashing, verification, temporary passwords and
-//! the rules a new password has to meet.
-//!
-//! Hashing is deliberately slow and memory hungry, so every call here runs on
-//! the blocking pool: a burst of sign-ins must not stall the async workers that
-//! serve pages.
+//! Local passwords: Argon2id, temporary passwords and the rules for a new one.
+//! Hashing runs on the blocking pool so sign-ins never stall page serving.
 
 use std::sync::OnceLock;
 
@@ -11,14 +7,12 @@ use argon2::Argon2;
 use argon2::password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash};
 use rand::Rng;
 
-/// Shortest acceptable password, in characters. Length does more than any
-/// composition rule, and ten is where guessing stops being a weekend job.
+/// Shortest acceptable password, in characters.
 pub const MIN_LEN: usize = 10;
-/// Longest accepted password. Argon2 does not care, but an unbounded field is
-/// a free way to make the server hash megabytes.
+/// Longest accepted password, so nobody makes the server hash megabytes.
 pub const MAX_LEN: usize = 256;
 
-/// Why a new password was refused. Each maps to its own message.
+/// Why a new password was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Problem {
     TooShort,
@@ -30,7 +24,7 @@ pub enum Problem {
 }
 
 impl Problem {
-    /// The message key under `account.` in the language packs.
+    /// The message key under `account.`.
     pub fn key(self) -> &'static str {
         match self {
             Self::TooShort => "password_too_short",
@@ -43,7 +37,7 @@ impl Problem {
     }
 }
 
-/// Checks a new password against the rules, before anything is hashed.
+/// Checks a new password against the rules before hashing.
 pub fn check_new(
     password: &str,
     confirm: &str,
@@ -74,7 +68,7 @@ pub fn check_new(
     Ok(())
 }
 
-/// Hashes a password into a PHC string (`$argon2id$v=19$...`).
+/// Hashes a password into a PHC string.
 pub async fn hash(password: String) -> Result<String, naw_core::error::AppError> {
     tokio::task::spawn_blocking(move || {
         Argon2::default()
@@ -92,8 +86,7 @@ pub async fn hash(password: String) -> Result<String, naw_core::error::AppError>
     })
 }
 
-/// A hash of nothing in particular, verified against when the account does
-/// not exist, so "no such user" and "wrong password" take the same time.
+/// Verified against when there is no account, so timing reveals nothing.
 fn dummy_hash() -> &'static str {
     static DUMMY: OnceLock<String> = OnceLock::new();
     DUMMY.get_or_init(|| {
@@ -104,9 +97,7 @@ fn dummy_hash() -> &'static str {
     })
 }
 
-/// Verifies `password` against a stored PHC string. `None` (no account, or an
-/// account without a password) still spends the full verification time and
-/// then answers false.
+/// Verifies against a stored PHC string; `None` costs the same and fails.
 pub async fn verify(password: String, stored: Option<String>) -> bool {
     let known = stored.is_some();
     let result = tokio::task::spawn_blocking(move || {
@@ -123,12 +114,10 @@ pub async fn verify(password: String, stored: Option<String>) -> bool {
     known && result
 }
 
-/// Alphabet for temporary passwords: no `0 o 1 l i`, so a password read out
-/// over voice chat or copied off a phone screen arrives intact.
+/// No `0 o 1 l i`, so a password read aloud arrives intact.
 const TEMP_ALPHABET: &[u8] = b"23456789abcdefghjkmnpqrstuvwxyz";
 
-/// A temporary password like `k7m2-x9qa-rt4e-hn3w`: sixteen characters from a
-/// 31 symbol alphabet, about 79 bits, in groups that are easy to read aloud.
+/// A temporary password like `k7m2-x9qa-rt4e-hn3w`, about 79 bits.
 pub fn temporary() -> String {
     let mut rng = rand::rng();
     let mut out = String::with_capacity(19);
@@ -185,7 +174,6 @@ mod tests {
             Err(Problem::OneCharacter)
         );
         assert_eq!(check_new(ok, ok, "u", Some(ok)), Err(Problem::Unchanged));
-        // Length counts characters, not bytes: ten Cyrillic letters are enough.
         let ru = "пароль-тут";
         assert_eq!(check_new(ru, ru, "u", None), Ok(()));
     }

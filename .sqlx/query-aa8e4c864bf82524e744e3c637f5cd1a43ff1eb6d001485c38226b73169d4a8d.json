@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"files!\", COALESCE(sum(size_bytes), 0)::bigint AS \"bytes!\"\n           FROM media WHERE wiki_id = $1 AND uploader_id = $2 AND created_at > now() - interval '1 day'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "files!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "aa8e4c864bf82524e744e3c637f5cd1a43ff1eb6d001485c38226b73169d4a8d"
+}

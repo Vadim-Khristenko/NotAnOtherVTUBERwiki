@@ -1,12 +1,7 @@
-//! One account, seen by the admins of this wiki: `/admin/user/{username}`.
+//! One account as this wiki's admins see it: `/admin/user/{username}`.
 //!
-//! Everything about the person in one place: who they are, what they did here,
-//! what they may do (role plus individual overrides), what was done about them
-//! (sanctions, including lifted ones), and notes only admins read. Every
-//! control is a POST, like the rest of the panel.
-//!
-//! Nobody acts on themselves here, and nobody acts on an account at or above
-//! their own role: the same rule `admin::may_reset` applies to passwords.
+//! Role and overrides, sanctions, notes, and account actions. Nobody acts on
+//! themselves or on an account at or above their own role.
 
 use axum::extract::{Extension, Form, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -123,7 +118,6 @@ pub async fn show(
     .fetch_all(&state.db)
     .await?;
 
-    // What the role alone gives this person, and what is overridden.
     let overrides = sqlx::query!(
         r#"SELECT o.capability, o.allowed, u.username AS "set_by?"
            FROM user_capabilities o LEFT JOIN users u ON u.id = o.set_by
@@ -234,7 +228,6 @@ pub async fn show(
         })
         .collect();
 
-    // The curator looking after this person, and who could.
     let curator = sqlx::query_scalar!(
         "SELECT u.username FROM curatorships c JOIN users u ON u.id = c.curator_id
          WHERE c.wiki_id = $1 AND c.user_id = $2",
@@ -302,8 +295,8 @@ pub async fn show(
     )
 }
 
-/// Who may set an override for `cap`. Granting needs the capability yourself;
-/// the ones that decide who may do what need an owner.
+/// Granting an override needs the capability yourself; the capabilities that
+/// decide who may do what need an owner.
 fn may_override(ctx: &Ctx, cap: Capability, granting: bool) -> Result<(), &'static str> {
     if !ctx.actor.can(Capability::UserRoleManage) {
         return Err("changing rights needs admin rights");
@@ -423,7 +416,7 @@ pub struct SanctionForm {
     kind: String,
     #[serde(default)]
     reason: String,
-    /// Days until it ends on its own; 0 or empty for no end.
+    /// Days until it ends on its own; 0 or empty for never.
     #[serde(default)]
     days: String,
 }
@@ -458,8 +451,7 @@ pub async fn add_sanction(
         }
     };
     let reason = form.reason.trim();
-    // A sanction without a reason is a grudge. The person, and the next admin,
-    // deserve to read why.
+    // The person and the next admin deserve to read why.
     if reason.is_empty() || reason.chars().count() > REASON_MAX {
         return Ok(pages::see_other(&format!(
             "/admin/user/{}?done=reason_needed",
@@ -661,9 +653,7 @@ pub async fn end_sessions(
     Ok(back(&t, "sessions_ended"))
 }
 
-/// POST /admin/user/{name}/avatar/remove. For a picture that should not be
-/// on the wiki. The account can upload another one, which is what the notes
-/// and sanctions are for.
+/// POST /admin/user/{name}/avatar/remove
 pub async fn remove_avatar(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -732,8 +722,7 @@ pub async fn set_curator(
         .execute(&state.db)
         .await?;
     } else {
-        // Only someone who is a curator or above on this wiki may look after
-        // people here, and nobody curates themselves.
+        // Only a curator or above on this wiki, and never oneself.
         let Some(curator_id) = sqlx::query_scalar!(
             "SELECT u.id FROM users u JOIN wiki_memberships m ON m.user_id = u.id
              WHERE lower(u.username) = $1 AND m.wiki_id = $2

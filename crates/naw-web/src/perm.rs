@@ -1,18 +1,9 @@
 //! Who may do what.
 //!
-//! Two axes decide it. `users.global_role` covers the whole install and is how
-//! the operator reaches every wiki. `wiki_memberships.role` covers one wiki and
-//! is what an owner hands out. On top of both sits a small set of per-wiki
-//! switches in `wikis.settings.permissions`, so a community can open editing to
-//! anonymous visitors or close it to verified accounts only without a migration
-//! and without a deploy.
-//!
-//! The default is the important part: **a guest can read and nothing else.**
-//! Before this module existed, `/new` and `/{slug}/edit` were open to the
-//! internet and every revision was written with `author_id` NULL.
-//!
-//! Everything here is a pure function over resolved roles. The one query lives
-//! in `resolve`, at the bottom, so the rules can be tested without a database.
+//! An install-wide role (`users.global_role`), a per-wiki role
+//! (`wiki_memberships.role`) and per-wiki switches in
+//! `wikis.settings.permissions`. By default a guest can only read. Everything
+//! is a pure function over resolved roles except [`resolve`].
 
 use serde_json::Value;
 use uuid::Uuid;
@@ -21,37 +12,31 @@ use naw_core::error::AppError;
 
 use crate::auth::session::CurrentUser;
 
-/// One thing a request can be allowed to do.
-///
-/// Deliberately coarse. A capability per button is how permission systems rot
-/// into something nobody can reason about; these are the distinctions that
-/// actually change who is trusted.
+/// One thing a request can be allowed to do. Deliberately coarse.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Capability {
     /// Create a page that does not exist yet.
     PageCreate,
-    /// Save a new revision over a page that does. Reverting is this, not a
-    /// capability of its own: a revert writes an ordinary revision, and an
-    /// editor who may edit may also undo.
+    /// Save a new revision over an existing page, reverts included.
     PageEdit,
-    /// Archive a page, or bring an archived one back.
+    /// Archive a page, or restore an archived one.
     PageDelete,
-    /// Freeze a page against further edits, or unfreeze it.
+    /// Protect a page against edits, or lift it.
     PageLock,
     /// Mark a revision as checked.
     RevisionPatrol,
     /// Read the audit log.
     AuditRead,
-    /// Reach the admin panel at all.
+    /// Reach the admin panel.
     AdminPanel,
-    /// Change what another account is allowed to do.
+    /// Change what another account may do.
     UserRoleManage,
-    /// Change a wiki's name, locale, home page and permission switches.
+    /// Change a wiki's name, locale, home page and switches.
     WikiSettings,
 }
 
 impl Capability {
-    /// Stable identifier for audit rows and log lines. Never shown to readers.
+    /// Stable identifier for audit rows and logs.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::PageCreate => "page.create",
@@ -82,8 +67,7 @@ impl Capability {
         Self::ALL.into_iter().find(|cap| cap.as_str() == raw)
     }
 
-    /// Whether this capability writes to the wiki. A mute or a ban takes these
-    /// away whatever the role or an override says.
+    /// Whether this writes to the wiki; a mute or ban removes it regardless.
     pub fn is_write(self) -> bool {
         matches!(
             self,
@@ -95,9 +79,7 @@ impl Capability {
         )
     }
 
-    /// Capabilities only an owner may hand to someone individually. Each of
-    /// them is a way to change who may do what, so granting one is granting
-    /// power over the granter.
+    /// Only an owner may grant these individually: each changes who may do what.
     pub fn owner_only(self) -> bool {
         matches!(
             self,
@@ -106,29 +88,23 @@ impl Capability {
     }
 }
 
-/// An active sanction on this wiki, as far as permissions are concerned.
+/// An active sanction on this wiki.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sanction {
     /// May read, may not publish.
     Mute,
-    /// May read, and nothing else: no writing, no panel.
+    /// May read and nothing else.
     Ban,
 }
 
-/// Per-wiki role. Mirrors the `user_wiki_role` enum from migration 0001.
-///
-/// Declaration order is the privilege order, and `PartialOrd` is derived from
-/// it, so `role >= WikiRole::Moderator` is the whole ladder check. `Sponsor`
-/// sits above `Registered` because it is a visible tier in the community, but
-/// it grants no extra capability: paying for a wiki does not make you a
-/// moderator of it.
+/// Per-wiki role, mirroring the `user_wiki_role` enum. Declaration order is
+/// the privilege order. `Sponsor` is a visible tier with no extra capability.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WikiRole {
     Registered,
     Sponsor,
-    /// A trusted editor who looks after other people: may protect pages (up to
-    /// curator level), mark edits as checked, and edit the profiles of the
-    /// people assigned to them.
+    /// A trusted editor: protects pages up to curator level, checks edits, and
+    /// edits the profiles of the people assigned to them.
     Curator,
     Moderator,
     Admin,
@@ -170,23 +146,19 @@ impl WikiRole {
     ];
 }
 
-/// Cross-wiki role. Mirrors `users.global_role`, whose vocabulary migration
-/// 0003 pinned with a CHECK constraint.
+/// Install-wide role, mirroring `users.global_role`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GlobalRole {
-    /// Privileges come entirely from per-wiki membership.
+    /// Privileges come from per-wiki membership only.
     Registered,
-    /// Trusted on every wiki in this install, at moderator level.
+    /// Moderator level on every wiki of the install.
     Staff,
-    /// The operator. Every capability, everywhere, including wikis they are
-    /// not a member of. There is normally exactly one.
+    /// The operator: every capability everywhere.
     Root,
 }
 
 impl GlobalRole {
-    /// Unknown values read as the least privileged thing. A row that somehow
-    /// carries text the CHECK constraint should have refused must not be
-    /// treated as more trusted than a plain account.
+    /// Unknown values read as the least privileged role.
     pub fn parse(raw: &str) -> Self {
         match raw {
             "root" => Self::Root,
@@ -204,19 +176,16 @@ impl GlobalRole {
     }
 }
 
-/// The per-wiki switches, read from `wikis.settings.permissions`.
-///
-/// Defaults are what an absent key means, and they are the conservative
-/// choice on purpose: a fresh wiki does not accept anonymous writes.
+/// Per-wiki switches from `wikis.settings.permissions`. An absent key takes
+/// the conservative default.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rules {
     pub anonymous_create: bool,
     pub anonymous_edit: bool,
     pub registered_create: bool,
     pub registered_edit: bool,
-    /// When on, an account must have a verified email address before it can
-    /// write anything. Off by default, because most accounts here arrive
-    /// through OAuth and some providers hand over no address at all.
+    /// Require a verified email before any write. Off by default, since some
+    /// providers share no address.
     pub require_verified_email: bool,
 }
 
@@ -233,10 +202,8 @@ impl Default for Rules {
 }
 
 impl Rules {
-    /// Reads the switches out of a wiki's settings JSON. A missing block, a
-    /// block of the wrong shape, or a value of the wrong type all fall back to
-    /// the default for that one key. Malformed settings must never widen
-    /// access, and must never take a wiki down either.
+    /// Reads the switches; a malformed value falls back to that key's default,
+    /// never widening access.
     pub fn from_settings(settings: &Value) -> Self {
         let d = Self::default();
         let Some(block) = settings.get("permissions") else {
@@ -254,32 +221,29 @@ impl Rules {
     }
 }
 
-/// One request's authority over one wiki, resolved once per request.
+/// One request's authority over one wiki.
 #[derive(Clone, Debug)]
 pub struct Actor {
     /// `None` for an anonymous visitor.
     pub user_id: Option<Uuid>,
     pub username: Option<String>,
-    /// What the chrome shows for this person, when they set one.
+    /// The name the chrome shows, when set.
     pub display_name: Option<String>,
-    /// Where their avatar is served from, when they uploaded one.
+    /// The avatar's address, when set.
     pub avatar_url: Option<String>,
     pub email_verified: bool,
     pub global: GlobalRole,
-    /// The membership row, if there is one. A signed-in visitor with no
-    /// membership is still an ordinary editor on a public wiki, which is what
-    /// `effective_role` encodes.
+    /// The membership row, if any.
     pub membership: Option<WikiRole>,
     pub rules: Rules,
     /// Individual grants and denials on this wiki, over the role.
     pub overrides: Vec<(Capability, bool)>,
-    /// The strongest active sanction on this wiki, if any.
+    /// The strongest active sanction on this wiki.
     pub sanction: Option<Sanction>,
 }
 
 impl Actor {
-    /// The anonymous visitor. Used for a request with no session and as the
-    /// safe value when a wiki cannot be resolved.
+    /// The anonymous visitor, also the safe value when no wiki resolves.
     pub fn anonymous(rules: Rules) -> Self {
         Self {
             user_id: None,
@@ -299,12 +263,8 @@ impl Actor {
         self.user_id.is_some()
     }
 
-    /// The rung this actor stands on for ladder checks.
-    ///
-    /// A signed-in visitor with no membership row is a plain `Registered`
-    /// editor, which is how a public wiki is supposed to behave. Staff are
-    /// lifted to moderator on every wiki, and never lowered: an explicit
-    /// membership cannot demote a staff account below that floor.
+    /// The role for ladder checks: `Registered` for a signed-in visitor without
+    /// a membership, at least moderator for staff.
     pub fn effective_role(&self) -> Option<WikiRole> {
         let base = self
             .user_id
@@ -320,10 +280,8 @@ impl Actor {
         self.effective_role().is_some_and(|role| role >= floor)
     }
 
-    /// Anonymous writes follow the wiki switch. Signed-in writes follow the
-    /// other switch, except that a moderator is never locked out of their own
-    /// wiki by a setting: closing a wiki to registered editing is a decision
-    /// about visitors, not about staff.
+    /// Anonymous and signed-in writes follow their switches, but a moderator is
+    /// never locked out of their own wiki by one.
     fn may_write(&self, anonymous_allowed: bool, registered_allowed: bool) -> bool {
         if !self.is_signed_in() {
             return anonymous_allowed;
@@ -338,7 +296,7 @@ impl Actor {
         if self.global == GlobalRole::Root {
             return true;
         }
-        // Sanctions first: nothing an override grants survives a mute or a ban.
+        // Sanctions first: no override survives a mute or a ban.
         match self.sanction {
             Some(Sanction::Ban) => return false,
             Some(Sanction::Mute) if cap.is_write() => return false,
@@ -362,8 +320,7 @@ impl Actor {
             Capability::PageEdit => {
                 self.may_write(self.rules.anonymous_edit, self.rules.registered_edit)
             }
-            // Protecting a page and checking edits is curator work; how high
-            // a curator may protect is limited separately, in `may_protect`.
+            // How high a curator may protect is limited in `may_protect`.
             Capability::PageLock | Capability::RevisionPatrol => self.at_least(WikiRole::Curator),
             Capability::PageDelete | Capability::AuditRead => self.at_least(WikiRole::Moderator),
             Capability::AdminPanel | Capability::WikiSettings | Capability::UserRoleManage => {
@@ -372,11 +329,7 @@ impl Actor {
         }
     }
 
-    /// Editing one specific page: the capability, plus the page's protection.
-    ///
-    /// A protected page is editable by its protection level and above, which
-    /// is the point of protecting a page during a dispute: the people trusted
-    /// to settle it can still edit.
+    /// Editing one page: the capability, plus its protection level or above.
     pub fn can_edit_page(&self, protection: Option<WikiRole>) -> bool {
         if !self.can(Capability::PageEdit) {
             return false;
@@ -384,9 +337,8 @@ impl Actor {
         protection.is_none_or(|level| self.at_least(level))
     }
 
-    /// Whether this actor may change a page's protection from `from` to `to`.
-    /// Curators and up may protect, but never above their own role, and never
-    /// loosen a protection set above them.
+    /// Whether this actor may change a page's protection from `from` to `to`:
+    /// never above their own role, never loosening a protection set above them.
     pub fn may_protect(&self, from: Option<WikiRole>, to: Option<WikiRole>) -> bool {
         if !self.can(Capability::PageLock) {
             return false;
@@ -394,12 +346,8 @@ impl Actor {
         from.is_none_or(|level| self.at_least(level)) && to.is_none_or(|level| self.at_least(level))
     }
 
-    /// Whether this actor may hand out `target`.
-    ///
-    /// Nobody may grant a role at or above their own: an admin cannot promote
-    /// somebody to owner, and cannot promote them to admin either, because
-    /// that would let them build a peer who can demote them back. Root is
-    /// exempt, being the operator of the install.
+    /// Whether this actor may hand out `target`: only roles below their own, so
+    /// nobody can create a peer. Root is exempt.
     pub fn may_grant(&self, target: WikiRole) -> bool {
         if self.global == GlobalRole::Root {
             return true;
@@ -411,10 +359,8 @@ impl Actor {
     }
 }
 
-/// Builds the actor for one request against one wiki.
-///
-/// The membership lookup is the only query, and it is skipped entirely for an
-/// anonymous visitor.
+/// Builds the actor for one request against one wiki. Anonymous visitors
+/// cost no query.
 pub async fn resolve(
     db: &sqlx::PgPool,
     wiki_id: Uuid,
@@ -445,8 +391,7 @@ pub async fn resolve(
     .into_iter()
     .filter_map(|row| Capability::parse(&row.capability).map(|cap| (cap, row.allowed)))
     .collect();
-    // A ban outranks a mute. Install-wide bans never reach here: the session
-    // layer refuses those accounts before any permission is asked.
+    // A ban outranks a mute. Install-wide bans are refused by the session layer.
     let sanction = sqlx::query_scalar!(
         "SELECT kind FROM sanctions
          WHERE user_id = $1 AND wiki_id = $2 AND lifted_at IS NULL
@@ -565,8 +510,6 @@ mod tests {
 
     #[test]
     fn a_sponsor_is_a_tier_not_a_promotion() {
-        // The whole point: paying for the wiki buys a badge, not the ability
-        // to delete somebody's article.
         let sponsor = actor(GlobalRole::Registered, Some(WikiRole::Sponsor));
         let plain = actor(GlobalRole::Registered, Some(WikiRole::Registered));
         for cap in [
@@ -602,11 +545,9 @@ mod tests {
         assert!(staff.can(Capability::PageDelete));
         assert!(!staff.can(Capability::AdminPanel));
 
-        // An explicit `registered` row must not pull staff below the floor.
         let pinned = actor(GlobalRole::Staff, Some(WikiRole::Registered));
         assert_eq!(pinned.effective_role(), Some(WikiRole::Moderator));
 
-        // A membership above the floor still counts for more.
         let both = actor(GlobalRole::Staff, Some(WikiRole::Admin));
         assert_eq!(both.effective_role(), Some(WikiRole::Admin));
         assert!(both.can(Capability::AdminPanel));
@@ -633,8 +574,6 @@ mod tests {
 
     #[test]
     fn an_unknown_global_role_is_the_least_privileged_reading() {
-        // The CHECK constraint should make this unreachable. If it ever is
-        // reached, 'Root' with the wrong case must not mean root.
         assert_eq!(GlobalRole::parse("Root"), GlobalRole::Registered);
         assert_eq!(GlobalRole::parse("superuser"), GlobalRole::Registered);
         assert_eq!(GlobalRole::parse(""), GlobalRole::Registered);
@@ -647,7 +586,6 @@ mod tests {
         }));
         let guest = Actor::anonymous(open);
         assert!(guest.can(Capability::PageEdit));
-        // Opening edits did not open creation, and did not open moderation.
         assert!(!guest.can(Capability::PageCreate));
         assert!(!guest.can(Capability::PageDelete));
     }
@@ -712,7 +650,6 @@ mod tests {
         let moderator = actor(GlobalRole::Registered, Some(WikiRole::Moderator));
         assert!(moderator.can_edit_page(Some(WikiRole::Moderator)));
 
-        // A guest is stopped by the capability, before protection is consulted.
         assert!(!Actor::anonymous(Rules::default()).can_edit_page(None));
     }
 
@@ -738,7 +675,6 @@ mod tests {
         assert!(admin.may_grant(WikiRole::Registered));
         assert!(admin.may_grant(WikiRole::Sponsor));
         assert!(admin.may_grant(WikiRole::Moderator));
-        // Not a peer, and not a superior.
         assert!(!admin.may_grant(WikiRole::Admin));
         assert!(!admin.may_grant(WikiRole::Owner));
 
@@ -746,10 +682,8 @@ mod tests {
         assert!(owner.may_grant(WikiRole::Admin));
         assert!(!owner.may_grant(WikiRole::Owner));
 
-        // Root runs the install and is the escape hatch for everything above.
         assert!(actor(GlobalRole::Root, None).may_grant(WikiRole::Owner));
 
-        // A moderator cannot hand out roles at all.
         let moderator = actor(GlobalRole::Registered, Some(WikiRole::Moderator));
         assert!(!moderator.may_grant(WikiRole::Registered));
     }

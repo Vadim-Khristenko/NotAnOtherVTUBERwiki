@@ -1,12 +1,7 @@
-//! Signing in with a username and password, and changing that password.
+//! Username and password sign-in, and changing the password.
 //!
-//! Local passwords exist for invite-only wikis: an admin creates the account
-//! with a temporary password (see `admin::create_user`), the owner signs in
-//! with it once and replaces it right away. The session layer holds a session
-//! with a temporary password on the change page until that happens.
-//!
-//! Every mutation is a POST, which keeps SameSite=Lax the CSRF defence here as
-//! everywhere else.
+//! An admin creates an account with a temporary password; the session layer
+//! keeps such a session on the change page until the owner replaces it.
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -27,7 +22,7 @@ use crate::auth::{providers, routes, throttle};
 use crate::pages::{ENGINE_VERSION, template_error};
 use crate::resolve::Ctx;
 
-/// What the login form sends.
+/// The login form.
 #[derive(Deserialize)]
 pub struct LoginForm {
     #[serde(default)]
@@ -38,7 +33,7 @@ pub struct LoginForm {
     next: String,
 }
 
-/// What the change password form sends.
+/// The change password form.
 #[derive(Deserialize)]
 pub struct PasswordForm {
     #[serde(default)]
@@ -51,8 +46,7 @@ pub struct PasswordForm {
     next: String,
 }
 
-/// A page that must never be stored: it carries a form for secrets, or the
-/// name of whoever is signed in.
+/// A page never stored: it carries a secrets form or who is signed in.
 fn private_page(status: StatusCode, html: String) -> Response {
     (
         status,
@@ -73,10 +67,10 @@ async fn context(
     crate::resolve::context(state, headers, user).await
 }
 
-/// Everything the login page shows, beyond the chrome.
+/// The login page beyond the chrome.
 struct LoginView<'a> {
     next: &'a str,
-    /// Key under `account.` for the message at the top, if any.
+    /// Key under `account.` for the message at the top.
     error: Option<&'a str>,
     username: &'a str,
 }
@@ -123,8 +117,7 @@ fn render_login(
     Ok(private_page(status, html))
 }
 
-/// GET /login: the sign-in page, password form first when it is on, then one
-/// button per configured provider.
+/// GET /login: the password form when enabled, then one button per provider.
 pub async fn login_page(
     State(state): State<AppState>,
     Query(params): Query<BTreeMap<String, String>>,
@@ -135,15 +128,13 @@ pub async fn login_page(
         return Ok(crate::errors::not_found());
     }
     let next = safe_next(params.get("next").map(String::as_str));
-    // Signed in already: the form would only confuse. Go where they were going.
     if user.is_some() {
         return Ok(Redirect::to(&next).into_response());
     }
     let Some(ctx) = context(&state, &headers, None).await? else {
         return Ok(crate::errors::not_found());
     };
-    // `?err=` comes from our own redirects, so it selects a fixed message and
-    // is never echoed into the page.
+    // `?err=` selects a fixed message; it is never echoed.
     let error = params.get("err").map(|err| match err.as_str() {
         "cancelled" => "error_cancelled",
         "expired" => "error_expired",
@@ -210,16 +201,15 @@ pub async fn password_login(
     .fetch_optional(&state.db)
     .await?;
     let stored = row.as_ref().and_then(|row| row.password_hash.clone());
-    // Always one full verification, account or not: "no such user" and "wrong
-    // password" must look and take the same.
+    // Always one full verification, so an unknown user and a wrong password
+    // look and take the same.
     let verified = password::verify(form.password, stored).await;
     let Some(row) = row.filter(|_| verified) else {
         throttle::record_miss(&state.valkey, &username, ip).await;
         return again(StatusCode::UNAUTHORIZED, "error_password");
     };
     throttle::clear_account(&state.valkey, &username).await;
-    // The password was right; the account is suspended. Saying so is fair to
-    // its owner and tells an attacker nothing they did not just prove.
+    // The password was right, so saying the account is suspended reveals nothing.
     if session::install_banned(&state, row.id).await? {
         return again(StatusCode::FORBIDDEN, "error_suspended");
     }
@@ -293,9 +283,8 @@ fn render_password_form(
     Ok(private_page(status, html))
 }
 
-/// Whether the form has to ask for the current password. A temporary one was
-/// just typed to get here, and an account that never had a password (signed
-/// up with a provider) has nothing to confirm.
+/// Whether to ask for the current password: not for a temporary one just
+/// typed, nor for an account that never had a password.
 async fn needs_current(
     state: &AppState,
     user: &CurrentUser,
@@ -354,8 +343,7 @@ pub async fn change_password(
     {
         return refuse(StatusCode::BAD_REQUEST, problem.key());
     }
-    // A temporary password is not known in plain text here, so reuse is
-    // checked against the stored hash instead.
+    // A temporary password is only known as a hash here.
     if stored.is_some() && password::verify(form.password.clone(), stored).await {
         return refuse(StatusCode::BAD_REQUEST, password::Problem::Unchanged.key());
     }
@@ -370,8 +358,7 @@ pub async fn change_password(
     )
     .execute(&state.db)
     .await?;
-    // Every other device that might know the old password is signed out; this
-    // one stays in, because its owner just proved who they are.
+    // Sign out every other device; this one just proved who it is.
     let keep = session::session_id_from_headers(&headers);
     let ended = session::delete_others(&state, user.id, keep).await?;
     crate::audit::record_or_log(

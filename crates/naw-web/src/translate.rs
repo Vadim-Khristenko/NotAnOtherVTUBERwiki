@@ -1,14 +1,8 @@
-//! Articles in several languages.
+//! Articles in several languages: one slug, one page row per language.
 //!
-//! One slug is one article; each language is its own page row with its own
-//! history. This module answers three questions around that:
-//!
-//! - which languages an article exists in (the interlanguage list);
-//! - whether a translation is behind its source (the staleness notice);
-//! - what to show for a language the article does not exist in yet. That is
-//!   never a bare 404 while the article exists elsewhere: the reader gets the
-//!   languages it does exist in, and someone who may create pages gets
-//!   "translate", which opens the editor with the source text in place.
+//! Provides the interlanguage list, the staleness notice of a translation,
+//! and the page for a language an article does not exist in yet, which
+//! offers the other languages and, to editors, "translate".
 
 use axum::extract::{Extension, Form, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -30,7 +24,7 @@ pub struct Version {
     pub title: String,
 }
 
-/// Every language the article at `slug` exists in, the wiki's own first.
+/// Every language of the article at `slug`, the wiki's own first.
 pub async fn versions(state: &AppState, ctx: &Ctx, slug: &str) -> Result<Vec<Version>, AppError> {
     let rows = sqlx::query!(
         r#"SELECT COALESCE(locale, '') AS "locale!", title FROM pages
@@ -51,7 +45,7 @@ pub async fn versions(state: &AppState, ctx: &Ctx, slug: &str) -> Result<Vec<Ver
         .collect())
 }
 
-/// A language's name in itself, for "Русский" rather than "ru".
+/// A language's name in itself.
 pub fn native_name(ctx: &Ctx, locale: &str) -> String {
     ctx.skin
         .messages
@@ -60,7 +54,7 @@ pub fn native_name(ctx: &Ctx, locale: &str) -> String {
         .unwrap_or_else(|| locale.to_uppercase())
 }
 
-/// The interlanguage list for templates: every version but the one on screen.
+/// The interlanguage list: every version but the one on screen.
 pub fn others(ctx: &Ctx, slug: &str, all: &[Version]) -> Vec<minijinja::Value> {
     all.iter()
         .filter(|v| v.locale != ctx.content_locale)
@@ -75,14 +69,14 @@ pub fn others(ctx: &Ctx, slug: &str, all: &[Version]) -> Vec<minijinja::Value> {
         .collect()
 }
 
-/// A translation whose source moved on since it was made or last checked.
+/// A translation whose source moved on since it was made or checked.
 pub struct Stale {
     pub source_locale: String,
     pub source_href: String,
     pub diff_href: String,
 }
 
-/// Whether the page at `page_id` is a translation that is behind its source.
+/// Whether the page is a translation behind its source.
 pub async fn staleness(
     state: &AppState,
     ctx: &Ctx,
@@ -105,7 +99,6 @@ pub async fn staleness(
     .await?
     .flatten();
     let Some(current) = current else {
-        // The source is gone: nothing to be behind.
         return Ok(None);
     };
     if source_revision == Some(current) {
@@ -125,9 +118,8 @@ pub async fn staleness(
     }))
 }
 
-/// Where "translate this into the reader's language" goes, when that makes
-/// sense: the reader's interface language differs from the article's, the
-/// article does not exist in it yet, and the reader may create pages.
+/// Where "translate into the reader's language" goes, when the article is
+/// not in it yet and the reader may create pages.
 pub fn translate_offer(ctx: &Ctx, slug: &str, all: &[Version]) -> Option<(String, String)> {
     if ctx.lang == ctx.content_locale
         || all.iter().any(|v| v.locale == ctx.lang)
@@ -143,8 +135,8 @@ pub fn translate_offer(ctx: &Ctx, slug: &str, all: &[Version]) -> Option<(String
     Some((href, native_name(ctx, &ctx.lang)))
 }
 
-/// The page for an article that exists, but not in the requested language.
-/// `None` when it exists nowhere: that is an ordinary 404.
+/// The page for an article missing in the requested language; `None` when
+/// it exists nowhere.
 pub async fn missing(
     state: &AppState,
     ctx: &Ctx,
@@ -182,8 +174,7 @@ pub async fn missing(
             }
         })
         .map_err(pages::template_error)?;
-    // 404 on purpose: there is no page at this address yet, and search engines
-    // should not index the invitation to write one.
+    // 404: nothing lives here yet, and the invitation should not be indexed.
     Ok(Some(
         (
             StatusCode::NOT_FOUND,
@@ -200,8 +191,7 @@ pub struct FromQuery {
     from: Option<String>,
 }
 
-/// The source to translate from: `?from=` when that version exists, the
-/// wiki's own language otherwise, and any version as a last resort.
+/// The source: `?from=` when it exists, the wiki's language, then any.
 async fn source_page(
     state: &AppState,
     ctx: &Ctx,
@@ -251,7 +241,7 @@ async fn gate(
             &ctx.t("error.back_to_wiki"),
         )?));
     }
-    // Already translated: edit that version instead of starting a second one.
+    // Already translated: edit that version instead.
     if pages::find_page(&state.db, ctx.wiki.id, slug, &ctx.content_locale)
         .await?
         .is_some()
@@ -297,8 +287,7 @@ pub async fn form(
             title_value: &source.title,
             summary_value: "",
             body_md: &source.body_md,
-            // The revision translated from: stored as the point the
-            // translation matches, so a later change to the source shows.
+            // The source revision translated from, stored so later changes show.
             base_revision: &source.revision_id.to_string(),
             locked: false,
             fixed_title: false,
@@ -341,8 +330,7 @@ pub async fn create(
         Ok(draft) => draft,
         Err(reason) => return Ok(pages::bad_request(reason)),
     };
-    // The translation matches the source revision the form was built from, if
-    // that really is a revision of the source; otherwise the current one.
+    // The posted base revision if it belongs to the source, else the current one.
     let matched = match pages::parse_uuid(&form.base_revision) {
         Some(id) => sqlx::query_scalar!(
             "SELECT id FROM revisions WHERE id = $1 AND page_id = $2",
@@ -358,8 +346,7 @@ pub async fn create(
     let page_id = Uuid::new_v4();
     let revision_id = Uuid::new_v4();
     let mut tx = state.db.begin().await?;
-    // The gate saw the slot free. A translation that landed since takes it,
-    // and this one is told so rather than getting a 500.
+    // A translation that landed since the check gets a 409, not a 500.
     match sqlx::query!(
         "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale,
                             translation_source_locale, translation_source_revision_id)

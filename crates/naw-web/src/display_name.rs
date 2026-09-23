@@ -1,37 +1,22 @@
-//! Display names: what people are called on the wiki, next to the username
-//! that addresses them.
+//! Display names: any script, minus characters that break layout or hide.
 //!
-//! A username is an identifier: lowercase Latin, stable, typed into URLs. A
-//! display name is a name: `VAI (Dev Snack)`, `Маша`, `محمد`, `🍓 Berry`. Any
-//! script goes. What is removed is the handful of characters that exist to
-//! break layout or to hide something:
-//!
-//! - control characters, and line or paragraph separators;
-//! - bidi overrides and isolates (U+202A to U+202E, U+2066 to U+2069) and the
-//!   LRM/RLM marks. Templates render the name inside `<bdi>`, which isolates
-//!   right-to-left text properly, so an Arabic or Hebrew name displays right
-//!   and cannot flip the text around it;
-//! - invisible characters: zero width space, word joiner, the byte order mark,
-//!   soft hyphen, tag characters. ZWJ and ZWNJ stay, because emoji sequences,
-//!   Arabic and the Indic scripts need them;
-//! - stacks of combining marks. Each grapheme (what a reader sees as one
-//!   character) keeps at most `MAX_GRAPHEME_CHARS` code points: plenty for a
-//!   letter with diacritics or a family emoji, not enough for zalgo.
-//!
-//! Spaces of every width become one plain space, and runs of them collapse.
+//! Removed: control characters and line separators; bidi overrides,
+//! isolates and marks (names render inside `<bdi>`); invisible characters,
+//! except ZWJ and ZWNJ, which scripts and emoji need; and combining marks
+//! past `MAX_GRAPHEME_CHARS` per grapheme, against zalgo. Whitespace runs
+//! become one space.
 
 use unicode_segmentation::UnicodeSegmentation;
 
 /// Longest display name, in graphemes.
 pub const MAX_LEN: usize = 48;
-/// Code points one grapheme may carry. A family emoji is seven, a letter with
-/// three diacritics is four.
+/// Code points one grapheme may carry; a family emoji is seven.
 const MAX_GRAPHEME_CHARS: usize = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Problem {
     TooLong,
-    /// Nothing visible was left after cleaning.
+    /// Nothing visible was left.
     Invisible,
 }
 
@@ -44,10 +29,10 @@ impl Problem {
     }
 }
 
-/// Characters that are removed outright.
+/// Characters removed outright.
 fn is_dropped(c: char) -> bool {
     let cp = c as u32;
-    // ZWJ (200D) and ZWNJ (200C) are real text; everything else here is not.
+    // ZWJ and ZWNJ are real text.
     if matches!(cp, 0x200C | 0x200D) {
         return false;
     }
@@ -72,13 +57,11 @@ fn is_dropped(c: char) -> bool {
         )
 }
 
-/// Cleans a display name. `Ok(None)` means "no display name": the username is
-/// shown instead.
+/// Cleans a display name; `Ok(None)` means none, show the username.
 pub fn clean(input: &str) -> Result<Option<String>, Problem> {
     let kept: String = input
         .chars()
-        // Spaces first: a tab or a newline is a control character too, and it
-        // should become a space rather than glue two words together.
+        // Before control characters go, so a tab still separates words.
         .map(|c| if c.is_whitespace() { ' ' } else { c })
         .filter(|c| !is_dropped(*c))
         .collect();
@@ -102,8 +85,7 @@ pub fn clean(input: &str) -> Result<Option<String>, Problem> {
     }
     let trimmed = out.trim_end().to_string();
     if trimmed.is_empty() {
-        // An input that was only spaces clears the name; one that had
-        // characters and lost them all was an attempt at an invisible name.
+        // Only spaces clears the name; losing every character was an invisible name.
         return if input.trim().is_empty() {
             Ok(None)
         } else {

@@ -7,8 +7,7 @@ use crate::auth::{random_token, token_hash};
 /// Ten minutes to finish the provider round trip.
 const TTL_SECONDS: u64 = 600;
 
-/// Why the login started: plain sign-in or attaching an identity to an
-/// existing session.
+/// Plain sign-in, or attaching an identity to the current account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Flow {
     Login,
@@ -21,9 +20,9 @@ pub struct FlowState {
     pub mode: Flow,
     pub verifier: String,
     pub nonce: String,
-    /// Same-site path from `?next=`, already guarded, default "/".
+    /// Guarded same-site path from `?next=`.
     pub next: String,
-    /// User id for link flows, resolved by the caller from the session.
+    /// The account for a link flow.
     pub user_id: Option<uuid::Uuid>,
 }
 
@@ -60,7 +59,7 @@ fn key(state: &str) -> String {
     format!("auth:state:{}", hex::encode(token_hash(state)))
 }
 
-/// Creates the state, stores the flow JSON in Valkey, returns the state.
+/// Stores the flow in Valkey and returns its state token.
 pub async fn begin(
     valkey: &deadpool_redis::Pool,
     state_in: FlowState,
@@ -92,8 +91,7 @@ pub async fn begin(
     Ok(state)
 }
 
-/// Takes the stored state (GETDEL keeps it single use) and returns the flow
-/// when it matches the provider it was issued for.
+/// Takes the state (GETDEL, single use) when it matches the provider.
 pub async fn take(
     valkey: &deadpool_redis::Pool,
     state: &str,
@@ -114,7 +112,6 @@ pub async fn take(
     let stored: Stored =
         serde_json::from_str(&raw).map_err(|_| crate::auth::AuthError::StateExpired)?;
     if stored.provider != provider {
-        // Burned for good: a state never crosses providers.
         return Err(crate::auth::AuthError::StateExpired);
     }
     Ok(FlowState {

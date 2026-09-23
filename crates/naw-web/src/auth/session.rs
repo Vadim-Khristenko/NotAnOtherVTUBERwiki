@@ -1,8 +1,5 @@
-//! Cookie sessions backed by the `sessions` table.
-//!
-//! One row per login, the cookie carries the session UUID, no signing:
-//! the value is a random UUID and the server owns the lookup. Loading a
-//! session joins users, expired rows delete themselves on sight.
+//! Cookie sessions in the `sessions` table. The cookie holds a random UUID
+//! and the server owns the lookup; expired rows are deleted on sight.
 
 use axum::body::Body;
 use axum::extract::State;
@@ -17,35 +14,26 @@ use naw_core::state::AppState;
 
 pub const SESSION_COOKIE: &str = "naw_session";
 
-/// The signed-in user attached to every request as `Option<CurrentUser>`.
-///
-/// Only `id` has a reader so far. The rest is what the settings and profile
-/// pages will render, and loading it here means those pages need no second
-/// query.
+/// The signed-in user, attached to every request as `Option<CurrentUser>`.
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct CurrentUser {
     pub id: Uuid,
     pub username: String,
-    /// What people read instead of the username, when set. Already cleaned by
-    /// `display_name::clean`; templates still render it inside `<bdi>`.
+    /// Already cleaned by `display_name::clean`; rendered inside `<bdi>`.
     pub display_name: Option<String>,
-    /// The avatar's address under /media, when one is set.
+    /// The avatar's address under `/media`.
     pub avatar_url: Option<String>,
     pub email: Option<String>,
     pub email_verified: bool,
     pub global_role: String,
-    /// Preferred interface language. Outranks `Accept-Language`, because
-    /// somebody who picked a language in their settings means it, and their
-    /// browser may well be somebody else's browser.
+    /// Preferred interface language; outranks `Accept-Language`.
     pub locale: String,
-    /// The password was issued by an admin and has not been replaced yet.
-    /// Until it is, the session reaches only the change password page.
+    /// An admin-issued password not replaced yet; only the change page is open.
     pub must_change_password: bool,
 }
 
-/// Builds the session cookie attributes: Path=/, HttpOnly, SameSite=Lax,
-/// Secure when the base URL is https, Max-Age from the session TTL.
+/// Path=/, HttpOnly, SameSite=Lax, Secure on https, Max-Age from the TTL.
 fn build_cookie(value: &str, max_age_secs: i64, secure: bool) -> Cookie<'static> {
     let mut cookie = Cookie::build((SESSION_COOKIE, value.to_owned()))
         .path("/")
@@ -90,8 +78,7 @@ pub fn session_id_from_headers(headers: &HeaderMap) -> Option<Uuid> {
     None
 }
 
-/// Loads the session joined with the user row. Expired rows delete
-/// themselves on sight.
+/// Loads the session with its user; an expired row is deleted.
 pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
     let row = sqlx::query!(
         r#"
@@ -103,7 +90,7 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.id = $1
-          -- An install-wide ban ends the account's sessions where they stand.
+          -- An install-wide ban ends the sessions where they stand.
           AND NOT EXISTS (
             SELECT 1 FROM sanctions b
             WHERE b.user_id = u.id AND b.wiki_id IS NULL AND b.kind = 'ban'
@@ -161,8 +148,7 @@ pub async fn create(
     Ok(id)
 }
 
-/// Ends every session of `user_id` except `keep`. A password change or an
-/// admin reset signs out every other device that might hold the old one.
+/// Ends every session of `user_id` except `keep`.
 pub async fn delete_others(
     state: &AppState,
     user_id: Uuid,
@@ -201,27 +187,23 @@ pub async fn delete(state: &AppState, session_id: Uuid) {
         .await;
 }
 
-/// Inserts `Option<CurrentUser>` into the request extensions for every
-/// route. Anonymous stays anonymous, handlers opt in explicitly.
+/// Inserts `Option<CurrentUser>` into every request's extensions.
 pub async fn layer(State(app): State<AppState>, mut req: Request<Body>, next: Next) -> Response {
     let user = load_from_cookie(&app, req.headers()).await;
     let path = req.uri().path().to_string();
-    // An admin-issued password is a key handed over in plain text. Until its
-    // owner replaces it, the session is good for replacing it and nothing else.
+    // Until an admin-issued password is replaced, the session can only replace it.
     if user.as_ref().is_some_and(|u| u.must_change_password) && !reachable_before_change(&path) {
         let target = password_page_for(req.uri());
         return axum::response::Redirect::to(&target).into_response();
     }
     req.extensions_mut().insert(user);
     let mut response = next.run(req).await;
-    // Auth pages must never be cached with someone's chrome attached.
+    // Auth pages must never be cached with someone's chrome.
     if path.starts_with("/login")
         || path.starts_with("/account")
         || path.starts_with("/settings")
         || path.starts_with("/auth")
         || path.starts_with("/verify-email")
-        // The admin panel lists accounts and audit rows. Nothing about it
-        // belongs in a disk cache or a back-button restore.
         || path.starts_with("/admin")
     {
         response.headers_mut().insert(
@@ -232,9 +214,7 @@ pub async fn layer(State(app): State<AppState>, mut req: Request<Body>, next: Ne
     response
 }
 
-/// Paths a session with a temporary password may still use: the page that
-/// replaces it, signing out, the language switch and the things every page
-/// loads on its own (icons, the manifest, health checks).
+/// What a session with a temporary password may still reach.
 fn reachable_before_change(path: &str) -> bool {
     matches!(
         path,
@@ -255,8 +235,7 @@ fn reachable_before_change(path: &str) -> bool {
 /// Where a password change happens.
 pub const PASSWORD_PAGE: &str = "/settings/password";
 
-/// The change password page, remembering where the person was headed so the
-/// change lands them there. Only a local path is kept.
+/// The change password page, keeping a local destination.
 fn password_page_for(uri: &axum::http::Uri) -> String {
     let wanted = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
     let next = super::redirect::safe_next(Some(wanted));

@@ -1,15 +1,9 @@
 //! Uploaded images: storing, serving, and the upload page.
 //!
-//! What a file is gets decided by its first bytes, never by its name or the
-//! type the browser claims: PNG, JPEG, GIF, WebP and AVIF, and nothing else.
-//! SVG is refused outright, because an SVG is a document that can carry
-//! script. Files are addressed by the SHA-256 of their content, so the same
-//! image uploaded twice is stored once and its URL never changes meaning,
-//! which is what lets it be cached forever.
-//!
-//! Served from `/media/{prefix}/{file}` with `nosniff`, a CSP that allows
-//! nothing, and a year of caching. Thumbnails and WebP conversion wait for
-//! the worker; until then an image is served as uploaded.
+//! The type comes from the first bytes only: PNG, JPEG, GIF, WebP or AVIF,
+//! never SVG, which can carry script. Files are keyed by their SHA-256, so a
+//! URL never changes meaning and is cached for a year. Served with `nosniff`
+//! and a CSP that allows nothing.
 
 use axum::body::Body;
 use axum::extract::{Extension, Multipart, Path, State};
@@ -33,7 +27,7 @@ pub struct Kind {
     pub ext: &'static str,
 }
 
-/// Identifies an image by its magic bytes. `None` for anything else.
+/// The image type from its magic bytes.
 pub fn sniff(data: &[u8]) -> Option<Kind> {
     let kind = |mime, ext| Some(Kind { mime, ext });
     if data.starts_with(b"\x89PNG\r\n\x1a\n") {
@@ -54,8 +48,7 @@ pub fn sniff(data: &[u8]) -> Option<Kind> {
     None
 }
 
-/// The type to serve for a stored file, from its extension. Only the
-/// extensions `sniff` hands out exist in storage.
+/// The served type, from an extension `sniff` handed out.
 fn mime_for(file: &str) -> Option<&'static str> {
     let ext = file.rsplit_once('.')?.1;
     Some(match ext {
@@ -83,14 +76,14 @@ pub enum Refusal {
     Empty,
     TooLarge,
     NotAnImage,
-    /// The header says image but the dimensions are absurd.
+    /// An image header with absurd dimensions.
     BadDimensions,
-    /// The uploader reached their allowance for now.
+    /// The uploader's allowance is used up for now.
     Quota,
 }
 
 impl Refusal {
-    /// The message suffix, shared by `media.refused_*` and `settings.avatar_*`.
+    /// Suffix shared by `media.refused_*` and `settings.avatar_*`.
     pub fn slug(self) -> &'static str {
         match self {
             Self::Empty => "empty",
@@ -110,8 +103,8 @@ impl Refusal {
     }
 }
 
-/// Uploads one account may add to a wiki in a day, by count and by bytes.
-/// Wiki admins are not held to it.
+/// Daily allowance per account and wiki, by files and bytes; wiki admins
+/// are exempt.
 const DAILY_UPLOADS: i64 = 300;
 const DAILY_UPLOAD_BYTES: i64 = 2 * 1024 * 1024 * 1024;
 
@@ -133,8 +126,7 @@ async fn within_daily_quota(state: &AppState, ctx: &crate::resolve::Ctx) -> Resu
     Ok(used.files < DAILY_UPLOADS && used.bytes < DAILY_UPLOAD_BYTES)
 }
 
-/// The address a storage key is served from. Keys are `media/ab/hash.ext`
-/// and `avatars/hash.ext`, and both live under `/media/`.
+/// The URL of a storage key; every key is served under `/media/`.
 pub fn url_for_key(key: &str) -> String {
     match key.strip_prefix("media/") {
         Some(rest) => format!("/media/{rest}"),
@@ -142,7 +134,7 @@ pub fn url_for_key(key: &str) -> String {
     }
 }
 
-/// Checks and stores an image under `prefix` ("media" or "avatars").
+/// Checks and stores an image under `prefix` (`media`, `avatars`).
 pub async fn store(
     state: &AppState,
     prefix: &str,
@@ -159,8 +151,7 @@ pub async fn store(
         return Ok(Err(Refusal::NotAnImage));
     };
     let size = imagesize::blob_size(&data).ok();
-    // A 1 x 1 tracking pixel is still an image; a 100000 pixel wide banner is
-    // a way to make every reader's browser allocate gigabytes.
+    // A huge canvas makes every reader's browser allocate gigabytes.
     if let Some(s) = size
         && (s.width == 0 || s.height == 0 || s.width > 16384 || s.height > 16384)
     {
@@ -187,8 +178,8 @@ pub async fn store(
     }))
 }
 
-/// Reads the single file field from a multipart upload, stopping as soon as it
-/// goes past `max`, so an oversized upload is never held in memory whole.
+/// Reads the one file field of a multipart upload, stopping past `max`
+/// instead of buffering the whole upload.
 pub async fn read_file_field(
     multipart: &mut Multipart,
     field_name: &str,
@@ -217,8 +208,7 @@ pub async fn read_file_field(
     Ok(None)
 }
 
-/// A file name worth keeping for the media list: the base name, trimmed of
-/// anything that is not a plain character, and short.
+/// The base name without control characters, at most 120 characters.
 fn clean_filename(raw: &str) -> String {
     let base = raw.rsplit(['/', '\\']).next().unwrap_or(raw);
     let cleaned: String = base.chars().filter(|c| !c.is_control()).take(120).collect();
@@ -246,8 +236,7 @@ pub async fn serve(
     Path((prefix, file)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    // Only names this engine writes: 64 hex characters and a known extension,
-    // under a two-character hex shard, the avatars or the emotes directory.
+    // Only names this engine writes: 64 hex characters and a known extension.
     let Some((stem, _)) = file.rsplit_once('.') else {
         return Ok(crate::errors::not_found());
     };
@@ -286,7 +275,6 @@ pub async fn serve(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=31536000, immutable"),
     );
-    // An image, displayed and nothing else: no script, no frames, no guessing.
     h.insert(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static("default-src 'none'; sandbox"),
@@ -305,7 +293,7 @@ pub async fn serve(
     Ok(response)
 }
 
-/// The upload page: a form, and your recent uploads with their Markdown.
+/// The upload page with the uploader's recent files.
 async fn render_page(
     state: &AppState,
     ctx: &crate::resolve::Ctx,
@@ -374,7 +362,7 @@ fn refusal_message(state: &AppState, ctx: &crate::resolve::Ctx, refusal: Refusal
     )
 }
 
-/// Answers a refused upload in the shape the caller asked for.
+/// A refused upload, as JSON or as the page.
 async fn refuse(
     state: &AppState,
     ctx: &crate::resolve::Ctx,
@@ -406,8 +394,7 @@ pub async fn page(
     render_page(&state, &ctx, StatusCode::OK, None, None).await
 }
 
-/// POST /media/upload. Answers JSON to the editor's script (`Accept:
-/// application/json`) and a page to a plain form.
+/// POST /media/upload: JSON for the editor script, a page for a plain form.
 pub async fn upload(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,

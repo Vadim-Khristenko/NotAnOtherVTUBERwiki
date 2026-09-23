@@ -1,12 +1,5 @@
 //! The provider registry and the contract every login backend implements.
-//!
-//! A provider is a stateless holder of its own credentials, so the registry
-//! builds one on demand from config rather than living in `AppState`. The
-//! expensive part, the HTTP connection pool, is process-wide in
-//! `super::http::shared`.
-//!
-//! A provider is enabled exactly when its credentials exist. There is no
-//! second per-provider switch to forget to flip.
+//! A provider is enabled exactly when its credentials exist.
 
 pub mod discord;
 pub mod github;
@@ -30,28 +23,21 @@ pub struct AuthorizeParams<'a> {
 }
 
 pub struct CompleteParams<'a> {
-    /// The raw callback query. Kept as a map rather than typed fields because
-    /// Steam's OpenID 2.0 flow needs every `openid.*` key verbatim.
+    /// The raw callback query; Steam's OpenID needs every `openid.*` key.
     pub query: &'a BTreeMap<String, String>,
     pub redirect_uri: &'a str,
     pub code_verifier: Option<&'a str>,
-    /// Part of the OIDC contract: the id_token's `nonce` claim must match the
-    /// one sent to the authorize endpoint. GitHub and Discord take the
-    /// userinfo route and ignore it, Telegram checks it.
+    /// The nonce sent to the authorize endpoint, for the id_token check.
     pub nonce: Option<&'a str>,
-    /// Where a JWKS may be cached. `None` means fetch every time, which is what
-    /// the offline provider tests do.
+    /// Where a JWKS may be cached; `None` fetches every time.
     pub cache: Option<&'a deadpool_redis::Pool>,
     pub http: &'a dyn HttpFetch,
 }
 
 impl CompleteParams<'_> {
-    /// The authorization code, or the reason there is not one. A provider
-    /// callback without `code` is either a user pressing cancel or a crawler
-    /// hitting the URL, and neither is a 500.
+    /// The authorization code; a callback without one was cancelled or crawled.
     pub fn code(&self) -> Result<&str, AuthError> {
         if let Some(error) = self.query.get("error") {
-            // access_denied is the spec's word for "the user said no".
             return Err(if error == "access_denied" {
                 AuthError::Cancelled
             } else {
@@ -78,10 +64,7 @@ pub trait LoginProvider: Send + Sync {
     async fn complete(&self, params: &CompleteParams<'_>) -> Result<Identity, AuthError>;
 }
 
-/// Builds the provider for `id`, or `None` when it has no credentials.
-///
-/// Returning `None` is what makes an unconfigured provider answer 404 instead
-/// of starting a flow that cannot finish.
+/// The provider for `id`, or `None` without credentials, which makes it 404.
 pub fn resolve(auth: &AuthConfig, id: ProviderId) -> Option<Box<dyn LoginProvider>> {
     match id {
         ProviderId::Github => auth
@@ -96,16 +79,14 @@ pub fn resolve(auth: &AuthConfig, id: ProviderId) -> Option<Box<dyn LoginProvide
             .telegram
             .as_ref()
             .map(|creds| Box::new(telegram::Telegram::new(creds)) as Box<dyn LoginProvider>),
-        // Google, Yandex, Twitch and Steam land in the next slices. Until then
-        // they are honestly absent rather than half wired.
+        // Not implemented yet.
         ProviderId::Google | ProviderId::Yandex | ProviderId::Twitch | ProviderId::Steam => None,
-        // The dev provider does not go through the OAuth round trip at all,
-        // it has its own handler.
+        // The dev provider has its own handler.
         ProviderId::Dev => None,
     }
 }
 
-/// The providers a user can actually click right now, in display order.
+/// The providers a user can click now, in display order.
 pub fn enabled(auth: &AuthConfig) -> Vec<Box<dyn LoginProvider>> {
     [
         ProviderId::Github,
@@ -151,8 +132,6 @@ mod tests {
 
     #[test]
     fn unimplemented_providers_are_none_even_with_credentials() {
-        // Credentials for a provider that has no backend yet must not produce a
-        // half-wired flow that dead-ends after the redirect.
         let auth = AuthConfig {
             google: Some(creds()),
             yandex: Some(creds()),
@@ -246,7 +225,6 @@ mod tests {
             Err(AuthError::BadRequest(_))
         ));
 
-        // A present but empty code is malformed, not a valid code.
         let blank = query(&[("code", "")]);
         assert!(matches!(
             params(&blank, &http).code(),

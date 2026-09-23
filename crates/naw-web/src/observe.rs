@@ -1,13 +1,7 @@
-//! Per-request tracing: an id every response carries, and the detail that
-//! `NAW_LOG_TRACE=1` turns on.
+//! Per-request ids and the detail `NAW_LOG_TRACE=1` turns on.
 //!
-//! The id is the point of this module. When a reader reports that a page
-//! broke, `x-request-id` is the one string that ties their report to the exact
-//! lines in the log, without anybody having to guess from timestamps.
-//!
-//! Trace mode adds request headers. That is genuinely useful and genuinely
-//! sensitive, so header values go through `logging::header_is_loggable` and
-//! credentials never reach the log.
+//! Every response carries `x-request-id`, the string that ties a report to
+//! the log. Trace mode logs headers through `logging::header_is_loggable`.
 
 use std::time::Instant;
 
@@ -20,20 +14,16 @@ use uuid::Uuid;
 
 use naw_core::logging;
 
-/// Echoed on every response so a bug report can quote it.
+/// Echoed on every response.
 pub const REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
 
-/// A short id. Full UUIDs are unwieldy to read out loud or paste into a chat
-/// message, and 12 hex characters is plenty to find one request in a log.
+/// 12 hex characters: short enough to read out, enough to find a request.
 fn short_id() -> String {
     Uuid::new_v4().simple().to_string()[..12].to_string()
 }
 
-/// Whether a client-supplied id is safe to echo back and to log.
-///
-/// This value lands in a response header and inside log lines, so the charset
-/// is deliberately narrow: no whitespace, no control characters, nothing that
-/// could forge a header or smuggle a second line into the log.
+/// Whether a client-supplied id is safe to echo and log: a narrow charset,
+/// so it cannot forge a header or a log line.
 fn id_is_sane(value: &str) -> bool {
     (8..=64).contains(&value.len())
         && value
@@ -41,8 +31,7 @@ fn id_is_sane(value: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// A client-supplied id is reused when it looks sane, so a proxy or a load
-/// test can correlate its own view with ours. Anything else is replaced.
+/// Reuses a sane client id so a proxy can correlate; otherwise a new one.
 fn incoming_id(req: &Request<Body>) -> Option<String> {
     let raw = req.headers().get(&REQUEST_ID)?.to_str().ok()?;
     let trimmed = raw.trim();
@@ -63,14 +52,11 @@ fn log_headers(req: &Request<Body>, id: &str) {
     }
 }
 
-/// Wraps every request: assigns an id, times it, and attaches the id to the
-/// response. Trace mode additionally records the headers and the outcome.
+/// Assigns an id, times the request and attaches the id to the response.
 pub async fn layer(mut req: Request<Body>, next: Next) -> Response {
     let settings = logging::settings_from_env();
     let id = incoming_id(&req).unwrap_or_else(short_id);
-    // Handed down so an error page can print the same id the response header
-    // carries. The header is only attached on the way out, after every inner
-    // layer has finished, which is too late for anything that renders.
+    // Handed down so an error page can print the id before the header exists.
     req.extensions_mut()
         .insert(crate::errors::RequestId(id.clone()));
     let method = req.method().clone();
@@ -98,7 +84,6 @@ pub async fn layer(mut req: Request<Body>, next: Next) -> Response {
         response.headers_mut().insert(REQUEST_ID, value);
     }
 
-    // A 5xx is worth a line at any verbosity: it is our bug by definition.
     if status >= 500 {
         tracing::error!(request_id = %id, %method, path = %path, status, elapsed_ms, "request failed");
     } else if settings.trace {
@@ -139,11 +124,7 @@ mod tests {
 
     #[test]
     fn a_hostile_client_id_is_refused() {
-        // Tested against the validator directly rather than through a real
-        // Request: http refuses to build a header containing CR or LF at all,
-        // so those cases can never reach `incoming_id` through a socket. They
-        // are checked here anyway, because the validator is what would have to
-        // hold if this value ever arrived from somewhere else.
+        // http refuses CR and LF in a header, but the validator must hold anyway.
         for bad in [
             "short",
             "with space",
@@ -161,7 +142,6 @@ mod tests {
 
     #[test]
     fn a_rejected_header_value_falls_back_to_a_generated_id() {
-        // Reaching it through a real request, for the cases http will carry.
         for bad in ["short", "with space", "semi;colon"] {
             let req = request_with(Some(bad));
             assert_eq!(incoming_id(&req), None, "{bad:?}");
@@ -175,7 +155,6 @@ mod tests {
 
     #[test]
     fn the_header_name_is_the_conventional_one() {
-        // Proxies and log shippers look for exactly this spelling.
         assert_eq!(REQUEST_ID.as_str(), "x-request-id");
     }
 }

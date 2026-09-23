@@ -13,7 +13,7 @@ use crate::auth::session::CurrentUser;
 use crate::pages::{self, ENGINE_VERSION};
 use crate::resolve::context;
 
-/// Results on one page of output.
+/// Results per page.
 const LIMIT: i64 = 25;
 
 const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; charset=utf-8");
@@ -24,7 +24,7 @@ pub struct SearchQuery {
     q: String,
 }
 
-/// GET /search. Server rendered, no JavaScript, one form field.
+/// GET /search
 #[instrument(skip(state, user))]
 pub async fn search_page(
     State(state): State<AppState>,

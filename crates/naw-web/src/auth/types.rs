@@ -3,7 +3,7 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
-/// Round 1 plus round 2 provider slugs. The registry keys on this.
+/// Provider slugs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProviderId {
     Github,
@@ -13,7 +13,7 @@ pub enum ProviderId {
     Yandex,
     Twitch,
     Steam,
-    /// Loopback-only provider for end-to-end runs without secrets.
+    /// Loopback-only provider for end-to-end runs.
     Dev,
 }
 
@@ -46,40 +46,37 @@ impl ProviderId {
     }
 }
 
-/// The normalized outcome of a provider round trip. Tokens never land here:
-/// the backend drops them before returning.
+/// The normalized result of a provider round trip, without tokens.
 #[derive(Clone, Debug)]
 pub struct Identity {
     pub provider: ProviderId,
     pub provider_user_id: String,
-    /// Present only when the provider certified the address.
+    /// Present only when the provider verified the address.
     pub email: Option<String>,
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
-    /// Certified-email flag drives auto-link; Steam is always false.
+    /// Drives auto-linking.
     pub email_verified: bool,
-    /// The provider handle the username policy starts from.
+    /// The handle the username policy starts from.
     pub handle: String,
-    /// Trimmed profile for `oauth_identities.raw`. No tokens, no emails.
+    /// Trimmed profile for `oauth_identities.raw`; no tokens, no emails.
     pub raw: serde_json::Value,
 }
 
-/// Auth failures answer 4xx with a generic body, upstream trouble is 502,
-/// only our own bugs stay 500. The log carries the detail, never the page.
+/// 4xx with a generic body for auth failures, 502 upstream, 500 for bugs.
 #[derive(Debug)]
 pub enum AuthError {
-    /// Bad or missing state, unknown provider, malformed callback input.
+    /// Bad state, unknown provider or malformed callback.
     BadRequest(&'static str),
-    /// The user bailed out at the provider or denied consent.
+    /// Cancelled or consent denied at the provider.
     Cancelled,
-    /// State missing or already used, the flow must restart.
+    /// State missing or used; the flow restarts.
     StateExpired,
-    /// The provider or the cache is unhappy. Generic page, log has detail.
+    /// Provider or cache trouble.
     Upstream(String),
-    /// The sign-in was fine, but it would create an account and registration
-    /// is closed. Nothing was written.
+    /// The sign-in would create an account and registration is closed.
     RegistrationClosed,
-    /// The sign-in was fine, but the account is under an install-wide ban.
+    /// The account is under an install-wide ban.
     Suspended,
 }
 

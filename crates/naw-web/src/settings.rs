@@ -1,8 +1,5 @@
-//! The signed-in person's own settings: `/settings`.
-//!
-//! Not the admin panel. Everything here acts on the account that is asking and
-//! nobody else, so there are no capability checks beyond being signed in.
-//! Every change is a POST, which keeps SameSite=Lax the CSRF defence.
+//! The signed-in person's own settings at `/settings`. Every change acts on
+//! the asking account only and is a POST.
 
 use axum::extract::{Extension, Form, Multipart, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -19,16 +16,14 @@ use crate::pages::{ENGINE_VERSION, template_error};
 
 const AVATAR_CHANGES_PER_HOUR: i64 = 10;
 
-/// Sessions shown before the list is cut. Nobody is signed in on thirty
-/// devices on purpose, and the button below ends all of them anyway.
+/// Sessions listed before the list is cut.
 const SESSIONS_SHOWN: i64 = 20;
 
 fn sign_in_first() -> Response {
     Redirect::to(&format!("/login?next={}", encode_component("/settings"))).into_response()
 }
 
-/// A short, human label for a user agent: browser and platform, no version
-/// soup. Good enough to tell "my phone" from "the library computer".
+/// A short "browser on platform" label for a user agent.
 fn device_label(user_agent: Option<&str>) -> String {
     let ua = user_agent.unwrap_or_default();
     let browser = [
@@ -63,7 +58,7 @@ fn device_label(user_agent: Option<&str>) -> String {
 
 #[derive(Deserialize)]
 pub struct SettingsQuery {
-    /// Which change just landed, for a one-line confirmation.
+    /// Which change just landed.
     #[serde(default)]
     saved: Option<String>,
     /// Why the last change was refused, as a message key.
@@ -148,7 +143,7 @@ pub async fn page(
 
     let policy = crate::policy::accounts(&state).await?;
 
-    // The saved preference, or "" when the account follows the browser.
+    // The saved preference, or "" to follow the browser.
     let chosen = if ctx.skin.messages.has(&user.locale) {
         user.locale.clone()
     } else {
@@ -179,7 +174,6 @@ pub async fn page(
                 linkable => linkable,
                 sessions => session_rows,
                 saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username" | "display_name" | "avatar" | "avatar_removed")),
-                // Only known keys, so a crafted link cannot pick the wording.
                 error => crate::pages::message_key(query.error.as_deref(), &["rename_", "display_name_", "avatar_"]),
                 rename_enabled => policy.rename_enabled,
                 rename_cooldown => policy.rename_cooldown_days,
@@ -216,8 +210,7 @@ pub async fn set_language(
         return Ok(sign_in_first());
     };
     let wanted = form.locale.trim();
-    // Only a language the wiki can actually show is stored; anything else
-    // means "follow the browser" rather than a value that silently does nothing.
+    // Anything the wiki cannot show means "follow the browser".
     let locale = if state.skin.current().messages.has(wanted) {
         wanted.to_string()
     } else {
@@ -230,8 +223,7 @@ pub async fn set_language(
     )
     .execute(&state.db)
     .await?;
-    // The `?lang=` cookie outranks the account setting, so a stale one would
-    // make this change look like it did nothing. The account wins from here.
+    // A stale `?lang=` cookie would outrank the new account setting.
     let mut response = Redirect::to("/settings?saved=language").into_response();
     if let Ok(value) = header::HeaderValue::from_str(&crate::lang::clear_cookie()) {
         response.headers_mut().append(header::SET_COOKIE, value);
@@ -311,9 +303,8 @@ pub async fn set_display_name(
     Ok(Redirect::to("/settings?saved=display_name").into_response())
 }
 
-/// POST /settings/avatar. One image, checked like any upload and held to the
-/// smaller avatar limit. The old file stays in storage: another account may
-/// have uploaded the same picture, and the key is its content hash.
+/// POST /settings/avatar: one image under the avatar limit. Old files stay
+/// in storage, where another account may share them by hash.
 pub async fn set_avatar(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -330,7 +321,6 @@ pub async fn set_avatar(
         ))
         .into_response()
     };
-    // Every new picture stays in storage, so changes are rationed.
     let recent = sqlx::query_scalar!(
         r#"SELECT count(*) AS "n!" FROM audit_log
            WHERE user_id = $1 AND action = 'user.avatar' AND created_at > now() - interval '1 hour'"#,
@@ -406,10 +396,7 @@ pub struct UsernameForm {
     current: String,
 }
 
-/// Why a rename was refused, as a message key under `settings.`.
-///
-/// The rules come from `policy::accounts`: whether renaming is on at all, the
-/// wait between two changes, and how long a former name stays reserved.
+/// Why a rename is refused under `policy::accounts`, as a `settings.` key.
 async fn rename_refusal(
     state: &AppState,
     policy: &naw_core::config::AccountPolicy,
@@ -446,16 +433,14 @@ async fn rename_refusal(
     {
         return Ok(Some("rename_too_soon"));
     }
-    // A password, when there is one, proves the person at the keyboard is the
-    // owner and not whoever found the laptop open.
+    // The password, when set, proves the owner is at the keyboard.
     if row.password_hash.is_some()
         && !crate::auth::password::verify(current_password.to_string(), row.password_hash).await
     {
         return Ok(Some("rename_password"));
     }
-    // Taken by an account, or still reserved as somebody else's former name.
-    // An alias older than the reservation period is free again, and one of
-    // your own former names is always yours to take back.
+    // Taken by an account, or reserved as someone else's former name; an
+    // expired alias is free, and your own former names are yours.
     let taken = sqlx::query!(
         "SELECT 1 AS one FROM users WHERE lower(username) = $1 AND id <> $2
          UNION ALL
@@ -490,14 +475,12 @@ pub async fn change_username(
     }
 
     let mut tx = state.db.begin().await?;
-    // An expired reservation of the wanted name, held by someone else, gives
-    // way now. A live one was refused above.
+    // An expired reservation of the wanted name gives way.
     sqlx::query!("DELETE FROM user_aliases WHERE lower(alias) = $1", wanted)
         .execute(&mut *tx)
         .await?;
-    // The old name stays with this account as an alias for the reservation
-    // period: nobody else can pick it up and pass for them, and old links to
-    // the profile keep working. With a limit of zero nothing is kept.
+    // The old name stays reserved as an alias, so nobody can pass for this
+    // account and old profile links keep working.
     if !policy.aliases_disabled && policy.max_aliases > 0 {
         sqlx::query!(
             "INSERT INTO user_aliases (alias, user_id) VALUES ($1, $2)
@@ -508,8 +491,7 @@ pub async fn change_username(
         .execute(&mut *tx)
         .await?;
     }
-    // Expired aliases of this account, then everything past the limit, oldest
-    // first.
+    // Expired aliases first, then everything past the limit, oldest first.
     sqlx::query!(
         "DELETE FROM user_aliases
          WHERE user_id = $1
@@ -529,7 +511,7 @@ pub async fn change_username(
     )
     .execute(&mut *tx)
     .await?;
-    // The profile page is addressed by name, so it moves with the account.
+    // The profile page is addressed by name.
     sqlx::query!(
         "UPDATE pages SET slug = $2, title = $2, updated_at = now()
          WHERE namespace = 'user' AND slug = $1",

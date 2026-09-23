@@ -1,10 +1,7 @@
 //! Open-redirect guard for `?next=` and other user-controlled targets.
 
-/// Accepts only same-site absolute paths: starts with a single `/`, no
-/// scheme, no authority, no backslashes. Everything else falls back to `/`.
-/// Percent-encodes a query parameter value. Keeps the RFC 3986 unreserved
-/// set and encodes every other byte, so a path with its own query string
-/// survives being carried inside another one.
+/// Percent-encodes a query parameter value, keeping only the RFC 3986
+/// unreserved set.
 pub fn encode_component(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -17,6 +14,8 @@ pub fn encode_component(value: &str) -> String {
     out
 }
 
+/// `raw` when it is a same-site absolute path (one leading `/`, no scheme,
+/// authority or backslash), `/` otherwise.
 pub fn safe_next(raw: Option<&str>) -> String {
     match raw {
         Some(value) if is_safe_path(value) => value.to_string(),
@@ -28,7 +27,6 @@ fn is_safe_path(value: &str) -> bool {
     if !value.starts_with('/') || value.starts_with("//") || value.contains('\\') {
         return false;
     }
-    // Control characters can smuggle header tricks, reject the rest.
     !value.chars().any(|c| c.is_ascii_control())
 }
 

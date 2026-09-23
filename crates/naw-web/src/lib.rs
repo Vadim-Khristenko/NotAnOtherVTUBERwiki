@@ -27,9 +27,8 @@ mod search;
 mod settings;
 mod translate;
 
-/// Account credentials for the command line: password hashing, temporary
-/// passwords and the username rule. Exposed on their own so the CLI can create
-/// the first account without the rest of the auth module becoming public.
+/// Credentials for the command line: password hashing, temporary passwords
+/// and the username rule.
 pub mod credentials {
     pub use crate::auth::password::{hash, temporary};
     pub use crate::auth::username::is_valid as username_is_valid;
@@ -43,17 +42,10 @@ use naw_core::state::AppState;
 use serde_json::json;
 use tracing::instrument;
 
-/// Builds the application router.
-///
-/// Two global guards keep malformed traffic from ever reaching a handler:
-/// oversized bodies are rejected with 413 before buffering, and a handler
-/// panic becomes a plain 500 instead of a dropped connection. Responses
-/// carry `nosniff` so browsers never reinterpret a body against its
-/// content type, and a Content-Security-Policy with a per-response script
-/// nonce (see csp.rs).
+/// Builds the application router: body size limit, panic guard, request ids,
+/// themed errors, sessions, `nosniff` and the CSP with a script nonce.
 pub fn router(state: AppState) -> Router {
-    // The language prefix has to come off before routing, so its layer wraps
-    // the finished router instead of sitting inside it. See locale_path.rs.
+    // The language prefix comes off before routing (see locale_path.rs).
     let routes = routes(state.clone());
     Router::new().fallback_service(
         tower::ServiceBuilder::new()
@@ -75,8 +67,7 @@ fn routes(state: AppState) -> Router {
             "/settings/password",
             get(account::password_page).post(account::change_password),
         )
-        // The first address of the password page, kept so an old link or a
-        // bookmark still lands somewhere.
+        // The old address of the password page.
         .route(
             "/account/password",
             get(|| async { axum::response::Redirect::permanent("/settings/password") }),
@@ -98,12 +89,9 @@ fn routes(state: AppState) -> Router {
             post(settings::end_other_sessions),
         )
         .route("/auth/dev", get(auth::routes::dev_login))
-        // The dev route is declared first so it wins over the generic
-        // `{provider}` match below.
+        // Before the generic `{provider}` route, so it wins.
         .route("/auth/{provider}", get(auth::routes::start))
         .route("/auth/{provider}/callback", get(auth::routes::callback))
-        // The admin panel. Every mutation is a POST, which is what makes
-        // SameSite=Lax the CSRF defence for this whole subtree. See admin.rs.
         .route("/admin", get(admin::overview))
         .route("/admin/users", get(admin::users))
         .route("/admin/users/role", post(admin::set_role))
@@ -221,39 +209,31 @@ fn routes(state: AppState) -> Router {
         .route("/{slug}/revert", post(history::revert))
         .route("/{slug}/patrol", post(history::patrol))
         .route("/{slug}/protect", post(protect::set))
-        // Declared before `.layer` on purpose: axum only wraps what already
-        // exists, and a fallback added afterwards would skip every middleware,
-        // including the one that turns a bare 404 into a page.
+        // Before `.layer`: a fallback added after would skip every middleware.
         .fallback(pages::fallback)
         .layer(
             tower::ServiceBuilder::new()
                 .layer(tower_http::catch_panic::CatchPanicLayer::new())
-                // Outside everything that renders a template, error pages
-                // included: the nonce a page prints must be the one its
-                // header allows.
+                // Outside everything that renders, so a page's nonce is the one its header allows.
                 .layer(axum::middleware::from_fn(csp::layer))
-                // Outermost after the panic guard, so even a request that dies
-                // downstream still gets an id in its response and its log line.
+                // Outermost after the panic guard, so every response gets an id.
                 .layer(axum::middleware::from_fn(observe::layer))
                 .layer(axum::middleware::from_fn_with_state(
                     state.clone(),
                     auth::session::layer,
                 ))
-                // Inside the session layer, because an error page shows who is
-                // signed in; outside the body limit, so a 413 is themed too.
+                // Inside the session layer, so an error page shows who is signed in;
+                // outside the body limit, so a 413 is themed too.
                 .layer(axum::middleware::from_fn_with_state(
                     state.clone(),
                     errors::layer,
                 ))
-                // Inside the session layer: a language switch never needs a
-                // session, and this way it answers before any handler runs.
                 .layer(axum::middleware::from_fn_with_state(
                     state.clone(),
                     lang::layer,
                 ))
-                // Sized for the largest single request: one uploaded image, or
-                // one article form. Everything else is held far lower by its
-                // extractor, since forms stop at axum's 2 MB default.
+                // Sized for the largest single request, an image or an article form.
+                // Other forms stop at axum's 2 MB default.
                 .layer(tower_http::limit::RequestBodyLimitLayer::new(
                     state
                         .config
@@ -273,20 +253,18 @@ fn routes(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// The body limit for the routes that carry an article: the editor, a new
-/// page, a translation, a profile and the preview. Everywhere else a form
-/// keeps axum's 2 MB default.
+/// The body limit of the routes that carry an article.
 fn text_form() -> axum::extract::DefaultBodyLimit {
     axum::extract::DefaultBodyLimit::max(pages::TEXT_FORM_MAX)
 }
 
-/// Liveness: the process is up. No database, no cache.
+/// Liveness: the process is up.
 #[instrument]
 async fn health() -> &'static str {
     "ok"
 }
 
-/// Readiness: deep check. One compile-checked query and one cache PING.
+/// Readiness: one query and one cache PING.
 #[instrument(skip(state))]
 async fn ready(State(state): State<AppState>) -> Result<Json<serde_json::Value>, AppError> {
     let row = sqlx::query!("SELECT 1 AS one").fetch_one(&state.db).await?;

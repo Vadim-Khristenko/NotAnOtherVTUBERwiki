@@ -1,17 +1,10 @@
-//! 7TV emotes: where they come from, the copy kept here, and `:name:` in
-//! articles.
+//! 7TV emotes: sources, the local copies, and `:name:` in articles.
 //!
-//! An admin adds sources: a 7TV user, whose active emote set is read, or one
-//! emote set. The sources are the allowlist; nothing else is ever fetched.
-//! A sync downloads every emote file once into storage, content addressed like
-//! uploads, so a reader's browser never talks to 7TV (which matters where 7TV
-//! is slow or blocked), and an article keeps its pictures when a set changes.
-//! The total is held to `emote_budget_bytes`, 1 GB unless configured.
-//!
-//! The renderer marks every `:name:` that is not a Unicode shortcode (see
-//! `naw_markdown::EMOTE_OPEN`). `expand` swaps a marker for the picture when a
-//! page is served, after the render cache, so adding or removing an emote
-//! never invalidates a cached article.
+//! Admins add 7TV users (their active set) or emote sets; those sources are
+//! the allowlist. A sync downloads each file once into storage, within
+//! `emote_budget_bytes`, so readers never contact 7TV. The renderer marks
+//! unknown shortcodes (see `naw_markdown::EMOTE_OPEN`) and [`expand`] swaps
+//! in the pictures after the render cache.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -32,7 +25,7 @@ use crate::pages::{self, ENGINE_VERSION, template_error};
 use crate::perm::Capability;
 
 const API: &str = "https://7tv.io/v3";
-/// Largest emote file accepted. A 2x animated WebP is rarely past 300 KB.
+/// Largest emote file accepted.
 const MAX_FILE: usize = 2 * 1024 * 1024;
 /// Downloads running at once during a sync.
 const IN_FLIGHT: usize = 6;
@@ -52,12 +45,12 @@ fn client() -> &'static reqwest::Client {
     })
 }
 
-/// What an admin typed, understood.
+/// A 7TV source an admin entered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
     /// A 7TV user id: their active emote set.
     User(String),
-    /// One emote set id, or "global".
+    /// An emote set id, or "global".
     Set(String),
 }
 
@@ -76,8 +69,8 @@ impl Source {
     }
 }
 
-/// Reads a 7TV link or id: `https://7tv.app/users/{id}`,
-/// `https://7tv.app/emote-sets/{id}`, `set:{id}`, `global`, or a bare user id.
+/// Reads `https://7tv.app/users/{id}`, `https://7tv.app/emote-sets/{id}`,
+/// `set:{id}`, `global`, or a bare user id.
 pub fn parse_source(input: &str) -> Option<Source> {
     let raw = input.trim();
     let id_ok =
@@ -111,7 +104,7 @@ pub fn parse_source(input: &str) -> Option<Source> {
 #[derive(Debug, Clone, PartialEq)]
 struct Remote {
     id: String,
-    /// The name in the set, which may differ from the emote's own name.
+    /// The name in the set, which may differ from the emote's own.
     name: String,
     animated: bool,
     url: String,
@@ -144,8 +137,7 @@ async fn get_json(url: &str) -> Result<Value, String> {
         .map_err(|_| "7TV sent something that is not JSON".into())
 }
 
-/// The file to keep for one emote: the 2x WebP, which is sharp on a dense
-/// screen at text height and keeps animation. Falls back to any WebP.
+/// The 2x WebP (sharp at text height, keeps animation), else any WebP.
 fn pick_file(emote: &Value) -> Option<Remote> {
     let data = emote.get("data")?;
     let host = data.get("host")?;
@@ -188,8 +180,7 @@ async fn fetch_set(source: &Source) -> Result<RemoteSet, String> {
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
-            // The set on their Twitch channel is the one they use; any other
-            // connection's set is the next best thing.
+            // Their Twitch channel's set first, then any other connection's.
             let set_of = |c: &Value| {
                 c.get("emote_set_id")
                     .and_then(Value::as_str)
@@ -285,7 +276,7 @@ async fn download(state: AppState, remote: Remote) -> Result<Stored, String> {
     Ok(Stored { remote, key, size })
 }
 
-/// Bytes all emotes take, counting a file shared by several names once.
+/// Bytes all emotes take, a file shared by several names counted once.
 async fn budget_used(state: &AppState) -> Result<i64, AppError> {
     Ok(sqlx::query_scalar!(
         r#"SELECT COALESCE(SUM(size_bytes), 0)::bigint AS "used!"
@@ -295,7 +286,7 @@ async fn budget_used(state: &AppState) -> Result<i64, AppError> {
     .await?)
 }
 
-/// Starts a sync in the background. The admin page shows its progress.
+/// Starts a sync in the background; the admin page shows its progress.
 pub fn spawn_sync(state: AppState, source_id: Uuid) {
     tokio::spawn(async move {
         if let Err(err) = sync(&state, source_id).await {
@@ -304,8 +295,8 @@ pub fn spawn_sync(state: AppState, source_id: Uuid) {
     });
 }
 
-/// Reads a source's set from 7TV and brings the local copy in line with it:
-/// new emotes are downloaded, gone ones removed, unchanged ones kept.
+/// Brings the local copy of a source in line with 7TV: downloads new
+/// emotes, removes gone ones, keeps unchanged ones.
 async fn sync(state: &AppState, source_id: Uuid) -> Result<(), AppError> {
     let Some(claim) = sqlx::query!(
         "UPDATE emote_sources SET status = 'syncing', started_at = now(), error = NULL
@@ -351,8 +342,7 @@ async fn run_sync(
     let db_err = |e: sqlx::Error| format!("database: {e}");
     let remote = fetch_set(source).await?;
 
-    // Names another source already holds stay with it: the first source to
-    // claim a name keeps it.
+    // The first source to claim a name keeps it.
     let taken: HashSet<String> = sqlx::query_scalar!(
         "SELECT name FROM emotes WHERE wiki_id = $1 AND source_id <> $2",
         wiki_id,
@@ -443,8 +433,6 @@ async fn run_sync(
     .await
     .map_err(db_err)?;
     for file in &stored {
-        // Take the display size from the file 7TV described, halved: the
-        // file is the 2x one, drawn at text height.
         sqlx::query!(
             "INSERT INTO emotes (wiki_id, name, source_id, provider_id, storage_key, width, height, animated, size_bytes)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -513,7 +501,7 @@ fn marked_names(html: &str) -> Vec<String> {
     names
 }
 
-/// The picture for one emote, drawn at text height.
+/// The picture for one emote; the stored file is 2x, drawn at half size.
 fn emote_img(name: &str, key: &str, width: i32, height: i32) -> String {
     format!(
         "<img class=\"emote\" src=\"{}\" alt=\":{name}:\" title=\"{name}\" width=\"{}\" height=\"{}\" loading=\"lazy\" decoding=\"async\" />",
@@ -523,8 +511,8 @@ fn emote_img(name: &str, key: &str, width: i32, height: i32) -> String {
     )
 }
 
-/// Replaces every marker for an emote this wiki has with its picture. A page
-/// without markers costs one substring search; one with markers, one query.
+/// Replaces every marker of an emote this wiki has with its picture. One
+/// substring search without markers, one query with them.
 pub async fn expand(state: &AppState, wiki_id: Uuid, html: String) -> Result<String, AppError> {
     if !html.contains(naw_markdown::EMOTE_OPEN) {
         return Ok(html);
@@ -580,7 +568,7 @@ pub async fn expand(state: &AppState, wiki_id: Uuid, html: String) -> Result<Str
 // Pages
 // ---------------------------------------------------------------------------
 
-/// GET /emotes: every emote this wiki has, with what to type for it.
+/// GET /emotes: every emote of this wiki with its text.
 pub async fn list(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -785,8 +773,7 @@ pub async fn resync(
     Ok(pages::see_other("/admin/emotes?done=syncing"))
 }
 
-/// POST /admin/emotes/{id}/remove. The source and its emotes go; the files
-/// stay in storage, where another wiki may share them.
+/// POST /admin/emotes/{id}/remove. Files stay in storage, shared by hash.
 pub async fn remove(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,

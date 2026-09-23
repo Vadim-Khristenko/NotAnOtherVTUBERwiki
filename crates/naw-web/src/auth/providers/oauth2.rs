@@ -1,5 +1,4 @@
-//! The parts of the authorization code flow that are identical everywhere:
-//! building the authorize URL and trading the code for a token.
+//! The shared parts of the authorization code flow.
 
 use serde::Deserialize;
 
@@ -8,21 +7,19 @@ use crate::auth::types::AuthError;
 
 use super::AuthorizeParams;
 
-/// Only the fields we use. Access tokens are held for the length of one
-/// callback and never stored; `id_token` is for the OIDC providers.
+/// The fields used; tokens live for one callback and are never stored.
 #[derive(Deserialize)]
 pub struct TokenResponse {
     pub access_token: Option<String>,
     pub id_token: Option<String>,
-    /// Providers signal failure in the body as often as in the status line.
+    /// Providers report failure in the body as often as in the status.
     pub error: Option<String>,
     pub error_description: Option<String>,
 }
 
 impl std::fmt::Debug for TokenResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Both tokens are credentials. A derived Debug would put them in the
-        // first log line someone adds while chasing a bad login.
+        // Both tokens are credentials.
         f.debug_struct("TokenResponse")
             .field("access_token", &presence(&self.access_token))
             .field("id_token", &presence(&self.id_token))
@@ -37,8 +34,7 @@ fn presence<T>(value: &Option<T>) -> &'static str {
 }
 
 impl TokenResponse {
-    /// The bearer token, or an upstream error. The provider's own error text
-    /// goes to the log, never to the page.
+    /// The bearer token, or an upstream error for the log.
     pub fn bearer(self) -> Result<String, AuthError> {
         if let Some(error) = self.error {
             let detail = self.error_description.unwrap_or_default();
@@ -52,11 +48,7 @@ impl TokenResponse {
     }
 }
 
-/// Builds an authorize URL with the standard parameter set.
-///
-/// Uses `Url` rather than string formatting so every value is percent encoded
-/// exactly once. A hand-built query here is how an open redirect or a broken
-/// scope gets shipped.
+/// The authorize URL, every value percent-encoded once by `Url`.
 pub fn authorize_url(
     endpoint: &str,
     client_id: &str,
@@ -75,8 +67,7 @@ pub fn authorize_url(
         query.append_pair("state", params.state);
         if let Some(challenge) = params.code_challenge {
             query.append_pair("code_challenge", challenge);
-            // S256 only. No provider we support accepts `plain`, and we would
-            // not send it if they did.
+            // S256 only.
             query.append_pair("code_challenge_method", "S256");
         }
         if let Some(nonce) = params.nonce {
@@ -89,9 +80,7 @@ pub fn authorize_url(
     Ok(url.to_string())
 }
 
-/// One token exchange. A struct rather than a parameter list because the two
-/// trailing booleans are provider quirks, and `true, false` at a call site says
-/// nothing about which quirk is which.
+/// One token exchange; the flags are provider quirks.
 pub struct Exchange<'a> {
     pub token_endpoint: &'a str,
     pub client_id: &'a str,
@@ -99,10 +88,9 @@ pub struct Exchange<'a> {
     pub code: &'a str,
     pub redirect_uri: &'a str,
     pub code_verifier: Option<&'a str>,
-    /// GitHub answers form-encoded unless the request asks for JSON.
+    /// GitHub answers form-encoded unless asked for JSON.
     pub accept_json: bool,
-    /// Telegram wants the client pair in an Authorization header instead of
-    /// the body.
+    /// Telegram wants the client pair in an Authorization header.
     pub use_basic_auth: bool,
 }
 
@@ -131,8 +119,7 @@ pub async fn exchange_code(
     let response = http
         .post_form(request.token_endpoint, &form, basic, request.accept_json)
         .await?;
-    // A non-2xx token response still tends to carry a useful JSON error, so
-    // parse first and let `bearer()` decide.
+    // Error responses often carry JSON; let `bearer()` decide.
     if !response.is_success() && response.body.is_empty() {
         return Err(AuthError::Upstream(format!(
             "token endpoint returned {} with an empty body",
@@ -167,8 +154,6 @@ mod tests {
         )
         .expect("builds");
 
-        // The scope separator is a space and the colon is legal in a query
-        // value, so exactly one encoding pass must be visible.
         assert!(url.contains("scope=read%3Auser+user%3Aemail"));
         assert!(
             url.contains("redirect_uri=https%3A%2F%2Fsnackers.wiki%2Fauth%2Fgithub%2Fcallback")
@@ -190,13 +175,12 @@ mod tests {
             &[],
         )
         .expect("builds");
-        // Exactly one redirect_uri survives, the injected one is inert data.
         assert_eq!(url.matches("redirect_uri=").count(), 1);
         assert!(url.contains("evil%26redirect_uri%3D"));
         assert!(!url.contains("code_challenge"));
     }
 
-    /// A GitHub-shaped exchange: secret in the body, JSON requested.
+    /// A GitHub-shaped exchange.
     fn github_exchange<'a>(code: &'a str, verifier: Option<&'a str>) -> Exchange<'a> {
         Exchange {
             token_endpoint: "https://github.com/login/oauth/access_token",

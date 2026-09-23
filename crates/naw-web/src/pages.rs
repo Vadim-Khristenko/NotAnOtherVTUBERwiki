@@ -1,15 +1,8 @@
 //! Serving and editing pages.
 //!
-//! **What is cached and what is not.** The `render_cache` row holds the body
-//! fragment only, keyed on the revision's content hash. Assembling the
-//! document around it happens on every request, because the chrome carries who
-//! is signed in and what they are allowed to do. Putting that in a shared cache
-//! row would serve one reader's name and one reader's Edit button to everybody,
-//! and no cache key short of "per user" would fix it.
-//!
-//! The split costs one template render per request, in microseconds, and keeps
-//! the expensive half (Markdown, sanitising, and later components and diagrams)
-//! running exactly once per revision.
+//! `render_cache` holds the body fragment only, keyed by the revision's
+//! content hash. The document around it is assembled per request, since the
+//! chrome depends on who is signed in and must never reach a shared cache row.
 
 use axum::body::Body;
 use axum::extract::{Extension, Form, Path, Query, State};
@@ -32,30 +25,27 @@ pub(crate) fn template_error(err: minijinja::Error) -> AppError {
     AppError::Internal
 }
 
-/// Engine version shown in the footer. Tracks the workspace release.
+/// Engine version shown in the footer.
 pub(crate) const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const TITLE_MAX: usize = 200;
 const SUMMARY_MAX: usize = 200;
-/// Largest article text, in bytes of Markdown. Images never count toward it:
-/// they are uploaded one file at a time under their own limit, and the text
-/// only holds a link to each.
+/// Largest article text, in bytes of Markdown. Images are uploaded
+/// separately and never count toward it.
 pub(crate) const BODY_MAX: usize = 5 * 1024 * 1024;
-/// Largest form that carries an article. A urlencoded body can be three
-/// times its text: every byte outside ASCII travels as `%XX`, and Cyrillic is
-/// two such bytes per letter. Plus room for the title, summary and the rest.
+/// Largest form carrying an article: urlencoding can triple the text.
 pub(crate) const TEXT_FORM_MAX: usize = 3 * BODY_MAX + 256 * 1024;
 const SLUG_MAX: usize = 100;
 
 const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; charset=utf-8");
 
-/// Anything that matched no route. Declared as the router fallback so it runs
-/// through the middleware stack and comes out as a themed 404.
+/// The router fallback, so a miss goes through the middleware and comes out
+/// as a themed 404.
 pub async fn fallback() -> Response {
     crate::errors::not_found()
 }
 
-/// Renders `message.html`, the shared page for "we will not do that".
+/// Renders `message.html`, the shared "we will not do that" page.
 pub(crate) fn notice(
     ctx: &Ctx,
     status: StatusCode,
@@ -86,9 +76,9 @@ pub(crate) fn notice(
     Ok((status, [HTML], html).into_response())
 }
 
-/// A message key from a query string, such as `?done=saved`, when it is
-/// short, lowercase with underscores, and starts with one of `prefixes`.
-/// Anything else is dropped, so a crafted link cannot choose the wording.
+/// A message key from a query string (`?done=saved`) when it is short,
+/// lowercase with underscores and starts with one of `prefixes`, so a crafted
+/// link cannot choose the wording.
 pub(crate) fn message_key<'a>(raw: Option<&'a str>, prefixes: &[&str]) -> Option<&'a str> {
     raw.filter(|key| {
         !key.is_empty()
@@ -128,7 +118,7 @@ pub(crate) fn slug_taken(ctx: &Ctx, slug: &str, archived: bool) -> Result<Respon
     )
 }
 
-/// The page cannot move to `target_locale`: that slot holds another page.
+/// Another page holds `target_locale` for this slug.
 fn locale_taken(ctx: &Ctx, slug: &str, target_locale: &str) -> Result<Response, AppError> {
     notice(
         ctx,
@@ -146,27 +136,18 @@ fn locale_taken(ctx: &Ctx, slug: &str, target_locale: &str) -> Result<Response, 
     )
 }
 
-/// Whether a write lost to a unique index: the loser of a race that the
-/// check before it could not see. That is a 409 for the person, not a 500.
+/// Whether a write lost a race to a unique index; a 409, not a 500.
 pub(crate) fn is_unique_violation(err: &sqlx::Error) -> bool {
     matches!(err, sqlx::Error::Database(db) if db.is_unique_violation())
 }
 
-/// The answer to "you may not do this".
-///
-/// A guest gets sent to sign in, because the honest reason is that they are not
-/// signed in and the fix is one click. Somebody already signed in gets a 403:
-/// signing in again would change nothing, and bouncing them to a login form
-/// they have already completed is the most confusing possible response.
+/// "You may not do this": a guest is sent to sign in, anyone else gets a 403.
 fn refuse(
     ctx: &Ctx,
     return_to: &str,
     refused: Capability,
     explanation: &str,
 ) -> Result<Response, AppError> {
-    // Which capability was missing, at debug level. "Why can this account not
-    // edit" is otherwise answerable only by reading the rules and the
-    // membership table by hand.
     tracing::debug!(
         capability = refused.as_str(),
         signed_in = ctx.actor.is_signed_in(),
@@ -190,12 +171,7 @@ fn refuse(
     )
 }
 
-/// Percent-encodes a value for one query parameter.
-///
-/// Small on purpose: the only values that reach it are internal paths built
-/// from validated slugs, so the unreserved set plus the path characters we
-/// generate is the whole requirement, and anything else is escaped rather than
-/// passed through.
+/// Percent-encodes one query parameter value.
 fn urlencode(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -209,8 +185,7 @@ fn urlencode(value: &str) -> String {
     out
 }
 
-/// Slugs are lowercase ASCII, digits and dashes. Anything else is a 404 or a
-/// 422. Unicode slugs come with the i18n pass, not with the launch slice.
+/// Lowercase ASCII letters, digits and dashes.
 pub(crate) fn slug_is_valid(slug: &str) -> bool {
     !slug.is_empty()
         && slug.len() <= SLUG_MAX
@@ -223,10 +198,8 @@ pub(crate) fn bad_request(message: &str) -> Response {
     (StatusCode::UNPROCESSABLE_ENTITY, message.to_string()).into_response()
 }
 
-/// Builds a redirect only when the target is a valid header value. Axum turns
-/// an invalid `Location` into a 500 that leaks the http crate error text, so
-/// every redirect target derived from a slug, a setting or a query string goes
-/// through here. `None` means render or 404 instead of redirecting.
+/// A redirect, or `None` when `target` is not a valid header value (axum
+/// would turn that into a 500).
 pub(crate) fn redirect_response(status: StatusCode, target: &str) -> Option<Response> {
     let location = axum::http::HeaderValue::from_str(target).ok()?;
     Response::builder()
@@ -236,31 +209,22 @@ pub(crate) fn redirect_response(status: StatusCode, target: &str) -> Option<Resp
         .ok()
 }
 
-/// Everything the document shell needs around a rendered body.
+/// What the document shell needs around a rendered body.
 ///
-/// No summary field, deliberately. `revisions.summary` is the **edit summary**:
-/// a note from the editor about what they changed, the thing every wiki shows
-/// in the history list. It used to be rendered as the article's opening
-/// paragraph as well, so the first revert put "Restored the revision from
-/// 2026-09-20 20:16 UTC" at the top of the front page as if it were prose.
-///
-/// A real page description, for a meta tag and for search snippets, has to come
-/// from the article itself. It is not this column.
+/// There is no summary field: `revisions.summary` is the edit summary, not
+/// article text.
 pub(crate) struct Shell<'a> {
     pub title: &'a str,
     pub body_html: &'a str,
-    /// Footer note: `None` when the body came from cache.
+    /// `None` when the body came from cache.
     pub render_ms: Option<u64>,
-    /// Extra bindings for the specific template. Merged last.
+    /// Template-specific bindings, merged last.
     pub extra: minijinja::Value,
     pub template: &'a str,
 }
 
-/// Assembles a document from a body fragment plus this request's chrome.
+/// Assembles a document from a body fragment and this request's chrome.
 pub(crate) fn render_shell(ctx: &Ctx, shell: &Shell<'_>) -> Result<String, AppError> {
-    // Built here rather than in the template because only the handler knows
-    // whether the body came from cache, and translated here rather than
-    // hard-coded because the footer is as visible as anything else on the page.
     let footer_note = match shell.render_ms {
         Some(ms) => ctx.skin.messages.render(
             &ctx.lang,
@@ -291,11 +255,8 @@ pub(crate) fn render_shell(ctx: &Ctx, shell: &Shell<'_>) -> Result<String, AppEr
         .map_err(template_error)
 }
 
-/// The rendered body for one revision, from cache when possible.
-///
-/// On a miss it renders once and stores the row. `ON CONFLICT DO NOTHING`
-/// covers the race where two readers miss the same revision at the same moment:
-/// both render, one insert wins, and the output is identical either way.
+/// The rendered body of one revision, from cache when possible, with emotes
+/// expanded. Concurrent misses render twice and one insert wins.
 pub(crate) async fn cached_body(
     state: &AppState,
     wiki_id: Uuid,
@@ -329,8 +290,7 @@ pub(crate) async fn cached_body(
     Ok((html, Some(rendered.render_ms)))
 }
 
-/// Stores the rendering for a body that was just saved, so the author's
-/// redirect lands on a cache hit instead of rendering again.
+/// Caches a just-saved body so the author's redirect is a cache hit.
 pub(crate) async fn warm_cache(state: &AppState, wiki_id: Uuid, body_md: &str) {
     let rendered = naw_markdown::render_body(body_md);
     let result = sqlx::query!(
@@ -343,27 +303,18 @@ pub(crate) async fn warm_cache(state: &AppState, wiki_id: Uuid, body_md: &str) {
     )
     .execute(&state.db)
     .await;
-    // A cold cache costs one render on the next read. Not worth failing a save
-    // that already committed.
+    // A cold cache costs one render later; never fail a committed save for it.
     if let Err(err) = result {
         tracing::warn!(error = %err, "could not warm the render cache");
     }
 }
 
-/// Serves an assembled document with an ETag and a conditional-GET check.
-///
-/// The ETag is the hash of the finished HTML rather than of the body alone.
-/// The document varies by visitor now, so a key built from the body would tell
-/// a browser that a signed-out page and a signed-in one are the same resource.
-/// Hashing the output cannot drift from what the output actually is.
-///
-/// `Cache-Control: private` is the other half: the document can carry a
-/// username, so a shared proxy must never keep a copy to hand to the next
-/// person.
+/// Serves a document with an ETag of the finished HTML and handles
+/// If-None-Match. `private`, since the document can carry a username.
 pub(crate) fn html_response(html: String, headers: &HeaderMap) -> Response {
     use sha2::{Digest, Sha256};
-    // The script nonce differs on every response, so it stays out of the
-    // hash; a 304 then goes out without a new policy (see csp.rs).
+    // The nonce differs per response, so it stays out of the hash; a 304 then
+    // goes out without a new policy (see csp.rs).
     let nonce = naw_core::csp::current();
     let digest = if nonce.is_empty() {
         Sha256::digest(html.as_bytes())
@@ -395,21 +346,18 @@ pub(crate) struct FoundPage {
     pub id: Uuid,
     pub title: String,
     pub locked: bool,
-    /// Who may edit a protected page: this role and above. `None` when the
-    /// page is not protected.
+    /// The lowest role that may edit, or `None` when unprotected.
     pub protection: Option<crate::perm::WikiRole>,
     pub revision_id: Uuid,
     pub body_md: String,
     pub summary: Option<String>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
-    /// Set on a translation: the language it was translated from, and the
-    /// revision of that source it matches.
+    /// On a translation, the source language and the source revision it matches.
     pub translation_source_locale: Option<String>,
     pub translation_source_revision_id: Option<Uuid>,
 }
 
-/// Loads a live page and its current revision. An archived page reads as
-/// absent: a soft delete has to look like a delete to a reader.
+/// Loads a live page and its current revision; archived pages read as absent.
 pub(crate) async fn find_page(
     db: &sqlx::PgPool,
     wiki_id: Uuid,
@@ -449,8 +397,8 @@ pub(crate) async fn find_page(
     }))
 }
 
-/// A page's protection from its two columns. A locked page with no level is
-/// an old lock, which meant "moderators and up".
+/// Protection from the two columns. A lock without a level is an old lock,
+/// which meant moderators and up.
 pub(crate) fn protection_of(locked: bool, level: Option<&str>) -> Option<crate::perm::WikiRole> {
     match level.and_then(crate::perm::WikiRole::parse) {
         Some(level) => Some(level),
@@ -459,8 +407,7 @@ pub(crate) fn protection_of(locked: bool, level: Option<&str>) -> Option<crate::
     }
 }
 
-/// Display flags readers can append to any page URL. `?jump_to=` scrolls to a
-/// heading anchor through a temporary redirect. Needs no JavaScript.
+/// `?jump_to=` as a redirect to the heading anchor.
 fn jump_target(slug: &str, query: &PageQuery) -> Option<String> {
     let frag = query.jump_to.as_deref()?;
     if frag.is_empty()
@@ -500,8 +447,7 @@ pub async fn home(
         .get("home_slug")
         .and_then(|v| v.as_str())
         .unwrap_or("home");
-    // A broken home_slug in settings must not become a 500: fall back to a
-    // plain 404 instead of a redirect with an invalid Location.
+    // A broken home_slug must not become a 500 through an invalid Location.
     if !slug_is_valid(slug) {
         return Ok(crate::errors::not_found());
     }
@@ -512,7 +458,7 @@ pub async fn home(
     }
 }
 
-/// Serves one page. Main namespace only for launch.
+/// Serves one page in the main namespace.
 #[instrument(skip(state, user))]
 pub async fn page(
     State(state): State<AppState>,
@@ -522,9 +468,7 @@ pub async fn page(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let slug = slug.trim().to_lowercase();
-    // Reject malformed path input before it reaches PostgreSQL text
-    // parameters: an embedded NUL byte would otherwise turn a
-    // client-controlled path into an internal 500.
+    // Before the query: an embedded NUL in a text parameter is a 500.
     if !slug_is_valid(&slug) {
         return Ok(crate::errors::not_found());
     }
@@ -533,8 +477,7 @@ pub async fn page(
     };
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
-        // Not in this language. If it exists in another one, say so and offer
-        // to translate; a bare 404 would hide the article from its readers.
+        // Offer the article in the languages it exists in, or to translate it.
         return Ok(
             match crate::translate::missing(&state, &ctx, &slug).await? {
                 Some(response) => response,
@@ -542,12 +485,10 @@ pub async fn page(
             },
         );
     };
-    if let Some(target) = jump_target(&slug, &query).map(|t| ctx.link(&t)) {
-        // jump_target pins the fragment charset, so this is Some in practice.
-        // If it ever is not, render the page instead of failing the request.
-        if let Some(response) = redirect_response(StatusCode::SEE_OTHER, &target) {
-            return Ok(response);
-        }
+    if let Some(target) = jump_target(&slug, &query).map(|t| ctx.link(&t))
+        && let Some(response) = redirect_response(StatusCode::SEE_OTHER, &target)
+    {
+        return Ok(response);
     }
     let (body_html, render_ms) = cached_body(&state, ctx.wiki.id, &found.body_md).await?;
     let versions = crate::translate::versions(&state, &ctx, &slug).await?;
@@ -559,7 +500,6 @@ pub async fn page(
         found.translation_source_revision_id,
     )
     .await?;
-    // The same article in the reader's own language, when this is not it.
     let reader_version = (ctx.lang != ctx.content_locale)
         .then(|| versions.iter().find(|v| v.locale == ctx.lang))
         .flatten()
@@ -609,17 +549,15 @@ pub struct EditForm {
     #[serde(default)]
     summary: String,
     body_md: String,
-    /// The revision the editor started from. Empty when a skin has not been
-    /// updated to send it, which degrades to the old last-write-wins behaviour
-    /// rather than refusing the save.
+    /// The revision the editor started from; empty from an old skin.
     #[serde(default)]
     base_revision: String,
     #[serde(default)]
     minor: Option<String>,
-    /// On a translation: "this now matches the source as it is today".
+    /// On a translation: it now matches the source as it is today.
     #[serde(default)]
     synced: Option<String>,
-    /// Moves this version to another language, when that slot is free.
+    /// Moves this version to another language when that slot is free.
     #[serde(default)]
     locale: String,
 }
@@ -631,13 +569,12 @@ pub struct NewForm {
     #[serde(default)]
     summary: String,
     body_md: String,
-    /// The article's language, from the editor's language field.
+    /// The article's language, from the editor.
     #[serde(default)]
     locale: String,
 }
 
-/// The language a form asked for, when this wiki offers it; the language the
-/// reader is in otherwise.
+/// The requested language when this wiki offers it, the reader's otherwise.
 fn chosen_locale(ctx: &Ctx, raw: &str) -> String {
     let raw = raw.trim().to_ascii_lowercase();
     if !raw.is_empty() && ctx.offered_languages().contains(&raw) {
@@ -654,9 +591,7 @@ pub(crate) struct Draft {
     pub body_md: String,
 }
 
-/// Returns the reason as plain text rather than a built response: validation
-/// has no business knowing about HTTP status codes, and the caller turns the
-/// reason into one.
+/// The reason is plain text; the caller picks the status.
 pub(crate) fn validate(title: &str, summary: &str, body_md: &str) -> Result<Draft, &'static str> {
     let title = title.trim().to_string();
     if title.is_empty() || title.chars().count() > TITLE_MAX {
@@ -678,7 +613,7 @@ pub(crate) fn validate(title: &str, summary: &str, body_md: &str) -> Result<Draf
     })
 }
 
-/// Renders the editor.
+/// The editor form.
 pub(crate) struct FormView<'a> {
     pub heading: &'a str,
     pub action: &'a str,
@@ -689,16 +624,13 @@ pub(crate) struct FormView<'a> {
     pub body_md: &'a str,
     pub base_revision: &'a str,
     pub locked: bool,
-    /// The title is not the author's to choose (a profile is titled with the
-    /// person's name), so it travels as a hidden field.
+    /// The title is fixed (a profile), so it travels as a hidden field.
     pub fixed_title: bool,
-    /// Where "back" goes, for pages that are not addressed by `slug`.
+    /// Where "back" goes when the page is not addressed by `slug`.
     pub back_href: Option<&'a str>,
-    /// On a translation, the source language's name: the form then offers to
-    /// mark the translation as matching the source's current revision.
+    /// On a translation, the source language's name.
     pub translation_of: Option<&'a str>,
-    /// Shows the language field, preset to this language. `None` where the
-    /// language is not the author's to pick (profiles, a translation's target).
+    /// Presets the language field; `None` hides it.
     pub form_locale: Option<&'a str>,
 }
 
@@ -727,8 +659,6 @@ pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, Ap
                 back_href => view.back_href,
                 translation_of => view.translation_of,
                 form_locale => view.form_locale,
-                // Checked in the browser too, so a file or a text over the
-                // limit is refused before it is sent, not after.
                 body_max => BODY_MAX,
                 body_max_mb => naw_core::html::mib(BODY_MAX),
                 upload_max => ctx.upload_max_bytes,
@@ -748,8 +678,7 @@ pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, Ap
     Ok(([HTML], html).into_response())
 }
 
-/// Blank creation form. Refused outright for anyone without `PageCreate`,
-/// which by default means every guest.
+/// Blank creation form; needs `PageCreate`.
 #[instrument(skip(state, user))]
 pub async fn new_page(
     State(state): State<AppState>,
@@ -818,11 +747,8 @@ pub async fn create_page(
     };
     let locale = chosen_locale(&ctx, &form.locale);
 
-    // The unique index on (wiki_id, namespace, locale, slug) is the real
-    // guard. This check answers the common case with a 409 and an
-    // explanation, and it covers archived pages too: a deleted slug stays
-    // taken so a restore lands back on its own address. The loser of a race
-    // past it gets the same 409 from the insert below.
+    // The unique index is the real guard; this answers the common case, and an
+    // archived slug stays taken so a restore lands on its own address.
     let taken = sqlx::query!(
         "SELECT deleted_at FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2
            AND COALESCE(locale, '') = $3",
@@ -972,8 +898,6 @@ pub async fn save_page(
     Form(form): Form<EditForm>,
 ) -> Result<Response, AppError> {
     let slug = slug.trim().to_lowercase();
-    // Anything outside the slug charset can never match a stored page, and
-    // must never reach the success redirect as a Location value.
     if !slug_is_valid(&slug) {
         return Ok(crate::errors::not_found());
     }
@@ -1002,18 +926,14 @@ pub async fn save_page(
         Err(reason) => return Ok(bad_request(reason)),
     };
 
-    // Lost update check. The editor carries the revision it loaded; if the
-    // current one is different, somebody saved in between and blindly writing
-    // would erase their work without either author noticing.
+    // The editor loaded an older revision: somebody saved in between.
     if let Some(base) = parse_uuid(&form.base_revision)
         && base != found.revision_id
     {
         return edit_conflict(&ctx, &slug);
     }
 
-    // Moving this version to another language, when the author picked one
-    // and that slot is free. Done before the no-change check, because a move
-    // with the text untouched is still a change worth making.
+    // Before the no-change check: a move without a text edit is still a change.
     let target_locale = chosen_locale(&ctx, &form.locale);
     let moved = target_locale != locale;
     if moved {
@@ -1031,9 +951,7 @@ pub async fn save_page(
             return locale_taken(&ctx, &slug, &target_locale);
         }
         let mut tx = state.db.begin().await?;
-        // Only from the revision this request loaded, like the text below: a
-        // save that raced in first makes this whole edit a conflict, the move
-        // included.
+        // Only from the revision this request loaded, like the text below.
         let relocated = match sqlx::query!(
             "UPDATE pages SET locale = $2, updated_at = now()
              WHERE id = $1 AND current_revision_id = $3",
@@ -1077,9 +995,7 @@ pub async fn save_page(
     }
     let locale = target_locale;
 
-    // A translator who checked this translation against its source today
-    // says so; the staleness notice then counts from the source as it is now.
-    // Done before the no-change check: confirming needs no edit to the text.
+    // Before the no-change check: confirming needs no text edit.
     if form.synced.is_some()
         && let Some(source_locale) = found.translation_source_locale.as_deref()
     {
@@ -1098,8 +1014,7 @@ pub async fn save_page(
         .await?;
     }
 
-    // An edit that changes nothing is not a revision. Without this every
-    // accidental double submit adds a row to the history.
+    // Saving unchanged text adds no revision.
     if draft.body_md == found.body_md
         && draft.title == found.title
         && draft.summary.as_deref().unwrap_or("") == found.summary.as_deref().unwrap_or("")
@@ -1122,9 +1037,7 @@ pub async fn save_page(
     )
     .execute(&mut *tx)
     .await?;
-    // Compare and swap on the revision this request started from. The base
-    // check above catches an editor who loaded an old page; this catches two
-    // saves racing past it at once, and an editor that sent no base at all.
+    // Compare and swap: catches saves racing past the check above.
     let swapped = sqlx::query!(
         "UPDATE pages SET title = $1, current_revision_id = $2, updated_at = now()
          WHERE id = $3 AND current_revision_id = $4",
@@ -1169,9 +1082,7 @@ pub async fn save_page(
     Ok(see_other(&ctx.link_for(&locale, &format!("/{slug}"))))
 }
 
-/// Parses a UUID that arrived in a form field. An empty or malformed value is
-/// `None`, never an error: a skin that does not send the field yet must keep
-/// working.
+/// A form field UUID; empty or malformed is `None`.
 pub(crate) fn parse_uuid(raw: &str) -> Option<Uuid> {
     raw.trim().parse::<Uuid>().ok()
 }
@@ -1187,12 +1098,8 @@ pub struct LangForm {
     next: String,
 }
 
-/// Whether a `next` value is a path on this site.
-///
-/// Rejects anything that could leave the site. `//evil.example` is the one worth
-/// naming: it starts with a slash, so a naive check passes it, and a browser
-/// reads it as a protocol-relative URL and navigates away. A backslash is
-/// rejected too, because some clients normalise it to a slash.
+/// `next` when it is a path on this site. Rejects `//host` and backslashes,
+/// which browsers read as leaving the site.
 fn local_path(next: &str) -> Option<&str> {
     if !next.starts_with('/') || next.starts_with("//") || next.starts_with("/\\") {
         return None;
@@ -1203,34 +1110,20 @@ fn local_path(next: &str) -> Option<&str> {
     Some(next)
 }
 
-/// Pulls the path out of a Referer header.
-///
-/// The language picker sits in the shared chrome, which does not know the
-/// current path, so the return address comes from the referrer instead of being
-/// threaded through every handler. Only the path is taken and it goes through
-/// `local_path`, so a crafted referrer cannot send anybody off the site.
-///
-/// A browser that suppresses the referrer lands on the front page, which is a
-/// worse experience than a redirect and a better one than a broken feature.
+/// The path of the Referer, validated by [`local_path`], as the return
+/// address of the language picker. Without a referrer, the front page.
 fn path_from_referer(headers: &HeaderMap) -> Option<String> {
     let raw = headers.get(header::REFERER)?.to_str().ok()?;
     let after_scheme = raw.split_once("://").map(|(_, rest)| rest).unwrap_or(raw);
     let path = match after_scheme.find('/') {
         Some(at) => &after_scheme[at..],
-        // A referrer of exactly "http://host" means the front page.
         None => "/",
     };
     local_path(path).map(str::to_string)
 }
 
-/// POST /lang
-///
-/// The form equivalent of `?lang=`. The header picker uses the link, because a
-/// switcher should be one click; this exists for a settings form, where saving
-/// a preference alongside other fields is a POST like everything else.
-///
-/// Both paths build the cookie through `lang::cookie_for`, so its attributes
-/// are defined once.
+/// POST /lang, the form equivalent of `?lang=`. Both set the cookie through
+/// `lang::cookie_for`.
 #[instrument(skip(state, user))]
 pub async fn set_language(
     State(state): State<AppState>,
@@ -1243,9 +1136,7 @@ pub async fn set_language(
         .or(referred.as_deref())
         .unwrap_or("/");
     let mut response = see_other(target);
-    // Only a language the catalogue actually has. An unknown value would be
-    // stored, then ignored on every later request, which looks like the picker
-    // is broken rather than like the language is missing.
+    // An unknown language would be stored and then ignored.
     if state.skin.current().messages.has(&form.lang) {
         let cookie = crate::lang::cookie_for(&form.lang);
         if let Ok(value) = axum::http::HeaderValue::from_str(&cookie) {
@@ -1274,15 +1165,9 @@ pub struct PreviewQuery {
     fragment: Option<u8>,
 }
 
-/// Renders posted Markdown without saving. The editor opens it in a new tab
-/// and also calls it for the live preview, so authors see the real pipeline
-/// output. With `?fragment=1` only the sanitized body comes back, so the live
-/// preview can inject it without parsing a document. The same `render_html`
-/// runs in both cases: preview and save never disagree.
-///
-/// Gated on `PageEdit`. Preview renders arbitrary Markdown on demand with no
-/// cache row, which makes it the one uncached CPU path in the engine, and
-/// leaving it open to anonymous requests would be an invitation.
+/// Renders posted Markdown without saving; `?fragment=1` returns only the
+/// body for the live preview. Needs `PageEdit`: it is the one uncached
+/// render path.
 #[instrument(skip(state, user))]
 pub async fn preview(
     State(state): State<AppState>,
@@ -1329,10 +1214,8 @@ pub async fn preview(
 // Skin brand files
 // ---------------------------------------------------------------------------
 
-/// Served from `{skin_dir}/favicon/`. The allowlist below is the whole
-/// surface: no request value ever reaches the filesystem, so traversal is
-/// impossible by construction. A missing file is a 404, never a 500, which
-/// keeps the default skin quiet since it ships no favicon.
+/// Brand files served from `{skin_dir}/favicon/`. The fixed list is the whole
+/// surface, so no request value reaches the filesystem.
 const SKIN_ASSETS: &[(&str, &str)] = &[
     ("favicon.ico", "image/x-icon"),
     ("favicon-96x96.png", "image/png"),
@@ -1439,7 +1322,6 @@ mod tests {
     #[test]
     fn a_return_path_survives_the_login_round_trip_intact() {
         assert_eq!(urlencode("/filian/edit"), "/filian/edit");
-        // The characters that would end the parameter or start a new one.
         assert_eq!(urlencode("/a?b=c&d"), "/a%3Fb%3Dc%26d");
         assert_eq!(urlencode("/a b"), "/a%20b");
         assert_eq!(urlencode("//evil.example"), "//evil.example");
@@ -1447,9 +1329,7 @@ mod tests {
 
     #[test]
     fn validation_counts_characters_not_bytes() {
-        // A 200 character Cyrillic title is 400 bytes. Counting bytes would
-        // refuse a title that is well inside the limit, and the wiki this
-        // engine was built for is half Russian.
+        // 200 Cyrillic characters are 400 bytes; the limit counts characters.
         let cyrillic = "я".repeat(TITLE_MAX);
         assert!(validate(&cyrillic, "", "body").is_ok());
         assert!(validate(&"я".repeat(TITLE_MAX + 1), "", "body").is_err());
@@ -1464,8 +1344,6 @@ mod tests {
 
     #[test]
     fn a_blank_summary_becomes_null_rather_than_an_empty_string() {
-        // The column is nullable and the history view distinguishes "no
-        // summary given" from "summary was an empty string".
         assert_eq!(validate("T", "", "b").expect("valid").summary, None);
         assert_eq!(validate("T", "   ", "b").expect("valid").summary, None);
         assert_eq!(
@@ -1481,14 +1359,12 @@ mod tests {
             local_path("/home/history?page=2"),
             Some("/home/history?page=2")
         );
-        // The one that matters: a browser reads this as a host, not a path.
         assert_eq!(local_path("//evil.example"), None);
         assert_eq!(local_path("/\\evil.example"), None);
         assert_eq!(local_path("https://evil.example"), None);
         assert_eq!(local_path("http://evil.example"), None);
         assert_eq!(local_path("evil.example"), None);
         assert_eq!(local_path(""), None);
-        // Header splitting, in case this ever reaches a Location directly.
         assert_eq!(local_path("/home\nLocation: /elsewhere"), None);
         assert_eq!(local_path("/home\r\nSet-Cookie: x=1"), None);
         assert_eq!(local_path("/a\\b"), None);
@@ -1496,8 +1372,6 @@ mod tests {
 
     #[test]
     fn a_missing_base_revision_does_not_look_like_a_conflict() {
-        // A skin that has not been updated sends nothing. That has to fall
-        // back to saving, not to refusing every edit on that skin.
         assert_eq!(parse_uuid(""), None);
         assert_eq!(parse_uuid("   "), None);
         assert_eq!(parse_uuid("not-a-uuid"), None);

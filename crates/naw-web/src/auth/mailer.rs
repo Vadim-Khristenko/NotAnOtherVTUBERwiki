@@ -1,10 +1,7 @@
-//! Outbound mail. The `log` backend records the letter in `mail_outbox`
-//! and serves it at `/dev/mailbox`, which is how dev runs without any
-//! mail infrastructure. The SMTP backend (Mailpit in compose) lands with
-//! T9; the call sites stay the same.
+//! Outbound mail. The `log` backend stores letters in `mail_outbox` and
+//! serves them at `/dev/mailbox`; SMTP is not wired yet.
 
-// The whole email flow is built but not routed yet: /settings/email and
-// /verify-email arrive with the system pages. Drop this when they do.
+// The email flow is not routed yet.
 #![allow(dead_code)]
 
 use uuid::Uuid;
@@ -17,13 +14,11 @@ pub struct MailDraft {
     pub body: String,
 }
 
-/// Sends through the configured backend. Dev runs `log`; SMTP returns a
-/// clear error until its transport exists (T9).
+/// Sends through the configured backend; SMTP errors until it exists.
 pub async fn send(state: &naw_core::state::AppState, draft: MailDraft) -> Result<(), AppError> {
     match state.config.auth.mail.backend {
         naw_core::config::MailBackend::Log => send_log(&state.db, draft).await,
         naw_core::config::MailBackend::Smtp => {
-            // T9 wires lettre here; until then SMTP is an honest 500.
             tracing::error!("smtp backend selected but the transport is not wired yet");
             Err(AppError::Internal)
         }
@@ -44,8 +39,8 @@ async fn send_log(db: &sqlx::PgPool, draft: MailDraft) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Builds the verification link and letter body. The token goes in the
-/// URL once, only its sha256 is stored.
+/// The verification letter. The token appears once in the URL; only its
+/// SHA-256 is stored.
 pub fn verification_email(base_url: &str, token: &str) -> MailDraft {
     MailDraft {
         to: String::new(),

@@ -1,14 +1,8 @@
-//! JWKS fetching, caching and id_token verification for the OIDC providers.
+//! JWKS fetching and caching, and id_token verification.
 //!
-//! The one rule that matters here: **the signing algorithm comes from the JWK,
-//! never from the token header.** A JWT header is attacker controlled, so
-//! trusting its `alg` is how alg-confusion attacks work. The header is used for
-//! exactly one thing, picking a `kid`, and everything else comes from the key
-//! the provider published.
-//!
-//! Keys are cached in Valkey per issuer. An unknown `kid` triggers exactly one
-//! refetch, which is how key rotation works without a restart and without
-//! letting a bogus kid turn into unbounded upstream traffic.
+//! The algorithm comes from the JWK, never from the token header, which is
+//! attacker controlled; the header only picks a `kid`. Key sets are cached in
+//! Valkey per issuer, and an unknown `kid` triggers exactly one refetch.
 
 use jsonwebtoken::jwk::{AlgorithmParameters, Jwk, JwkSet};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
@@ -17,15 +11,14 @@ use serde::de::DeserializeOwned;
 use super::http::HttpFetch;
 use super::types::AuthError;
 
-/// Providers rotate slowly; an hour keeps the cache useful without pinning a
-/// retired key for long.
+/// Providers rotate keys slowly.
 const CACHE_TTL_SECONDS: u64 = 3600;
 
 fn cache_key(issuer: &str) -> String {
     format!("auth:jwks:{}", hex::encode(super::token_hash(issuer)))
 }
 
-/// Reads the cached key set for `issuer`, if there is one worth using.
+/// The cached key set for `issuer`, if usable.
 async fn cached(cache: &deadpool_redis::Pool, issuer: &str) -> Option<JwkSet> {
     let mut conn = cache.get().await.ok()?;
     let raw: Option<String> = deadpool_redis::redis::cmd("GET")
@@ -66,15 +59,11 @@ async fn fetch(http: &dyn HttpFetch, jwks_uri: &str) -> Result<(JwkSet, String),
     Ok((set, raw))
 }
 
-/// The algorithm this key is allowed to verify, taken from the key itself.
-///
-/// Telegram publishes RS256, ES256, EdDSA and ES256K. `jsonwebtoken` cannot
-/// verify ES256K (secp256k1), so a token signed with it must be refused rather
-/// than silently accepted under some other algorithm.
+/// The algorithm this key may verify, from the key itself. `None` for keys
+/// `jsonwebtoken` cannot verify (ES256K) or that make no sense here.
 pub fn algorithm_of(jwk: &Jwk) -> Option<Algorithm> {
     use jsonwebtoken::jwk::{EllipticCurve, KeyAlgorithm};
 
-    // A published `alg` is the provider's own statement, so it wins.
     if let Some(declared) = jwk.common.key_algorithm {
         return match declared {
             KeyAlgorithm::RS256 => Some(Algorithm::RS256),
@@ -86,11 +75,10 @@ pub fn algorithm_of(jwk: &Jwk) -> Option<Algorithm> {
             KeyAlgorithm::ES256 => Some(Algorithm::ES256),
             KeyAlgorithm::ES384 => Some(Algorithm::ES384),
             KeyAlgorithm::EdDSA => Some(Algorithm::EdDSA),
-            // Everything else, ES256K included, is not verifiable here.
             _ => None,
         };
     }
-    // No `alg` on the key: infer only where the curve leaves no ambiguity.
+    // No `alg` on the key: infer only where the curve is unambiguous.
     match &jwk.algorithm {
         AlgorithmParameters::RSA(_) => Some(Algorithm::RS256),
         AlgorithmParameters::EllipticCurve(ec) => match ec.curve {
@@ -99,25 +87,22 @@ pub fn algorithm_of(jwk: &Jwk) -> Option<Algorithm> {
             _ => None,
         },
         AlgorithmParameters::OctetKeyPair(_) => Some(Algorithm::EdDSA),
-        // Symmetric keys have no business in a provider JWKS.
+        // Symmetric keys in a provider JWKS are the alg-confusion setup.
         AlgorithmParameters::OctetKey(_) => None,
-        // `AlgorithmParameters` is non_exhaustive, so a crate upgrade can add a
-        // key type. Unknown means unverifiable, which means refuse.
+        // `AlgorithmParameters` is non_exhaustive: unknown means refuse.
         _ => None,
     }
 }
 
-/// What an id_token has to satisfy beyond its signature.
+/// What an id_token must satisfy beyond its signature.
 pub struct Expect<'a> {
     pub issuer: &'a str,
     pub audience: &'a str,
     pub jwks_uri: &'a str,
 }
 
-/// Verifies `token` and returns its claims.
-///
-/// `cache` is optional so provider tests can run without Valkey; absent, the
-/// key set is fetched every time, which is correct but slower.
+/// Verifies `token` and returns its claims. Without `cache` the key set is
+/// fetched every time.
 pub async fn verify<T: DeserializeOwned>(
     token: &str,
     expect: &Expect<'_>,
@@ -127,7 +112,6 @@ pub async fn verify<T: DeserializeOwned>(
     let header =
         decode_header(token).map_err(|_| AuthError::BadRequest("id_token header is malformed"))?;
     let Some(kid) = header.kid else {
-        // Without a kid there is no safe way to choose among several keys.
         return Err(AuthError::BadRequest("id_token carries no kid"));
     };
 
@@ -135,8 +119,7 @@ pub async fn verify<T: DeserializeOwned>(
         Some(pool) => cached(pool, expect.issuer).await,
         None => None,
     };
-    // One refetch when the kid is unknown: that is key rotation. Any further
-    // miss is a bad token, not a stale cache.
+    // One refetch for an unknown kid (rotation); a further miss is a bad token.
     if set.as_ref().is_none_or(|keys| keys.find(&kid).is_none()) {
         let (fresh, raw) = fetch(http, expect.jwks_uri).await?;
         if let Some(pool) = cache {
@@ -162,8 +145,6 @@ pub async fn verify<T: DeserializeOwned>(
     let mut validation = Validation::new(algorithm);
     validation.set_issuer(&[expect.issuer]);
     validation.set_audience(&[expect.audience]);
-    // exp is validated by default; be explicit that it is required, so a token
-    // without one cannot live forever.
     validation.required_spec_claims = ["exp", "iss", "aud"]
         .iter()
         .map(|c| c.to_string())
@@ -172,8 +153,6 @@ pub async fn verify<T: DeserializeOwned>(
     decode::<T>(token, &key, &validation)
         .map(|data| data.claims)
         .map_err(|err| {
-            // The detail names the failing check, which is useful in a log and
-            // meaningless to a browser.
             tracing::warn!(error = %err, "id_token rejected");
             AuthError::BadRequest("id_token failed validation")
         })
@@ -183,7 +162,7 @@ pub async fn verify<T: DeserializeOwned>(
 mod tests {
     use super::*;
 
-    /// Telegram's real published key set, trimmed to the shape that matters.
+    /// Telegram's published key set, trimmed.
     const TELEGRAM_JWKS: &str = r#"{"keys":[
       {"alg":"RS256","e":"AQAB","kty":"RSA","kid":"oidc-1",
        "n":"5RneLtsKvVcxdv6gu6gxEQu30Cru5NiMQnY6SNr9ZyZFZ4ya-pfHNuaZXJ6QPG0JSFwoxeOkEO2-eZN_REVPm448PvjjsR1eQdZ5QpEkNxnItFcmxkHH91v5cgf52_EI9BGO-MT6f1vaBSg3uWHFlDxI7J2AYxNvd1_Nf3TkgrrR7gyJFTmEIai5RefGnA0KGNYDlRIGUzrz2F05n6gTaHFT_iHL5UHatTZA4GCiUSjIOuwqu5pE5uZge20TFv3cxXMQaFw_xv1pgQt_Rq8eoCN7TS0RQ0zjWKiad-W286BcFectXsUm03p5Nq_kY4mf_7rqwX_B8yy_bBreyKn7RQ"},
@@ -228,17 +207,13 @@ mod tests {
 
     #[test]
     fn es256k_is_refused_instead_of_being_coerced() {
-        // secp256k1 is real in Telegram's JWKS and unverifiable here. Failing
-        // closed is the only safe answer; mapping it onto ES256 would verify
-        // against the wrong curve.
         let set = telegram_set();
         assert_eq!(algorithm_of(set.find("oidc-es256k-1").unwrap()), None);
     }
 
     #[test]
     fn a_symmetric_key_is_never_accepted_from_a_jwks() {
-        // An oct key in a provider JWKS is the alg-confusion setup: verify an
-        // RS256 token as HS256 using the public key as the HMAC secret.
+        // Verifying RS256 as HS256 with the public key as the HMAC secret.
         let jwk: Jwk = serde_json::from_str(
             r#"{"kty":"oct","kid":"sneaky","k":"c2VjcmV0LWtleS1tYXRlcmlhbA"}"#,
         )
@@ -275,7 +250,6 @@ mod tests {
     #[tokio::test]
     async fn a_token_without_a_kid_is_refused_before_any_fetch() {
         use crate::auth::http::test_double::Scripted;
-        // alg=none with no kid: the cheapest forgery attempt there is.
         let token = "eyJhbGciOiJub25lIn0.eyJpc3MiOiJodHRwczovL29hdXRoLnRlbGVncmFtLm9yZyJ9.";
         let http = Scripted::new();
         let err = verify::<serde_json::Value>(
@@ -300,7 +274,6 @@ mod tests {
     #[tokio::test]
     async fn an_unknown_kid_refetches_once_and_then_gives_up() {
         use crate::auth::http::test_double::Scripted;
-        // Header: {"alg":"RS256","kid":"rotated-away"}
         let token = "eyJhbGciOiJSUzI1NiIsImtpZCI6InJvdGF0ZWQtYXdheSJ9.eyJpc3MiOiJ4In0.sig";
         let http = Scripted::new().on("jwks.json", 200, TELEGRAM_JWKS);
         let err = verify::<serde_json::Value>(
@@ -346,7 +319,6 @@ mod tests {
     #[tokio::test]
     async fn a_forged_signature_on_a_real_kid_does_not_verify() {
         use crate::auth::http::test_double::Scripted;
-        // Correct kid, correct alg, garbage signature.
         let token = "eyJhbGciOiJSUzI1NiIsImtpZCI6Im9pZGMtMSJ9.eyJpc3MiOiJodHRwczovL29hdXRoLnRlbGVncmFtLm9yZyIsImF1ZCI6IjEyMzQiLCJleHAiOjk5OTk5OTk5OTksInN1YiI6IjEifQ.not-a-real-signature";
         let http = Scripted::new().on("jwks.json", 200, TELEGRAM_JWKS);
         let err = verify::<serde_json::Value>(

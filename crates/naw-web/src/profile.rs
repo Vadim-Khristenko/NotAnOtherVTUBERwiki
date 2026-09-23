@@ -1,13 +1,6 @@
-//! Profiles: `/user/{name}`, one page per person per wiki.
-//!
-//! The account (name, role, joined, edits) comes from the database; the text is
-//! a wiki page in the `user` namespace, written by its owner in the same editor
-//! and with the same history as any article. A profile nobody has written yet
-//! is not an error: the owner is invited to write it, everyone else sees what
-//! is known about the account.
-//!
-//! Former usernames still reserved as aliases redirect to the current name, so
-//! a link from before a rename keeps working.
+//! Profiles at `/user/{name}`: account facts from the database plus a page
+//! in the `user` namespace, edited like any article. An unwritten profile
+//! invites its owner to write it; reserved former names redirect.
 
 use axum::extract::{Extension, Form, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -37,7 +30,7 @@ struct Person {
 
 enum Lookup {
     Found(Person),
-    /// A former name: redirect to the person's current one.
+    /// A former name: redirect to the current one.
     Renamed(String),
     Missing,
 }
@@ -77,9 +70,8 @@ async fn lookup(state: &AppState, name: &str) -> Result<Lookup, AppError> {
     Ok(current.map_or(Lookup::Missing, Lookup::Renamed))
 }
 
-/// Whether the viewer may write this profile: its owner, the curator assigned
-/// to the person on this wiki (while they still hold a curator role or
-/// higher), or a moderator and up, who may need to remove something from it.
+/// The owner, their assigned curator (while still curator or above), or a
+/// moderator and up.
 async fn may_edit(state: &AppState, ctx: &Ctx, person: &Person) -> Result<bool, AppError> {
     if ctx.actor.user_id == Some(person.id) {
         return Ok(true);
@@ -310,7 +302,7 @@ fn forbidden(ctx: &Ctx, person: &Person) -> Response {
     .unwrap_or_else(|err| err.into_response())
 }
 
-/// Somebody saved this profile between the form loading and this save.
+/// Somebody saved this profile between loading and saving.
 fn conflict(ctx: &Ctx, person: &Person) -> Result<Response, AppError> {
     pages::notice(
         ctx,
@@ -347,7 +339,7 @@ pub async fn save(
     if !may_edit(&state, &ctx, &person).await? {
         return Ok(forbidden(&ctx, &person));
     }
-    // The title of a profile is the person's name, not something to type.
+    // The title of a profile is the person's name.
     let draft = match pages::validate(&person.username, &form.summary, &form.body_md) {
         Ok(draft) => draft,
         Err(reason) => return Ok(pages::bad_request(reason)),
@@ -376,10 +368,8 @@ pub async fn save(
         Some(page) => page.page_id,
         None => {
             let id = Uuid::new_v4();
-            // Profiles have no language of their own: one per person per wiki,
-            // written in whatever the person writes in.
-            // Two first saves racing: the unique index takes one, the
-            // other is a conflict like any other.
+            // Profiles have no language. Two first saves racing: the unique index takes
+            // one, the other is a conflict.
             match sqlx::query!(
                 "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale)
                  VALUES ($1, $2, 'user', $3, $3, NULL)",
@@ -408,8 +398,7 @@ pub async fn save(
     )
     .execute(&mut *tx)
     .await?;
-    // Compare and swap on the revision this request loaded, none for a page
-    // it just created, so a save racing this one is refused, not erased.
+    // Compare and swap on the loaded revision (none for a just-created page).
     let swapped = sqlx::query!(
         "UPDATE pages SET current_revision_id = $1, updated_at = now()
          WHERE id = $2 AND current_revision_id IS NOT DISTINCT FROM $3",

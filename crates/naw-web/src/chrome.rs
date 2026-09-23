@@ -1,5 +1,4 @@
-//! What a wiki's admins choose about its header and footer, from
-//! `wikis.settings.chrome`, editable live in Admin > Header and footer.
+//! Header buttons and footer links from `wikis.settings.chrome`.
 //!
 //! ```json
 //! { "chrome": {
@@ -8,13 +7,12 @@
 //! } }
 //! ```
 //!
-//! Absent or malformed values keep today's defaults: every header button, and
-//! the four translated footer links. A footer list, once saved, replaces the
-//! defaults entirely; an empty list means "no links".
+//! Missing or malformed values keep the defaults. A saved footer list
+//! replaces the default links, and an empty one means none.
 
 use serde_json::Value;
 
-/// Footer links a wiki may have. More than this is a sitemap, not a footer.
+/// Footer links a wiki may have.
 pub const MAX_FOOTER_LINKS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +40,7 @@ impl Default for HeaderFlags {
 pub struct FooterLink {
     pub href: String,
     pub label: String,
-    /// Shown only to readers in this interface language; empty for everyone.
+    /// Shown only in this interface language; empty for everyone.
     pub lang: String,
 }
 
@@ -86,8 +84,7 @@ pub fn footer(settings: &Value) -> Option<Vec<FooterLink>> {
     )
 }
 
-/// A local path or an http(s) URL. Nothing that runs script (`javascript:`),
-/// nothing protocol-relative that could look local and leave the site.
+/// A local path or an http(s) URL: never `javascript:`, never `//host`.
 pub fn href_is_safe(href: &str) -> bool {
     if href.len() > 500 || href.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return false;

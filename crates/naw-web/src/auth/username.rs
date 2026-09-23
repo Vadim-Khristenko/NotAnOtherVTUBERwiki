@@ -1,21 +1,13 @@
-//! Username policy: sanitize, reserved list, collision suffixes.
-//!
-//! Rules: 3 to 32 chars, `a-z0-9_-.`, starts with a letter. A dot sits between
-//! other characters only: never last, never two in a row, so a name never
-//! reads like a path (`..`) or ends in something that looks like a file type. Reserved names
-//! come from config and are granted by an admin only. Collisions get
-//! `-2`, `-3` suffixes until a free name appears.
+//! Username policy: 3 to 32 characters of `a-z0-9_-.`, starting with a
+//! letter, with dots only between other characters. Reserved names are
+//! admin-only; collisions get `-2`, `-3`.
 
 use naw_core::error::AppError;
 
 pub const USERNAME_MIN: usize = 3;
 pub const USERNAME_MAX: usize = 32;
 
-/// The full rule set, used for validation after sanitizing.
-///
-/// `claim` produces valid names by construction, so the only caller left is
-/// the test suite until a user can type a name of their own in settings.
-#[allow(dead_code)]
+/// The full rule set.
 pub fn is_valid(username: &str) -> bool {
     let len = username.chars().count();
     if !(USERNAME_MIN..=USERNAME_MAX).contains(&len) {
@@ -36,12 +28,8 @@ fn in_charset(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')
 }
 
-/// Best effort candidate from a provider handle: lowercase, truncated at the
-/// first character outside the charset, leading junk dropped, capped at 32.
-///
-/// Truncating beats filtering here: `user@example.test` must become `user`,
-/// not `userexampletest`, so one provider email cannot masquerade as an
-/// unrelated handle.
+/// A candidate from a provider handle: lowercase, cut at the first character
+/// outside the charset (so `user@example.test` becomes `user`), capped at 32.
 pub fn sanitize(handle: &str) -> String {
     handle
         .trim()
@@ -53,15 +41,13 @@ pub fn sanitize(handle: &str) -> String {
         .chars()
         .take(USERNAME_MAX)
         .collect::<String>()
-        // Dots follow the same rule as in `is_valid`: no runs, none at the end.
         .split('.')
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join(".")
 }
 
-/// Six lowercase hex characters. `random_token` is base64url and carries
-/// uppercase, which the username charset rejects.
+/// Six lowercase hex characters.
 fn short_random_suffix() -> String {
     use rand::RngCore;
     let mut bytes = [0u8; 3];
@@ -69,8 +55,7 @@ fn short_random_suffix() -> String {
     hex::encode(bytes)
 }
 
-/// `stem-round`, trimmed so the whole name still fits in 32 characters.
-/// Always derived from the sanitized stem, never from the raw handle.
+/// `stem-round`, trimmed to fit 32 characters.
 fn with_suffix(stem: &str, round: u32) -> String {
     let suffix = format!("-{round}");
     let keep = USERNAME_MAX.saturating_sub(suffix.chars().count());
@@ -78,13 +63,9 @@ fn with_suffix(stem: &str, round: u32) -> String {
     format!("{head}{suffix}")
 }
 
-/// Reserves a username derived from `base`: sanitizes it, walks the
-/// reserved list, then the users and user_aliases tables with `-2`, `-3`
-/// suffixes. Returns the claimed name.
-///
-/// Runs on the caller's connection so the check and the insert that follows
-/// share one transaction; on a pool the winner of a race would get a unique
-/// violation instead of the next free name.
+/// Claims a free username derived from `base`, skipping reserved names,
+/// taken names and aliases, on the caller's connection so the check and the
+/// insert share a transaction.
 pub async fn claim(
     db: &mut sqlx::PgConnection,
     reserved: &[String],

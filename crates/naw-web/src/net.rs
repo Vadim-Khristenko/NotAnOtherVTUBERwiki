@@ -1,10 +1,7 @@
 //! Who is on the other end of a request.
 //!
-//! Behind a reverse proxy or a tunnel every connection comes from loopback, so
-//! the peer address alone would put the whole internet into one rate limit
-//! bucket. The proxy's headers are trusted only when the operator said there is
-//! a proxy (`trust_proxy`) and the connection really comes from loopback, so a
-//! client talking to the engine directly cannot pick its own address.
+//! Proxy headers count only with `trust_proxy` on and a loopback peer, so a
+//! direct client cannot pick its own address.
 
 use std::net::{IpAddr, SocketAddr};
 
@@ -16,9 +13,8 @@ pub fn client_ip(headers: &HeaderMap, peer: SocketAddr, trust_proxy: bool) -> Ip
     if !trust_proxy || !peer_ip.is_loopback() {
         return peer_ip;
     }
-    // nginx sets X-Real-IP to the address it saw. X-Forwarded-For is a list the
-    // client can prefill, so only its last entry, the one our proxy appended,
-    // counts.
+    // X-Forwarded-For can be prefilled by the client; only the last entry,
+    // appended by our proxy, counts.
     let real_ip = headers
         .get("x-real-ip")
         .and_then(|value| value.to_str().ok())

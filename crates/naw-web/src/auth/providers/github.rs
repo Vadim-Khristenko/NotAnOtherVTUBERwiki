@@ -1,11 +1,5 @@
-//! GitHub, plain OAuth2 with optional PKCE.
-//!
-//! Two quirks drive the shape of this file. The token endpoint answers
-//! form-encoded unless asked for JSON, and the API returns 403 to any request
-//! without a User-Agent. Both are handled once, in `http.rs`.
-//!
-//! The email needs its own call: when a user keeps their address private the
-//! profile object carries `email: null`, and `/user/emails` is the only source.
+//! GitHub: OAuth2 with optional PKCE. The token endpoint needs to be asked
+//! for JSON, and a private email only comes from `/user/emails`.
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -24,7 +18,7 @@ const PROFILE: &str = "https://api.github.com/user";
 const EMAILS: &str = "https://api.github.com/user/emails";
 const SCOPE: &str = "read:user user:email";
 
-/// GitHub versions its API through this header rather than the URL.
+/// GitHub versions its API through this header.
 const API_VERSION: (&str, &str) = ("X-GitHub-Api-Version", "2022-11-28");
 const ACCEPT: (&str, &str) = ("Accept", "application/vnd.github+json");
 
@@ -57,9 +51,7 @@ struct Email {
     verified: bool,
 }
 
-/// Picks the address GitHub itself vouches for: primary and verified. A
-/// verified non-primary address is accepted as a fallback, an unverified one
-/// never is.
+/// The primary verified address, else any verified one, never an unverified one.
 fn certified_email(mut entries: Vec<Email>) -> Option<String> {
     entries.retain(|entry| entry.verified && !entry.email.trim().is_empty());
     entries
@@ -94,7 +86,6 @@ impl LoginProvider for Github {
                 code,
                 redirect_uri: params.redirect_uri,
                 code_verifier: params.code_verifier,
-                // Without this the token endpoint answers form-encoded.
                 accept_json: true,
                 use_basic_auth: false,
             },
@@ -112,9 +103,7 @@ impl LoginProvider for Github {
         }
         let profile: Profile = response.json()?;
 
-        // A failed email call is not a failed login. GitHub can refuse the
-        // scope, and an account without a usable address is still an account:
-        // the user links one later in settings.
+        // A failed email call is not a failed login.
         let email = match params.http.get(EMAILS, Some(&bearer), &headers).await {
             Ok(response) if response.is_success() => {
                 certified_email(response.json::<Vec<Email>>().unwrap_or_default())
@@ -137,8 +126,7 @@ impl LoginProvider for Github {
             display_name: profile.name.filter(|name| !name.trim().is_empty()),
             avatar_url: profile.avatar_url,
             handle: profile.login.clone(),
-            // Trimmed on purpose: no tokens, no scopes, no email. Enough to
-            // debug a bad login and nothing more.
+            // No tokens, scopes or email in the stored profile.
             raw: json!({ "id": profile.id, "login": profile.login }),
         })
     }
@@ -168,8 +156,7 @@ mod tests {
     fn scripted(emails: Option<(u16, &str)>) -> Scripted {
         Scripted::new()
             .on("oauth/access_token", 200, r#"{"access_token":"gho_x"}"#)
-            // The emails route must be registered before the profile route:
-            // "api.github.com/user" is a prefix of "api.github.com/user/emails".
+            // "…/user" is a prefix of "…/user/emails", so emails goes first.
             .on(
                 "api.github.com/user/emails",
                 emails.map(|(status, _)| status).unwrap_or(403),
@@ -205,7 +192,6 @@ mod tests {
         assert_eq!(identity.email.as_deref(), Some("fan@example.test"));
         assert!(identity.email_verified);
 
-        // The stored profile must never carry the token or the address.
         let raw = identity.raw.to_string();
         assert!(!raw.contains("gho_x"));
         assert!(!raw.to_lowercase().contains("example.test"));
@@ -230,8 +216,6 @@ mod tests {
             .await
             .expect("login still completes");
 
-        // No address rather than an unverified one: store.rs treats a present
-        // email as certified, so handing it one here would defeat that.
         assert_eq!(identity.email, None);
         assert!(!identity.email_verified);
     }
@@ -347,7 +331,6 @@ mod tests {
             pick(vec![("a@x.test", false, true), ("b@x.test", true, true)]),
             Some("b@x.test".to_string())
         );
-        // Primary but unverified loses to a verified secondary.
         assert_eq!(
             pick(vec![("a@x.test", true, false), ("b@x.test", false, true)]),
             Some("b@x.test".to_string())

@@ -1,27 +1,13 @@
-//! How a failed sign-in becomes a page.
-//!
-//! Handlers here return a status with an `auth_failed` marker and no body; the
-//! error layer renders it in the reader's language through the active skin.
-//! The sign-in page itself lives in `crate::account`.
-//!
-//! The wording rule from the hardening slice holds: the page says something
-//! safe and generic, the log carries what actually failed.
+//! How a failed sign-in becomes a page: a status with an `auth_failed`
+//! marker and no body, rendered by the error layer.
 
 use axum::http::StatusCode;
 use axum::response::Response;
 
 use super::types::AuthError;
 
-/// Turns an `AuthError` into a response the error middleware renders as the
-/// `auth_failed` page, in the reader's language and the active skin.
-///
-/// Each failure keeps its own wording through a variant: a cancelled flow is not
-/// an outage, and telling somebody who pressed Cancel that a service is down
-/// would be both wrong and alarming. The page says something safe; the log keeps
-/// what actually failed.
-///
-/// A cancelled sign-in stays a 200, because nothing went wrong. The marker is
-/// what makes it a page anyway.
+/// An `AuthError` as an `auth_failed` page with its own variant wording. A
+/// cancelled sign-in stays a 200; the marker still makes it a page.
 pub fn auth_error(err: &AuthError) -> Response {
     use crate::errors::{Kind, MarkExt};
     let (status, variant) = match err {
@@ -35,13 +21,11 @@ pub fn auth_error(err: &AuthError) -> Response {
             tracing::error!(detail = %detail, "auth upstream failure");
             (StatusCode::BAD_GATEWAY, "upstream")
         }
-        // 403 and not 401: signing in again with the same provider changes
-        // nothing, only an admin creating the account does.
+        // Not 401: signing in again changes nothing, only an admin can help.
         AuthError::RegistrationClosed => (StatusCode::FORBIDDEN, "closed"),
         AuthError::Suspended => (StatusCode::FORBIDDEN, "suspended"),
     };
-    // No body: the reason shown to the reader comes from the language pack, and
-    // an upstream detail is exactly the kind of text that must not reach the page.
+    // No body: upstream detail must never reach the page.
     status.marked_as(Kind::AuthFailed, variant)
 }
 
@@ -56,8 +40,6 @@ mod tests {
 
     #[test]
     fn cancelling_is_a_page_and_not_a_failure() {
-        // A reader who pressed Cancel did nothing wrong: no 4xx, but still a page,
-        // which is what the marker is for.
         let response = auth_error(&AuthError::Cancelled);
         assert_eq!(response.status(), StatusCode::OK);
         let mark = marker(&response).expect("marked");
@@ -89,8 +71,6 @@ mod tests {
 
     #[tokio::test]
     async fn an_upstream_detail_never_reaches_the_body() {
-        // Whatever a provider says about its own internals is for the log. The
-        // response carries no body at all; the page text comes from the pack.
         let secretish = "token=abc123 leaked from provider";
         let response = auth_error(&AuthError::Upstream(secretish.to_string()));
         let body = axum::body::to_bytes(response.into_body(), 1024)

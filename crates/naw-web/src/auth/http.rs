@@ -1,11 +1,5 @@
-//! The outbound HTTP surface the providers are allowed to use.
-//!
-//! Providers never touch reqwest directly. They go through `HttpFetch`, which
-//! keeps the provider logic testable offline: the tests hand them a canned
-//! double instead of talking to GitHub.
-//!
-//! Every response is read as bytes with a size cap. A provider that starts
-//! streaming gigabytes must not take the process down with it.
+//! Outbound HTTP for the providers, behind `HttpFetch` so provider logic is
+//! testable offline. Every body is read with a size cap.
 
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -17,11 +11,10 @@ use serde::de::DeserializeOwned;
 
 use super::types::AuthError;
 
-/// Nothing an identity provider sends us is legitimately larger than this.
+/// Largest body accepted from an identity provider.
 const MAX_BODY: usize = 256 * 1024;
 
-/// Providers are third parties on the critical path of a login. They get a
-/// short leash.
+/// Providers are on the critical path of a login.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct FetchResponse {
@@ -34,8 +27,7 @@ impl FetchResponse {
         (200..300).contains(&self.status)
     }
 
-    /// Parses the body as JSON. The parse error never reaches the user, so it
-    /// carries the provider's own wording for the log and nothing else.
+    /// Parses the body as JSON; the error is for the log only.
     pub fn json<T: DeserializeOwned>(&self) -> Result<T, AuthError> {
         serde_json::from_slice(&self.body).map_err(|err| {
             AuthError::Upstream(format!(
@@ -48,8 +40,7 @@ impl FetchResponse {
 
 #[async_trait]
 pub trait HttpFetch: Send + Sync {
-    /// Token endpoints. Every provider we support takes
-    /// `application/x-www-form-urlencoded` and several reject JSON outright.
+    /// Token endpoints, all form-encoded.
     async fn post_form(
         &self,
         url: &str,
@@ -70,9 +61,7 @@ pub struct ReqwestFetch {
     client: reqwest::Client,
 }
 
-/// One client for the whole process. `reqwest::Client` owns the connection
-/// pool, so building one per request would throw away every kept-alive
-/// connection and re-handshake TLS on every login.
+/// One client and connection pool for the process.
 pub fn shared() -> &'static ReqwestFetch {
     static SHARED: OnceLock<ReqwestFetch> = OnceLock::new();
     SHARED.get_or_init(ReqwestFetch::new)
@@ -83,8 +72,7 @@ impl ReqwestFetch {
         let client = reqwest::Client::builder()
             .timeout(TIMEOUT)
             .connect_timeout(TIMEOUT)
-            // A provider that 302s us somewhere else during a token exchange
-            // is not a provider we follow.
+            // A provider that redirects a token exchange is not followed.
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(USER_AGENT)
             .build()
@@ -99,8 +87,7 @@ impl Default for ReqwestFetch {
     }
 }
 
-/// GitHub answers 403 to any API call without a User-Agent, so this is not
-/// decoration.
+/// GitHub refuses API calls without a User-Agent.
 pub const USER_AGENT: &str = "NotAnotherWiki/0.1 (+https://snackers.wiki)";
 
 async fn collect(response: reqwest::Response) -> Result<FetchResponse, AuthError> {
@@ -135,9 +122,7 @@ impl HttpFetch for ReqwestFetch {
             request = request.header(reqwest::header::ACCEPT, "application/json");
         }
         if let Some((user, password)) = basic {
-            // reqwest can do basic auth itself, but Telegram wants the exact
-            // base64(client_id:client_secret) pair and being explicit here
-            // keeps the header identical to the spec.
+            // Telegram expects exactly base64(client_id:client_secret).
             let encoded = STANDARD.encode(format!("{user}:{password}"));
             request = request.header(reqwest::header::AUTHORIZATION, format!("Basic {encoded}"));
         }
@@ -171,10 +156,8 @@ impl HttpFetch for ReqwestFetch {
 
 #[cfg(test)]
 pub mod test_double {
-    //! A scripted `HttpFetch` for provider tests. Every call is recorded so a
-    //! test can assert the exact request a provider made, which is where the
-    //! interesting bugs live: a missing `Accept: application/json`, a token
-    //! posted as JSON, a forgotten `code_verifier`.
+    //! A scripted `HttpFetch` that records every call, so tests can assert the
+    //! exact request a provider made.
 
     use std::sync::Mutex;
 
@@ -196,7 +179,7 @@ pub mod test_double {
     }
 
     pub struct Scripted {
-        /// url fragment -> (status, body). First match wins.
+        /// url fragment -> (status, body); the first match wins.
         routes: Vec<(String, u16, String)>,
         pub calls: Mutex<Vec<Call>>,
     }
@@ -231,7 +214,7 @@ pub mod test_double {
             self.calls.lock().expect("call log")
         }
 
-        /// The form a given call posted, for assertions on a single field.
+        /// The form a given call posted.
         pub fn posted(&self, index: usize, key: &str) -> Option<String> {
             match self.calls().get(index) {
                 Some(Call::PostForm { form, .. }) => form
@@ -294,8 +277,7 @@ mod tests {
             body: b"{\"access_token\": ".to_vec(),
         };
         let err = response.json::<serde_json::Value>().expect_err("must fail");
-        // Upstream detail only ever reaches the log, and it must not carry the
-        // token fragment that failed to parse.
+        // Upstream detail must not carry the token fragment.
         let AuthError::Upstream(detail) = err else {
             panic!("expected an upstream error");
         };

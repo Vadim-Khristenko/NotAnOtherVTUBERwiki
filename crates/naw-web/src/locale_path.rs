@@ -1,18 +1,9 @@
 //! `/ru/about` is the Russian article at `about`.
 //!
-//! One wiki hosts every language of an article under one slug. The language is
-//! the first path segment when it names an installed language pack, and the
-//! rest of the path is routed as if the prefix were not there, so every route
-//! (`/{slug}`, `/{slug}/edit`, `/{slug}/history` and the rest) works in every
-//! language without being declared twice.
-//!
-//! The layer wraps the whole router, not a route, because it changes which
-//! route matches: axum's own middleware runs after routing, too late to rewrite
-//! the path it routes on.
-//!
-//! What it found travels to the handlers as request headers it owns. Any copy a
-//! client sent is removed first, so nobody can pick a language prefix, or a
-//! path, by typing a header.
+//! A leading segment naming an installed language is stripped before
+//! routing, so every route works in every language. The layer wraps the
+//! whole router because axum middleware runs after routing. The result
+//! travels in headers this layer owns; client copies are removed first.
 
 use axum::body::Body;
 use axum::extract::State;
@@ -22,13 +13,12 @@ use axum::response::Response;
 
 use naw_core::state::AppState;
 
-/// The content language taken from the path prefix, when there was one.
+/// The content language from the path prefix.
 pub const LOCALE_HEADER: &str = "x-naw-content-locale";
-/// The path as it will be routed, without any language prefix.
+/// The path as routed, without a language prefix.
 pub const PATH_HEADER: &str = "x-naw-path";
 
-/// A language code shape: `ru`, `pt-br`, `zh-hant`. Checked before the pack
-/// lookup so an arbitrary first segment never reaches the catalogue.
+/// A language code shape (`ru`, `pt-br`, `zh-hant`), checked before the lookup.
 fn looks_like_language(segment: &str) -> bool {
     let mut parts = segment.split('-');
     let Some(primary) = parts.next() else {
@@ -39,8 +29,7 @@ fn looks_like_language(segment: &str) -> bool {
         && parts.all(|p| (2..=8).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_alphanumeric()))
 }
 
-/// Splits `/ru/about/edit` into `("ru", "/about/edit")` when `ru` is a language
-/// this install has a pack for. `/ru` alone is the Russian home page.
+/// `/ru/about/edit` into `("ru", "/about/edit")` when `ru` is installed.
 fn split(path: &str, known: &dyn Fn(&str) -> bool) -> Option<(String, String)> {
     let rest = path.strip_prefix('/')?;
     let (first, tail) = match rest.find('/') {

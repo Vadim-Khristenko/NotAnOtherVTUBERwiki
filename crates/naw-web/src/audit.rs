@@ -1,31 +1,19 @@
 //! Writing to `audit_log`.
 //!
-//! Two ways to call this, and the difference matters.
-//!
-//! `record` returns the error. Use it where the audit row is part of the point:
-//! a role change nobody can see afterwards is worse than a role change that
-//! failed loudly.
-//!
-//! `record_or_log` swallows it into a log line. Use it where the action is the
-//! point and the trail is bookkeeping: an editor who saved a page must not get
-//! a 500 because the audit insert lost a race.
-//!
-//! Nothing secret goes in `meta`. It ends up in an admin panel, in database
-//! dumps and in backups, so it holds slugs, ids and role names, never tokens,
-//! never passwords, never a session value.
+//! [`record`] returns the error, for actions whose trail is the point (a
+//! role change). [`record_or_log`] logs it instead, for actions that must
+//! not fail over bookkeeping. `meta` never holds a secret.
 
 use serde_json::Value;
 use uuid::Uuid;
 
 use naw_core::error::AppError;
 
-/// One audit row. `entity_type` and `action` are the stable machine-readable
-/// pair the admin panel filters on: `action` reads as `noun.verb`.
+/// One audit row; `action` reads as `noun.verb`.
 pub struct Entry<'a> {
-    /// `None` for install-wide events that belong to no single wiki.
+    /// `None` for install-wide events.
     pub wiki_id: Option<Uuid>,
-    /// `None` for an anonymous actor, which is possible on a wiki that allows
-    /// anonymous edits.
+    /// `None` for an anonymous actor.
     pub user_id: Option<Uuid>,
     pub action: &'a str,
     pub entity_type: &'a str,
@@ -50,7 +38,7 @@ pub async fn record(db: &sqlx::PgPool, entry: Entry<'_>) -> Result<(), AppError>
     Ok(())
 }
 
-/// As `record`, but a failure becomes a log line instead of a failed request.
+/// As [`record`], but a failure is logged instead of returned.
 pub async fn record_or_log(db: &sqlx::PgPool, entry: Entry<'_>) {
     let action = entry.action;
     if let Err(err) = record(db, entry).await {

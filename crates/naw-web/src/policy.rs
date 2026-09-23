@@ -1,19 +1,14 @@
-//! Install-wide rules, with the environment as the default and the admin
-//! panel as the override.
-//!
-//! Read per request rather than cached: these rows change rarely, the query is
-//! one primary key lookup, and a cache would mean an admin saves a setting and
-//! then watches it not apply.
+//! Install-wide rules: the environment is the default, the admin panel the
+//! override. Read per request, so a saved setting applies at once.
 
 use naw_core::config::AccountPolicy;
 use naw_core::error::AppError;
 use naw_core::state::AppState;
 
-/// The key of the account rules row in `install_settings`.
+/// The `install_settings` key of the account rules.
 pub const ACCOUNTS_KEY: &str = "accounts";
 
-/// The account rules in force: each field from the admin panel when it was
-/// saved there, from the environment otherwise.
+/// The account rules in force, field by field.
 pub async fn accounts(state: &AppState) -> Result<AccountPolicy, AppError> {
     let stored = sqlx::query_scalar!(
         "SELECT value FROM install_settings WHERE key = $1",
@@ -24,8 +19,7 @@ pub async fn accounts(state: &AppState) -> Result<AccountPolicy, AppError> {
     Ok(merge(state.config.accounts, stored.as_ref()))
 }
 
-/// Overlays the stored fields on the defaults. A field that is missing or of
-/// the wrong type keeps the default rather than failing the request.
+/// Overlays stored fields on the defaults; a bad field keeps its default.
 fn merge(defaults: AccountPolicy, stored: Option<&serde_json::Value>) -> AccountPolicy {
     let Some(stored) = stored else {
         return defaults;
