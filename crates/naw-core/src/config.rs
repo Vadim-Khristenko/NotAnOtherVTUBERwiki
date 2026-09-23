@@ -40,8 +40,56 @@ pub struct Config {
     /// is the wrong home for a password.
     #[serde(skip)]
     pub bootstrap_owner: Option<BootstrapOwner>,
+    /// Defaults for how accounts may change. The install owner can override
+    /// each value from the admin panel; these apply until they do.
+    #[serde(default)]
+    pub accounts: AccountPolicy,
     #[serde(default)]
     pub auth: AuthConfig,
+}
+
+/// What an account may change about itself, and for how long an old name
+/// stays reserved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(default)]
+pub struct AccountPolicy {
+    /// Whether people may change their own username at all.
+    pub rename_enabled: bool,
+    /// Days between two changes of one account's username.
+    pub rename_cooldown_days: i64,
+    /// Switches former usernames off entirely: a rename frees the old name at
+    /// once and old links stop finding the person. Off by default.
+    pub aliases_disabled: bool,
+    /// Days a former username stays reserved for its owner. 0 keeps it forever.
+    pub alias_days: i64,
+    /// Former usernames kept per account. The oldest goes first.
+    pub max_aliases: i64,
+}
+
+impl Default for AccountPolicy {
+    fn default() -> Self {
+        Self {
+            rename_enabled: true,
+            rename_cooldown_days: 7,
+            aliases_disabled: false,
+            alias_days: 30,
+            max_aliases: 5,
+        }
+    }
+}
+
+impl AccountPolicy {
+    /// Pulls every value into a sane range, so a typo in an env var or a form
+    /// cannot mean "rename every second" or "keep a million names".
+    pub fn clamped(self) -> Self {
+        Self {
+            rename_enabled: self.rename_enabled,
+            rename_cooldown_days: self.rename_cooldown_days.clamp(0, 3650),
+            aliases_disabled: self.aliases_disabled,
+            alias_days: self.alias_days.clamp(0, 3650),
+            max_aliases: self.max_aliases.clamp(0, 50),
+        }
+    }
 }
 
 /// An account that must exist with every right on the install.
@@ -116,6 +164,7 @@ impl Default for Config {
             reload_interval_secs: default_reload_interval_secs(),
             trust_proxy: false,
             bootstrap_owner: None,
+            accounts: AccountPolicy::default(),
             auth: AuthConfig::default(),
         }
     }
@@ -333,6 +382,7 @@ impl fmt::Debug for Config {
             .field("reload_interval_secs", &self.reload_interval_secs)
             .field("trust_proxy", &self.trust_proxy)
             .field("bootstrap_owner", &self.bootstrap_owner)
+            .field("accounts", &self.accounts)
             .field("auth", &self.auth)
             .finish()
     }
@@ -426,6 +476,7 @@ impl Config {
             cfg.trust_proxy = flag;
         }
         apply_auth_env(&mut cfg.auth)?;
+        apply_accounts_env(&mut cfg.accounts)?;
         cfg.bootstrap_owner = BootstrapOwner::from_env()?;
         cfg.check_dev_login()?;
         Ok(cfg)
@@ -461,6 +512,39 @@ fn parse_bool(raw: &str) -> Option<bool> {
         "0" | "false" | "no" | "off" | "disabled" => Some(false),
         _ => None,
     }
+}
+
+/// NAW_RENAME_ENABLED, NAW_ALIASES_DISABLED, NAW_RENAME_COOLDOWN_DAYS, NAW_ALIAS_DAYS and
+/// NAW_MAX_ALIASES. A value that does not parse stops the start rather than
+/// quietly leaving the default in place.
+fn apply_accounts_env(policy: &mut AccountPolicy) -> Result<(), AppError> {
+    if let Ok(raw) = std::env::var("NAW_ALIASES_DISABLED") {
+        policy.aliases_disabled = parse_bool(&raw).ok_or_else(|| {
+            AppError::Config(format!(
+                "NAW_ALIASES_DISABLED must be true or false, got {raw:?}"
+            ))
+        })?;
+    }
+    if let Ok(raw) = std::env::var("NAW_RENAME_ENABLED") {
+        policy.rename_enabled = parse_bool(&raw).ok_or_else(|| {
+            AppError::Config(format!(
+                "NAW_RENAME_ENABLED must be true or false, got {raw:?}"
+            ))
+        })?;
+    }
+    for (name, slot) in [
+        ("NAW_RENAME_COOLDOWN_DAYS", &mut policy.rename_cooldown_days),
+        ("NAW_ALIAS_DAYS", &mut policy.alias_days),
+        ("NAW_MAX_ALIASES", &mut policy.max_aliases),
+    ] {
+        if let Ok(raw) = std::env::var(name) {
+            *slot = raw.trim().parse::<i64>().map_err(|_| {
+                AppError::Config(format!("{name} must be a whole number, got {raw:?}"))
+            })?;
+        }
+    }
+    *policy = policy.clamped();
+    Ok(())
 }
 
 /// Applies the NAW_AUTH_* and provider env overrides, env wins over TOML.
@@ -576,6 +660,22 @@ mod tests {
         assert!(!dumped.contains("redis://"));
         assert!(dumped.contains("[redacted]"));
         assert_eq!(cfg.skin_dir, "skins/default");
+    }
+
+    #[test]
+    fn account_policy_is_kept_in_range() {
+        let wild = AccountPolicy {
+            rename_enabled: true,
+            rename_cooldown_days: -5,
+            aliases_disabled: false,
+            alias_days: 1_000_000,
+            max_aliases: 900,
+        }
+        .clamped();
+        assert_eq!(wild.rename_cooldown_days, 0);
+        assert_eq!(wild.alias_days, 3650);
+        assert_eq!(wild.max_aliases, 50);
+        assert_eq!(AccountPolicy::default().alias_days, 30);
     }
 
     #[test]

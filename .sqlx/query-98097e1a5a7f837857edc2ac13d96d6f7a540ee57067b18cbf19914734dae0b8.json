@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pages SET slug = $2, title = $2, updated_at = now()\n         WHERE namespace = 'user' AND slug = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "98097e1a5a7f837857edc2ac13d96d6f7a540ee57067b18cbf19914734dae0b8"
+}

@@ -292,6 +292,29 @@ a.button-save, a.button-preview { display: inline-flex; align-items: center; jus
 .auth-alt { margin-top: var(--s4); text-align: center; }
 .link-button { background: none; border: none; padding: 0; font: inherit; color: var(--muted); text-decoration: underline; text-underline-offset: 0.15em; cursor: pointer; }
 .link-button:hover { color: var(--ink); }
+/* Settings: a head with the account, then cards. */
+.settings-head { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; margin-bottom: var(--s5); }
+.settings-head h1 { margin: 0; }
+.settings-head p { margin: 0; }
+.settings-avatar { width: 3.5rem; height: 3.5rem; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 1.5rem; font-weight: 800; }
+.settings-profile { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s2); text-decoration: none; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: var(--s4); }
+.settings-card { padding: var(--s4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elevated); }
+.settings-card-wide { grid-column: 1 / -1; }
+.settings-card h2 { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s2); font-size: 1.05rem; }
+.settings-card h2 .icon { color: var(--accent); }
+.settings-card > :last-child { margin-bottom: 0; }
+.settings-card .button-preview { display: inline-flex; text-decoration: none; }
+.settings-stack { display: grid; gap: var(--s2); justify-items: start; }
+.settings-stack .field-input { width: 100%; }
+.settings-row { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.settings-row .field-input { flex: 1 1 12rem; width: auto; }
+.settings-list { list-style: none; margin: 0 0 var(--s3); padding: 0; }
+.settings-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s2); padding: var(--s2) 0; border-top: 1px solid var(--line); }
+.settings-list li:first-child { border-top: none; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.settings-signout { margin-top: var(--s5); }
+.settings-signout .link-button { display: inline-flex; align-items: center; gap: var(--s2); }
 /* Admin: accounts. */
 .admin-actions { margin: 0 0 var(--s4); }
 .admin-actions .button-save { display: inline-flex; align-items: center; gap: var(--s2); text-decoration: none; }

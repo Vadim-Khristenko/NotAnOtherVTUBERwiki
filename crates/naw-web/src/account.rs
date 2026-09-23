@@ -301,7 +301,7 @@ async fn needs_current(
     Ok((!user.must_change_password && stored.is_some(), stored))
 }
 
-/// GET /account/password
+/// GET /settings/password
 pub async fn password_page(
     State(state): State<AppState>,
     Query(params): Query<BTreeMap<String, String>>,
@@ -322,7 +322,7 @@ pub async fn password_page(
     render_password_form(&ctx, StatusCode::OK, &user, needs_current, &next, None)
 }
 
-/// POST /account/password
+/// POST /settings/password
 pub async fn change_password(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -411,10 +411,10 @@ mod tests {
 
     #[test]
     fn the_change_page_keeps_where_you_were_going() {
-        assert_eq!(change_target("/"), "/account/password");
+        assert_eq!(change_target("/"), "/settings/password");
         assert_eq!(
             change_target("/lore/edit"),
-            "/account/password?next=%2Flore%2Fedit"
+            "/settings/password?next=%2Flore%2Fedit"
         );
     }
 }

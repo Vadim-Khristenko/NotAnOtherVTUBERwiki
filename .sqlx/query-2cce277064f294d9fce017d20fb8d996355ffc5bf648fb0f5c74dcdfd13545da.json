@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM user_aliases WHERE lower(alias) = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2cce277064f294d9fce017d20fb8d996355ffc5bf648fb0f5c74dcdfd13545da"
+}

@@ -621,16 +621,17 @@ pub async fn create_user(
         }
     }
     sqlx::query!(
+        // No locale: the new account follows its owner's browser until they
+        // pick a language in their settings.
         "INSERT INTO users (id, username, email, email_verified_at, password_hash,
-                            must_change_password, created_by, global_role, locale)
-         VALUES ($1, $2, $3, $4, $5, true, $6, 'registered', $7)",
+                            must_change_password, created_by, global_role)
+         VALUES ($1, $2, $3, $4, $5, true, $6, 'registered')",
         user_id,
         username,
         email,
         verified_at,
         hash,
-        ctx.actor.user_id,
-        ctx.wiki.default_locale
+        ctx.actor.user_id
     )
     .execute(&mut *tx)
     .await?;
@@ -734,6 +735,116 @@ pub async fn reset_password(
     )
     .await?;
     render_issued(&ctx, &target.username, &temporary, false)
+}
+
+// ---------------------------------------------------------------------------
+// Install: account rules
+// ---------------------------------------------------------------------------
+//
+// Accounts are shared by every wiki on the install, so their rules belong to
+// the install owner, not to one wiki's admins.
+
+/// GET /admin/accounts
+#[instrument(skip(state, user))]
+pub async fn account_rules(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    Query(query): Query<SavedQuery>,
+) -> Result<Response, AppError> {
+    let ctx = match gate(&state, &headers, user.as_ref()).await {
+        Ok(ctx) => ctx,
+        Err(response) => return Ok(response),
+    };
+    if ctx.actor.global != GlobalRole::Root {
+        return Ok((
+            StatusCode::FORBIDDEN,
+            "account rules belong to the install owner",
+        )
+            .into_response());
+    }
+    let policy = crate::policy::accounts(&state).await?;
+    let defaults = state.config.accounts;
+    render(
+        &ctx,
+        "accounts",
+        &ctx.t("admin.accounts_rules"),
+        minijinja::context! {
+            rename_enabled => policy.rename_enabled,
+            aliases_disabled => policy.aliases_disabled,
+            rename_cooldown_days => policy.rename_cooldown_days,
+            alias_days => policy.alias_days,
+            max_aliases => policy.max_aliases,
+            default_cooldown => defaults.rename_cooldown_days,
+            default_alias_days => defaults.alias_days,
+            default_max_aliases => defaults.max_aliases,
+            saved => query.saved.is_some(),
+        },
+    )
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct SavedQuery {
+    #[serde(default)]
+    saved: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct AccountRulesForm {
+    #[serde(default)]
+    rename_enabled: Option<String>,
+    #[serde(default)]
+    aliases_disabled: Option<String>,
+    #[serde(default)]
+    rename_cooldown_days: i64,
+    #[serde(default)]
+    alias_days: i64,
+    #[serde(default)]
+    max_aliases: i64,
+}
+
+/// POST /admin/accounts
+#[instrument(skip(state, user))]
+pub async fn save_account_rules(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    Form(form): Form<AccountRulesForm>,
+) -> Result<Response, AppError> {
+    let ctx = match gate(&state, &headers, user.as_ref()).await {
+        Ok(ctx) => ctx,
+        Err(response) => return Ok(response),
+    };
+    if ctx.actor.global != GlobalRole::Root {
+        return Ok((
+            StatusCode::FORBIDDEN,
+            "account rules belong to the install owner",
+        )
+            .into_response());
+    }
+    let before = crate::policy::accounts(&state).await?;
+    let after = naw_core::config::AccountPolicy {
+        rename_enabled: form.rename_enabled.is_some(),
+        aliases_disabled: form.aliases_disabled.is_some(),
+        rename_cooldown_days: form.rename_cooldown_days,
+        alias_days: form.alias_days,
+        max_aliases: form.max_aliases,
+    }
+    .clamped();
+    crate::policy::save_accounts(&state, after, ctx.actor.user_id).await?;
+    audit::record(
+        &state.db,
+        audit::Entry {
+            wiki_id: None,
+            user_id: ctx.actor.user_id,
+            action: "install.account_rules",
+            entity_type: "install",
+            entity_id: None,
+            meta: json!({ "was": before, "now": after }),
+        },
+    )
+    .await?;
+    Ok(pages::see_other("/admin/accounts?saved=1"))
 }
 
 // ---------------------------------------------------------------------------

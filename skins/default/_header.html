@@ -117,7 +117,7 @@
 
       {% if signed_in is defined and signed_in %}
       <div class="nav-account">
-        <a class="nav-link nav-user" href="/user/{{ username }}">
+        <a class="nav-link nav-user" href="/settings" title="{{ t('settings.title') }}">
           <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>
           <span>{{ username }}</span>
         </a>

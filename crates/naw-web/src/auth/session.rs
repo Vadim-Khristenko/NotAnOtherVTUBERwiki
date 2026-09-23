@@ -224,7 +224,7 @@ fn reachable_before_change(path: &str) -> bool {
 }
 
 /// Where a password change happens.
-pub const PASSWORD_PAGE: &str = "/account/password";
+pub const PASSWORD_PAGE: &str = "/settings/password";
 
 /// The change password page, remembering where the person was headed so the
 /// change lands them there. Only a local path is kept.
@@ -247,11 +247,11 @@ mod tests {
 
     #[test]
     fn a_temporary_password_reaches_only_the_way_out() {
-        assert!(reachable_before_change("/account/password"));
+        assert!(reachable_before_change("/settings/password"));
         assert!(reachable_before_change("/logout"));
         assert!(!reachable_before_change("/"));
         assert!(!reachable_before_change("/admin"));
-        assert!(!reachable_before_change("/account/password/extra"));
+        assert!(!reachable_before_change("/settings/password/extra"));
     }
 
     #[test]
@@ -259,10 +259,10 @@ mod tests {
         let uri: axum::http::Uri = "/some-page/edit?x=1".parse().unwrap();
         assert_eq!(
             password_page_for(&uri),
-            "/account/password?next=%2Fsome-page%2Fedit%3Fx%3D1"
+            "/settings/password?next=%2Fsome-page%2Fedit%3Fx%3D1"
         );
         let root: axum::http::Uri = "/".parse().unwrap();
-        assert_eq!(password_page_for(&root), "/account/password");
+        assert_eq!(password_page_for(&root), "/settings/password");
     }
 
     #[test]

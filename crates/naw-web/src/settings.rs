@@ -1,0 +1,434 @@
+//! The signed-in person's own settings: `/settings`.
+//!
+//! Not the admin panel. Everything here acts on the account that is asking and
+//! nobody else, so there are no capability checks beyond being signed in.
+//! Every change is a POST, which keeps SameSite=Lax the CSRF defence.
+
+use axum::extract::{Extension, Form, Query, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Redirect, Response};
+use serde::Deserialize;
+
+use naw_core::error::AppError;
+use naw_core::state::AppState;
+
+use crate::auth::providers;
+use crate::auth::redirect::encode_component;
+use crate::auth::session::{self, CurrentUser};
+use crate::pages::{ENGINE_VERSION, template_error};
+
+/// Sessions shown before the list is cut. Nobody is signed in on thirty
+/// devices on purpose, and the button below ends all of them anyway.
+const SESSIONS_SHOWN: i64 = 20;
+
+fn sign_in_first() -> Response {
+    Redirect::to(&format!("/login?next={}", encode_component("/settings"))).into_response()
+}
+
+/// A short, human label for a user agent: browser and platform, no version
+/// soup. Good enough to tell "my phone" from "the library computer".
+fn device_label(user_agent: Option<&str>) -> String {
+    let ua = user_agent.unwrap_or_default();
+    let browser = [
+        ("Edg/", "Edge"),
+        ("OPR/", "Opera"),
+        ("YaBrowser/", "Yandex Browser"),
+        ("Firefox/", "Firefox"),
+        ("Chrome/", "Chrome"),
+        ("Safari/", "Safari"),
+    ]
+    .iter()
+    .find(|(needle, _)| ua.contains(needle))
+    .map(|(_, name)| *name);
+    let platform = [
+        ("Android", "Android"),
+        ("iPhone", "iPhone"),
+        ("iPad", "iPad"),
+        ("Windows", "Windows"),
+        ("Mac OS X", "macOS"),
+        ("Linux", "Linux"),
+    ]
+    .iter()
+    .find(|(needle, _)| ua.contains(needle))
+    .map(|(_, name)| *name);
+    match (browser, platform) {
+        (Some(b), Some(p)) => format!("{b}, {p}"),
+        (Some(b), None) => b.to_string(),
+        (None, Some(p)) => p.to_string(),
+        (None, None) => String::new(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct SettingsQuery {
+    /// Which change just landed, for a one-line confirmation.
+    #[serde(default)]
+    saved: Option<String>,
+    /// Why the last change was refused, as a message key.
+    #[serde(default)]
+    error: Option<String>,
+}
+
+/// GET /settings
+pub async fn page(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    Query(query): Query<SettingsQuery>,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    let Some(ctx) = crate::resolve::context(&state, &headers, Some(&user)).await? else {
+        return Ok(crate::errors::not_found());
+    };
+
+    let account = sqlx::query!(
+        r#"SELECT created_at, (password_hash IS NOT NULL) AS "has_password!",
+                  password_changed_at
+           FROM users WHERE id = $1"#,
+        user.id
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let identities = sqlx::query!(
+        "SELECT provider, display_name, created_at, last_login_at
+         FROM oauth_identities WHERE user_id = $1 ORDER BY created_at",
+        user.id
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let linked: Vec<String> = identities.iter().map(|row| row.provider.clone()).collect();
+    let identity_rows: Vec<minijinja::Value> = identities
+        .into_iter()
+        .map(|row| {
+            minijinja::context! {
+                provider => row.provider,
+                name => row.display_name,
+                since => row.created_at.format("%Y-%m-%d").to_string(),
+                last => row.last_login_at.map(|t| t.format("%Y-%m-%d").to_string()),
+            }
+        })
+        .collect();
+    let linkable: Vec<minijinja::Value> = providers::enabled(&state.config.auth)
+        .iter()
+        .filter(|provider| !linked.iter().any(|p| p == provider.id().as_str()))
+        .map(|provider| {
+            minijinja::context! {
+                slug => provider.id().as_str(),
+                label => provider.label(),
+            }
+        })
+        .collect();
+
+    let current_session = session::session_id_from_headers(&headers);
+    let sessions = sqlx::query!(
+        "SELECT id, created_at, ip::text AS ip, user_agent
+         FROM sessions WHERE user_id = $1 AND expires_at > now()
+         ORDER BY created_at DESC LIMIT $2",
+        user.id,
+        SESSIONS_SHOWN
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let session_rows: Vec<minijinja::Value> = sessions
+        .into_iter()
+        .map(|row| {
+            minijinja::context! {
+                device => device_label(row.user_agent.as_deref()),
+                ip => row.ip.map(|ip| ip.trim_end_matches("/32").trim_end_matches("/128").to_string()),
+                since => row.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+                current => Some(row.id) == current_session,
+            }
+        })
+        .collect();
+
+    let policy = crate::policy::accounts(&state).await?;
+
+    // The saved preference, or "" when the account follows the browser.
+    let chosen = if ctx.skin.messages.has(&user.locale) {
+        user.locale.clone()
+    } else {
+        String::new()
+    };
+
+    let template = ctx
+        .skin
+        .env
+        .get_template("settings.html")
+        .map_err(template_error)?;
+    let html = template
+        .render(minijinja::context! {
+            ..ctx.chrome_context(),
+            ..minijinja::context! {
+                title => ctx.t("settings.title"),
+                version => ENGINE_VERSION,
+                joined => account.created_at.format("%Y-%m-%d").to_string(),
+                email => user.email.clone(),
+                email_verified => user.email_verified,
+                has_password => account.has_password,
+                password_changed => account.password_changed_at.map(|t| t.format("%Y-%m-%d").to_string()),
+                chosen_locale => chosen,
+                identities => identity_rows,
+                linkable => linkable,
+                sessions => session_rows,
+                saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username")),
+                // Only known keys, so a crafted link cannot pick the wording.
+                error => query.error.as_deref().filter(|e| e.starts_with("rename_") && e.len() < 32 && e.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')),
+                rename_enabled => policy.rename_enabled,
+                rename_cooldown => policy.rename_cooldown_days,
+                alias_days => policy.alias_days,
+                aliases_disabled => policy.aliases_disabled,
+            }
+        })
+        .map_err(template_error)?;
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        html,
+    )
+        .into_response())
+}
+
+#[derive(Deserialize)]
+pub struct LanguageForm {
+    /// A language code, or empty to follow the browser.
+    #[serde(default)]
+    locale: String,
+}
+
+/// POST /settings/language
+pub async fn set_language(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    Form(form): Form<LanguageForm>,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    let wanted = form.locale.trim();
+    // Only a language the wiki can actually show is stored; anything else
+    // means "follow the browser" rather than a value that silently does nothing.
+    let locale = if state.skin.current().messages.has(wanted) {
+        wanted.to_string()
+    } else {
+        String::new()
+    };
+    sqlx::query!(
+        "UPDATE users SET locale = $2 WHERE id = $1",
+        user.id,
+        locale
+    )
+    .execute(&state.db)
+    .await?;
+    // The `?lang=` cookie outranks the account setting, so a stale one would
+    // make this change look like it did nothing. The account wins from here.
+    let mut response = Redirect::to("/settings?saved=language").into_response();
+    if let Ok(value) = header::HeaderValue::from_str(&crate::lang::clear_cookie()) {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    Ok(response)
+}
+
+/// POST /settings/sessions/end-others
+pub async fn end_other_sessions(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    let keep = session::session_id_from_headers(&headers);
+    let ended = session::delete_others(&state, user.id, keep).await?;
+    crate::audit::record_or_log(
+        &state.db,
+        crate::audit::Entry {
+            wiki_id: None,
+            user_id: Some(user.id),
+            action: "auth.sessions_end_others",
+            entity_type: "user",
+            entity_id: Some(user.id),
+            meta: serde_json::json!({ "ended": ended }),
+        },
+    )
+    .await;
+    Ok(Redirect::to("/settings?saved=sessions").into_response())
+}
+
+#[derive(Deserialize)]
+pub struct UsernameForm {
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    current: String,
+}
+
+/// Why a rename was refused, as a message key under `settings.`.
+///
+/// The rules come from `policy::accounts`: whether renaming is on at all, the
+/// wait between two changes, and how long a former name stays reserved.
+async fn rename_refusal(
+    state: &AppState,
+    policy: &naw_core::config::AccountPolicy,
+    user: &CurrentUser,
+    wanted: &str,
+    current_password: &str,
+) -> Result<Option<&'static str>, AppError> {
+    if !policy.rename_enabled {
+        return Ok(Some("rename_disabled"));
+    }
+    if wanted == user.username {
+        return Ok(Some("rename_same"));
+    }
+    if !crate::auth::username::is_valid(wanted) {
+        return Ok(Some("rename_invalid"));
+    }
+    if state
+        .config
+        .auth
+        .reserved_usernames
+        .iter()
+        .any(|name| name.eq_ignore_ascii_case(wanted))
+    {
+        return Ok(Some("rename_reserved"));
+    }
+    let row = sqlx::query!(
+        "SELECT password_hash, username_changed_at FROM users WHERE id = $1",
+        user.id
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if let Some(last) = row.username_changed_at
+        && last > chrono::Utc::now() - chrono::Duration::days(policy.rename_cooldown_days)
+    {
+        return Ok(Some("rename_too_soon"));
+    }
+    // A password, when there is one, proves the person at the keyboard is the
+    // owner and not whoever found the laptop open.
+    if row.password_hash.is_some()
+        && !crate::auth::password::verify(current_password.to_string(), row.password_hash).await
+    {
+        return Ok(Some("rename_password"));
+    }
+    // Taken by an account, or still reserved as somebody else's former name.
+    // An alias older than the reservation period is free again, and one of
+    // your own former names is always yours to take back.
+    let taken = sqlx::query!(
+        "SELECT 1 AS one FROM users WHERE lower(username) = $1 AND id <> $2
+         UNION ALL
+         SELECT 1 AS one FROM user_aliases
+         WHERE lower(alias) = $1 AND user_id <> $2
+           AND NOT $4
+           AND ($3::bigint = 0 OR created_at > now() - make_interval(days => $3::int))",
+        wanted,
+        user.id,
+        policy.alias_days,
+        policy.aliases_disabled
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .is_some();
+    Ok(taken.then_some("rename_taken"))
+}
+
+/// POST /settings/username
+pub async fn change_username(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    Form(form): Form<UsernameForm>,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    let policy = crate::policy::accounts(&state).await?;
+    let wanted = form.username.trim().to_lowercase();
+    if let Some(key) = rename_refusal(&state, &policy, &user, &wanted, &form.current).await? {
+        return Ok(Redirect::to(&format!("/settings?error={key}#s-username")).into_response());
+    }
+
+    let mut tx = state.db.begin().await?;
+    // An expired reservation of the wanted name, held by someone else, gives
+    // way now. A live one was refused above.
+    sqlx::query!("DELETE FROM user_aliases WHERE lower(alias) = $1", wanted)
+        .execute(&mut *tx)
+        .await?;
+    // The old name stays with this account as an alias for the reservation
+    // period: nobody else can pick it up and pass for them, and old links to
+    // the profile keep working. With a limit of zero nothing is kept.
+    if !policy.aliases_disabled && policy.max_aliases > 0 {
+        sqlx::query!(
+            "INSERT INTO user_aliases (alias, user_id) VALUES ($1, $2)
+             ON CONFLICT (alias) DO UPDATE SET created_at = now(), user_id = EXCLUDED.user_id",
+            user.username,
+            user.id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    // Expired aliases of this account, then everything past the limit, oldest
+    // first.
+    sqlx::query!(
+        "DELETE FROM user_aliases
+         WHERE user_id = $1
+           AND (($2::bigint > 0 AND created_at <= now() - make_interval(days => $2::int))
+                OR alias NOT IN (SELECT alias FROM user_aliases WHERE user_id = $1
+                                 ORDER BY created_at DESC LIMIT $3))",
+        user.id,
+        policy.alias_days,
+        policy.max_aliases
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!(
+        "UPDATE users SET username = $2, username_changed_at = now() WHERE id = $1",
+        user.id,
+        wanted
+    )
+    .execute(&mut *tx)
+    .await?;
+    // The profile page is addressed by name, so it moves with the account.
+    sqlx::query!(
+        "UPDATE pages SET slug = $2, title = $2, updated_at = now()
+         WHERE namespace = 'user' AND slug = $1",
+        user.username,
+        wanted
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    crate::audit::record_or_log(
+        &state.db,
+        crate::audit::Entry {
+            wiki_id: None,
+            user_id: Some(user.id),
+            action: "user.rename",
+            entity_type: "user",
+            entity_id: Some(user.id),
+            meta: serde_json::json!({ "from": user.username, "to": wanted }),
+        },
+    )
+    .await;
+    Ok(Redirect::to("/settings?saved=username").into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn devices_get_short_names() {
+        let chrome_win = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36";
+        assert_eq!(device_label(Some(chrome_win)), "Chrome, Windows");
+        let safari_iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1";
+        assert_eq!(device_label(Some(safari_iphone)), "Safari, iPhone");
+        let edge =
+            "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/150 Safari/537.36 Edg/150";
+        assert_eq!(device_label(Some(edge)), "Edge, Windows");
+        assert_eq!(device_label(None), "");
+    }
+}

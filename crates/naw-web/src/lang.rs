@@ -88,6 +88,17 @@ pub fn cookie_for(lang: &str) -> String {
         .to_string()
 }
 
+/// Expires the language cookie, so the account setting decides again.
+pub fn clear_cookie() -> String {
+    cookie::Cookie::build((crate::resolve::LANG_COOKIE, ""))
+        .path("/")
+        .http_only(false)
+        .same_site(cookie::SameSite::Lax)
+        .max_age(cookie::time::Duration::ZERO)
+        .build()
+        .to_string()
+}
+
 pub async fn layer(State(app): State<AppState>, req: Request<Body>, next: Next) -> Response {
     // Only a navigation. Redirecting a POST would discard its body, and a form
     // that carries a language parameter by accident must still submit.

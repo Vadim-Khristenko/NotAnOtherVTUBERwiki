@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 1 AS one FROM users WHERE lower(username) = $1 AND id <> $2\n         UNION ALL\n         SELECT 1 AS one FROM user_aliases\n         WHERE lower(alias) = $1 AND user_id <> $2\n           AND NOT $4\n           AND ($3::bigint = 0 OR created_at > now() - make_interval(days => $3::int))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "one",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "36818ae211da367ac3e38a182c30e89995df46371ccfb6998203021263e12fa7"
+}

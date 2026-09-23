@@ -1,0 +1,133 @@
+{% extends "layout.html" %}
+{#
+  The signed-in person's own settings. Every form acts on this account only.
+
+  `chosen_locale`  the saved interface language, or "" for "follow the browser"
+  `identities`     sign-in methods already linked: provider, name, since, last
+  `linkable`       configured providers not linked yet: slug, label
+  `sessions`       devices signed in: device, ip, since, current
+  `saved`          which change just landed ("language", "sessions", "username")
+  `error`          why a rename was refused, a `settings.rename_*` key
+#}
+{% block body %}
+<div class="settings-head">
+  <div class="settings-avatar" aria-hidden="true">{{ username[:1] | upper }}</div>
+  <div>
+    <h1>{{ username }}</h1>
+    <p class="muted-cell">{{ t("settings.joined", date=joined) }}</p>
+  </div>
+  <a class="button-save settings-profile" href="/user/{{ username }}">
+    <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>{{ t("settings.open_profile") }}
+  </a>
+</div>
+
+{% if saved %}<p class="notice notice-ok" role="status">{{ t("settings.saved_" ~ saved) }}</p>{% endif %}
+
+<div class="settings-grid">
+  <section class="settings-card" aria-labelledby="s-username" id="s-username">
+    <h2 id="s-username-h"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("settings.username") }}</h2>
+    {% if error %}<p class="notice notice-warn" role="alert">{{ t("settings." ~ error, days=rename_cooldown) }}</p>{% endif %}
+    {% if not rename_enabled %}
+    <p><code>{{ username }}</code></p>
+    <p class="field-note">{{ t("settings.rename_disabled") }}</p>
+    {% else %}
+    <p class="field-note">{% if aliases_disabled %}{{ t("settings.username_note_no_alias", days=rename_cooldown) }}{% elif alias_days > 0 %}{{ t("settings.username_note", days=rename_cooldown, keep=alias_days) }}{% else %}{{ t("settings.username_note_forever", days=rename_cooldown) }}{% endif %}</p>
+    <form method="post" action="/settings/username" class="settings-stack">
+      <label class="visually-hidden" for="s-name">{{ t("settings.username") }}</label>
+      <input class="field-input" id="s-name" name="username" value="{{ username }}" required
+             minlength="3" maxlength="32" pattern="[a-z][a-z0-9_\-]{2,31}"
+             autocomplete="off" autocapitalize="none" spellcheck="false" />
+      {% if has_password %}
+      <label class="visually-hidden" for="s-name-pw">{{ t("account.password_current") }}</label>
+      <input class="field-input" id="s-name-pw" name="current" type="password" required
+             placeholder="{{ t('account.password_current') }}" autocomplete="current-password" />
+      {% endif %}
+      <button class="button-preview" type="submit">{{ t("settings.username_save") }}</button>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="settings-card" aria-labelledby="s-language">
+    <h2 id="s-language"><svg class="icon" aria-hidden="true"><use href="#i-language" /></svg>{{ t("settings.language") }}</h2>
+    <p class="field-note">{{ t("settings.language_note") }}</p>
+    <form method="post" action="/settings/language" class="settings-row">
+      <label class="visually-hidden" for="s-locale">{{ t("settings.language") }}</label>
+      <select class="field-input" id="s-locale" name="locale">
+        <option value="" {% if not chosen_locale %}selected{% endif %}>{{ t("settings.language_auto") }}</option>
+        {% for option in language_options %}
+        <option value="{{ option.code }}" lang="{{ option.code }}" {% if chosen_locale == option.code %}selected{% endif %}>{{ option.native_name }}</option>
+        {% endfor %}
+      </select>
+      <button class="button-preview" type="submit">{{ t("settings.save") }}</button>
+    </form>
+  </section>
+
+  <section class="settings-card" aria-labelledby="s-password">
+    <h2 id="s-password"><svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg>{{ t("settings.password") }}</h2>
+    <p class="field-note">
+      {% if not has_password %}{{ t("settings.password_none") }}
+      {% elif password_changed %}{{ t("settings.password_changed_on", date=password_changed) }}
+      {% else %}{{ t("settings.password_set") }}{% endif %}
+    </p>
+    <a class="button-preview" href="/settings/password?next=/settings">
+      {% if has_password %}{{ t("settings.password_change") }}{% else %}{{ t("settings.password_create") }}{% endif %}
+    </a>
+  </section>
+
+  <section class="settings-card" aria-labelledby="s-email">
+    <h2 id="s-email"><svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>{{ t("settings.email") }}</h2>
+    {% if email %}
+    <p><code>{{ email }}</code>
+      {% if email_verified %}<span class="tag">{{ t("settings.email_verified") }}</span>{% else %}<span class="tag tag-warn">{{ t("settings.email_unverified") }}</span>{% endif %}</p>
+    {% else %}
+    <p class="field-note">{{ t("settings.email_none") }}</p>
+    {% endif %}
+    <p class="field-note">{{ t("settings.email_note") }}</p>
+  </section>
+
+  <section class="settings-card" aria-labelledby="s-identities">
+    <h2 id="s-identities"><svg class="icon" aria-hidden="true"><use href="#i-users" /></svg>{{ t("settings.identities") }}</h2>
+    {% if identities %}
+    <ul class="settings-list">
+      {% for i in identities %}
+      <li><strong>{{ i.provider }}</strong>{% if i.name %} · {{ i.name }}{% endif %}
+        <span class="muted-cell">{{ t("settings.identity_since", date=i.since) }}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="field-note">{{ t("settings.identities_none") }}</p>
+    {% endif %}
+    {% if linkable %}
+    <div class="settings-actions">
+      {% for p in linkable %}
+      <a class="button-preview" href="/auth/{{ p.slug }}?mode=link&amp;next=/settings" rel="nofollow">{{ t("settings.link_with", provider=p.label) }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="settings-card settings-card-wide" aria-labelledby="s-sessions">
+    <h2 id="s-sessions"><svg class="icon" aria-hidden="true"><use href="#i-eye" /></svg>{{ t("settings.sessions") }}</h2>
+    <ul class="settings-list">
+      {% for s in sessions %}
+      <li>
+        <strong>{% if s.device %}{{ s.device }}{% else %}{{ t("settings.device_unknown") }}{% endif %}</strong>
+        {% if s.current %}<span class="tag">{{ t("settings.this_device") }}</span>{% endif %}
+        <span class="muted-cell">{{ s.since }}{% if s.ip %} · {{ s.ip }}{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% if sessions | length > 1 %}
+    <form method="post" action="/settings/sessions/end-others">
+      <button class="button-preview" type="submit">{{ t("settings.end_others") }}</button>
+    </form>
+    {% endif %}
+  </section>
+</div>
+
+<form method="post" action="/logout" class="settings-signout">
+  <button class="link-button" type="submit">
+    <svg class="icon" aria-hidden="true"><use href="#i-logout" /></svg>{{ t("nav.sign_out") }}
+  </button>
+</form>
+{% endblock %}

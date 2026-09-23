@@ -12,8 +12,10 @@ mod net;
 mod observe;
 mod pages;
 mod perm;
+mod policy;
 mod resolve;
 mod search;
+mod settings;
 
 /// Account credentials for the command line: password hashing, temporary
 /// passwords and the username rule. Exposed on their own so the CLI can create
@@ -45,10 +47,23 @@ pub fn router(state: AppState) -> Router {
         .route("/login", get(account::login_page))
         .route("/login/password", post(account::password_login))
         .route(
-            "/account/password",
+            "/settings/password",
             get(account::password_page).post(account::change_password),
         )
+        // The first address of the password page, kept so an old link or a
+        // bookmark still lands somewhere.
+        .route(
+            "/account/password",
+            get(|| async { axum::response::Redirect::permanent("/settings/password") }),
+        )
         .route("/logout", post(auth::routes::logout))
+        .route("/settings", get(settings::page))
+        .route("/settings/language", post(settings::set_language))
+        .route("/settings/username", post(settings::change_username))
+        .route(
+            "/settings/sessions/end-others",
+            post(settings::end_other_sessions),
+        )
         .route("/auth/dev", get(auth::routes::dev_login))
         // The dev route is declared first so it wins over the generic
         // `{provider}` match below.
@@ -72,6 +87,10 @@ pub fn router(state: AppState) -> Router {
             get(admin::wiki_settings).post(admin::save_wiki_settings),
         )
         .route("/admin/reindex", post(admin::reindex))
+        .route(
+            "/admin/accounts",
+            get(admin::account_rules).post(admin::save_account_rules),
+        )
         .route(
             "/admin/languages",
             get(admin::languages).post(admin::save_languages),
