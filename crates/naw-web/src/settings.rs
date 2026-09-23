@@ -17,6 +17,8 @@ use crate::auth::redirect::encode_component;
 use crate::auth::session::{self, CurrentUser};
 use crate::pages::{ENGINE_VERSION, template_error};
 
+const AVATAR_CHANGES_PER_HOUR: i64 = 10;
+
 /// Sessions shown before the list is cut. Nobody is signed in on thirty
 /// devices on purpose, and the button below ends all of them anyway.
 const SESSIONS_SHOWN: i64 = 20;
@@ -172,13 +174,13 @@ pub async fn page(
                 chosen_locale => chosen,
                 my_display_name => user.display_name.clone(),
                 display_name_max => crate::display_name::MAX_LEN,
-                avatar_max_mb => (state.config.avatar_max_bytes / 1024 / 1024).max(1),
+                avatar_max_mb => naw_core::html::mib(state.config.avatar_max_bytes),
                 identities => identity_rows,
                 linkable => linkable,
                 sessions => session_rows,
                 saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username" | "display_name" | "avatar" | "avatar_removed")),
                 // Only known keys, so a crafted link cannot pick the wording.
-                error => query.error.as_deref().filter(|e| (e.starts_with("rename_") || e.starts_with("display_name_") || e.starts_with("avatar_")) && e.len() < 32 && e.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')),
+                error => crate::pages::message_key(query.error.as_deref(), &["rename_", "display_name_", "avatar_"]),
                 rename_enabled => policy.rename_enabled,
                 rename_cooldown => policy.rename_cooldown_days,
                 alias_days => policy.alias_days,
@@ -322,14 +324,23 @@ pub async fn set_avatar(
     };
     let max = state.config.avatar_max_bytes;
     let refused = |refusal: crate::media::Refusal| {
-        let key = match refusal {
-            crate::media::Refusal::Empty => "avatar_empty",
-            crate::media::Refusal::TooLarge => "avatar_too_large",
-            crate::media::Refusal::NotAnImage => "avatar_type",
-            crate::media::Refusal::BadDimensions => "avatar_dimensions",
-        };
-        Redirect::to(&format!("/settings?error={key}#s-avatar")).into_response()
+        Redirect::to(&format!(
+            "/settings?error=avatar_{}#s-avatar",
+            refusal.slug()
+        ))
+        .into_response()
     };
+    // Every new picture stays in storage, so changes are rationed.
+    let recent = sqlx::query_scalar!(
+        r#"SELECT count(*) AS "n!" FROM audit_log
+           WHERE user_id = $1 AND action = 'user.avatar' AND created_at > now() - interval '1 hour'"#,
+        user.id
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if recent >= AVATAR_CHANGES_PER_HOUR {
+        return Ok(refused(crate::media::Refusal::Quota));
+    }
     let data = match crate::media::read_file_field(&mut multipart, "avatar", max).await {
         Ok(Some((_, data))) => data,
         Ok(None) => return Ok(refused(crate::media::Refusal::Empty)),

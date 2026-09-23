@@ -297,7 +297,7 @@ pub async fn show(
             grantable => grantable,
             curator => curator,
             curator_choices => curator_choices,
-            done => query.done.filter(|d| d.len() < 24 && d.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')),
+            done => crate::pages::message_key(query.done.as_deref(), &[""]),
         },
     )
 }

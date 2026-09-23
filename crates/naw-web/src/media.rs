@@ -85,17 +85,52 @@ pub enum Refusal {
     NotAnImage,
     /// The header says image but the dimensions are absurd.
     BadDimensions,
+    /// The uploader reached their allowance for now.
+    Quota,
 }
 
 impl Refusal {
-    pub fn key(self) -> &'static str {
+    /// The message suffix, shared by `media.refused_*` and `settings.avatar_*`.
+    pub fn slug(self) -> &'static str {
         match self {
-            Self::Empty => "media.refused_empty",
-            Self::TooLarge => "media.refused_too_large",
-            Self::NotAnImage => "media.refused_type",
-            Self::BadDimensions => "media.refused_dimensions",
+            Self::Empty => "empty",
+            Self::TooLarge => "too_large",
+            Self::NotAnImage => "type",
+            Self::BadDimensions => "dimensions",
+            Self::Quota => "quota",
         }
     }
+
+    pub fn status(self) -> StatusCode {
+        match self {
+            Self::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::Quota => StatusCode::TOO_MANY_REQUESTS,
+            _ => StatusCode::UNPROCESSABLE_ENTITY,
+        }
+    }
+}
+
+/// Uploads one account may add to a wiki in a day, by count and by bytes.
+/// Wiki admins are not held to it.
+const DAILY_UPLOADS: i64 = 300;
+const DAILY_UPLOAD_BYTES: i64 = 2 * 1024 * 1024 * 1024;
+
+async fn within_daily_quota(state: &AppState, ctx: &crate::resolve::Ctx) -> Result<bool, AppError> {
+    if ctx.actor.can(Capability::WikiSettings) {
+        return Ok(true);
+    }
+    let Some(me) = ctx.actor.user_id else {
+        return Ok(false);
+    };
+    let used = sqlx::query!(
+        r#"SELECT count(*) AS "files!", COALESCE(sum(size_bytes), 0)::bigint AS "bytes!"
+           FROM media WHERE wiki_id = $1 AND uploader_id = $2 AND created_at > now() - interval '1 day'"#,
+        ctx.wiki.id,
+        me
+    )
+    .fetch_one(&state.db)
+    .await?;
+    Ok(used.files < DAILY_UPLOADS && used.bytes < DAILY_UPLOAD_BYTES)
 }
 
 /// The address a storage key is served from. Keys are `media/ab/hash.ext`
@@ -132,18 +167,14 @@ pub async fn store(
         return Ok(Err(Refusal::BadDimensions));
     }
     let hash = hex::encode(Sha256::digest(&data));
-    let (key, url) = if prefix == "media" {
-        let key = format!("media/{}/{hash}.{}", &hash[..2], kind.ext);
-        let url = format!("/media/{}/{hash}.{}", &hash[..2], kind.ext);
-        (key, url)
+    let key = if prefix == "media" {
+        format!("media/{}/{hash}.{}", &hash[..2], kind.ext)
     } else {
-        (
-            format!("{prefix}/{hash}.{}", kind.ext),
-            format!("/media/{prefix}/{hash}.{}", kind.ext),
-        )
+        format!("{prefix}/{hash}.{}", kind.ext)
     };
+    let url = url_for_key(&key);
     let len = data.len();
-    if state.storage.get(&key).await?.is_none() {
+    if !state.storage.exists(&key).await? {
         state.storage.put(&key, data).await?;
     }
     Ok(Ok(Stored {
@@ -280,7 +311,7 @@ async fn render_page(
     ctx: &crate::resolve::Ctx,
     status: StatusCode,
     uploaded: Option<minijinja::Value>,
-    error: Option<&str>,
+    error: Option<Refusal>,
 ) -> Result<Response, AppError> {
     let mine = match ctx.actor.user_id {
         Some(me) => sqlx::query!(
@@ -318,9 +349,9 @@ async fn render_page(
                 title => ctx.t("media.title"),
                 version => ENGINE_VERSION,
                 uploaded => uploaded,
-                error => error.map(|key| ctx.t_with(key, &[("max", &(state.config.upload_max_bytes / 1024 / 1024).to_string())])),
+                error => error.map(|refusal| refusal_message(state, ctx, refusal)),
                 mine => mine,
-                max_mb => state.config.upload_max_bytes / 1024 / 1024,
+                max_mb => naw_core::html::mib(state.config.upload_max_bytes),
             }
         })
         .map_err(template_error)?;
@@ -335,6 +366,14 @@ async fn render_page(
         .into_response())
 }
 
+fn refusal_message(state: &AppState, ctx: &crate::resolve::Ctx, refusal: Refusal) -> String {
+    let max = naw_core::html::mib(state.config.upload_max_bytes).to_string();
+    ctx.t_with(
+        &format!("media.refused_{}", refusal.slug()),
+        &[("max", &max)],
+    )
+}
+
 /// Answers a refused upload in the shape the caller asked for.
 async fn refuse(
     state: &AppState,
@@ -342,17 +381,11 @@ async fn refuse(
     wants_json: bool,
     refusal: Refusal,
 ) -> Result<Response, AppError> {
-    let status = if refusal == Refusal::TooLarge {
-        StatusCode::PAYLOAD_TOO_LARGE
-    } else {
-        StatusCode::UNPROCESSABLE_ENTITY
-    };
     if wants_json {
-        let max = (state.config.upload_max_bytes / 1024 / 1024).to_string();
-        let message = ctx.t_with(refusal.key(), &[("max", &max)]);
-        return Ok((status, axum::Json(json!({ "error": message }))).into_response());
+        let message = refusal_message(state, ctx, refusal);
+        return Ok((refusal.status(), axum::Json(json!({ "error": message }))).into_response());
     }
-    render_page(state, ctx, status, None, Some(refusal.key())).await
+    render_page(state, ctx, refusal.status(), None, Some(refusal)).await
 }
 
 /// GET /media
@@ -390,6 +423,9 @@ pub async fn upload(
     };
     if !ctx.actor.can(Capability::PageEdit) {
         return Ok((StatusCode::FORBIDDEN, "uploading needs edit rights").into_response());
+    }
+    if !within_daily_quota(&state, &ctx).await? {
+        return refuse(&state, &ctx, wants_json, Refusal::Quota).await;
     }
     let (filename, data) =
         match read_file_field(&mut multipart, "file", state.config.upload_max_bytes).await {

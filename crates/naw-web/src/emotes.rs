@@ -270,13 +270,12 @@ async fn download(state: AppState, remote: Remote) -> Result<Stored, String> {
     let hash = hex::encode(Sha256::digest(&bytes));
     let key = format!("emotes/{hash}.{}", kind.ext);
     let size = bytes.len() as i64;
-    let exists = state
+    if !state
         .storage
-        .get(&key)
+        .exists(&key)
         .await
         .map_err(|e| e.to_string())?
-        .is_some();
-    if !exists {
+    {
         state
             .storage
             .put(&key, bytes.to_vec())
@@ -705,7 +704,7 @@ pub async fn admin_page(
             used_mb => mb(used as f64),
             budget_mb => mb(budget as f64),
             used_percent => if budget == 0 { 100 } else { ((used as f64 / budget as f64) * 100.0).round().min(100.0) as i64 },
-            done => query.done.filter(|d| d.len() < 24 && d.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')),
+            done => crate::pages::message_key(query.done.as_deref(), &[""]),
         },
     )
 }

@@ -86,6 +86,18 @@ pub(crate) fn notice(
     Ok((status, [HTML], html).into_response())
 }
 
+/// A message key from a query string, such as `?done=saved`, when it is
+/// short, lowercase with underscores, and starts with one of `prefixes`.
+/// Anything else is dropped, so a crafted link cannot choose the wording.
+pub(crate) fn message_key<'a>(raw: Option<&'a str>, prefixes: &[&str]) -> Option<&'a str> {
+    raw.filter(|key| {
+        !key.is_empty()
+            && key.len() < 32
+            && key.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+            && prefixes.iter().any(|prefix| key.starts_with(prefix))
+    })
+}
+
 /// Somebody saved between this editor loading the page and saving it.
 pub(crate) fn edit_conflict(ctx: &Ctx, slug: &str) -> Result<Response, AppError> {
     notice(
@@ -718,9 +730,9 @@ pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, Ap
                 // Checked in the browser too, so a file or a text over the
                 // limit is refused before it is sent, not after.
                 body_max => BODY_MAX,
-                body_max_mb => BODY_MAX / 1024 / 1024,
+                body_max_mb => naw_core::html::mib(BODY_MAX),
                 upload_max => ctx.upload_max_bytes,
-                upload_max_mb => ctx.upload_max_bytes / 1024 / 1024,
+                upload_max_mb => naw_core::html::mib(ctx.upload_max_bytes),
                 locale_options => view.form_locale.map(|_| {
                     ctx.offered_languages()
                         .into_iter()
