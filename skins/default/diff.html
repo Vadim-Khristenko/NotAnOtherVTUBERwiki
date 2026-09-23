@@ -53,7 +53,7 @@
     <span class="diff-minus" title="{{ t('diff.removed_title') }}">&minus;{{ removed }}</span>
     <span>{{ tn("diff.lines", added + removed) }}</span>
     <span class="diff-bytes {% if delta > 0 %}is-plus{% elif delta < 0 %}is-minus{% endif %}">
-      ({% if delta > 0 %}+{{ delta }}{% elif delta < 0 %}&minus;{{ -delta }}{% else %}0{% endif %} {{ t("diff.bytes_short") }})</span>
+      ({% if delta > 0 %}+{{ delta }}{% elif delta < 0 %}&minus;{{ delta | abs }}{% else %}0{% endif %} {{ t("diff.bytes_short") }})</span>
     {% if hunks > 1 %}
     <span class="diff-jumps">{{ tn("diff.places", hunks) }}:
       {% for n in hunk_links %}<a href="#change-{{ n }}">{{ n }}</a>{% if not loop.last %} {% endif %}{% endfor %}{% if hunks > hunk_links | length %} …{% endif %}</span>
