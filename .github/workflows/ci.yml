@@ -11,13 +11,46 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
+# Jobs run in parallel and each answers one question, so a red run says what is
+# wrong from the job name alone: formatting, lints, tests, the offline query
+# cache, dependencies, or house rules in the docs.
 jobs:
-  check:
-    name: fmt, clippy and tests
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  lint:
+    name: Clippy, offline
+    runs-on: ubuntu-latest
+    # Offline on purpose: this is how Docker and every contributor without a
+    # database build, so a query missing from .sqlx fails here first.
+    env:
+      SQLX_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: lint
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test:
+    name: Tests and query cache
     runs-on: ubuntu-latest
 
     services:
@@ -31,9 +64,9 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd pg_isready
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
       valkey:
         image: valkey/valkey:9
@@ -41,75 +74,70 @@ jobs:
           - 6379:6379
         options: >-
           --health-cmd "valkey-cli ping"
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     env:
       DATABASE_URL: postgres://naw:naw@localhost:5432/naw_test
       VALKEY_URL: redis://localhost:6379
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
         with:
-          components: rustfmt, clippy
+          shared-key: test
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Stop early if the workspace is not scaffolded yet
-        id: scaffolded
+      # sqlx-cli has to match the sqlx the workspace links, or `prepare --check`
+      # compares query files written by a different version. The version comes
+      # from Cargo.lock so a dependency bump can never leave CI a release behind.
+      - name: Install sqlx-cli matching Cargo.lock
         run: |
-          if [ -f Cargo.toml ]; then
-            echo "yes=true" >> "$GITHUB_OUTPUT"
-            echo "Rust workspace present, running the full check."
+          version=$(awk '/^name = "sqlx"$/ { getline; gsub(/version = |"/, ""); print; exit }' Cargo.lock)
+          if [ -z "$version" ]; then
+            echo "::error::could not read the sqlx version from Cargo.lock"
+            exit 1
+          fi
+          echo "sqlx $version"
+          if [ "$(cargo sqlx --version 2>/dev/null | awk '{print $2}')" = "$version" ]; then
+            echo "cached sqlx-cli is current"
           else
-            echo "yes=false" >> "$GITHUB_OUTPUT"
-            echo "No Cargo.toml yet. Skipping Rust jobs until the scaffold lands."
+            cargo install sqlx-cli --locked --version "$version" --no-default-features --features postgres,rustls
           fi
 
-      - name: Install sqlx-cli
-        if: steps.scaffolded.outputs.yes == 'true'
-        run: cargo install sqlx-cli --no-default-features --features postgres,rustls
+      - name: Apply migrations to an empty database
+        run: cargo sqlx migrate run --source migrations
 
-      - name: cargo fmt
-        if: steps.scaffolded.outputs.yes == 'true'
-        run: cargo fmt --all -- --check
+      - name: Tests
+        run: cargo test --workspace --all-targets --all-features
 
-      - name: Run migrations
-        if: steps.scaffolded.outputs.yes == 'true'
-        run: cargo sqlx migrate run
+      - name: Doc tests
+        run: cargo test --workspace --doc
 
-      - name: cargo clippy
-        if: steps.scaffolded.outputs.yes == 'true'
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: cargo test
-        if: steps.scaffolded.outputs.yes == 'true'
-        run: cargo test --all-features
-
-      - name: Verify .sqlx is current
-        if: steps.scaffolded.outputs.yes == 'true'
+      - name: .sqlx matches the queries in the code
         run: |
-          cargo sqlx prepare --check || {
-            echo "::error::.sqlx is out of date. Run 'cargo sqlx prepare' and commit the change."
+          cargo sqlx prepare --workspace --check -- --all-targets || {
+            echo "::error::.sqlx is out of date. Run 'cargo sqlx prepare --workspace -- --all-targets' and commit the change."
             exit 1
           }
 
-      - name: Build offline, the way CI and Docker build it
-        if: steps.scaffolded.outputs.yes == 'true'
-        env:
-          SQLX_OFFLINE: "true"
-        run: cargo check --all-targets --all-features
-
-  docs:
-    name: Documentation checks
+  deps:
+    name: Dependency advisories and licenses
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources
+
+  docs:
+    name: Documentation and house rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
 
       - name: Every English document has a Russian translation
         run: |
@@ -136,11 +164,31 @@ jobs:
           check_pair docs/ROADMAP.md docs/ru/ROADMAP.md
           exit "$missing"
 
-      - name: No em-dashes in code, comments or documentation
+      - name: Every locale pack covers the English keys
+        run: |
+          # Each pack is a directory with metadata.toml plus one file per area.
+          # A file English has and another pack lacks means a whole area of the
+          # interface falls back to English there. Missing single keys are caught
+          # by the Rust tests, which know about plural forms.
+          missing=0
+          for pack in locales/*/; do
+            code=$(basename "$pack")
+            [ "$code" = "en" ] && continue
+            for file in locales/en/*.toml; do
+              name=$(basename "$file")
+              if [ ! -f "$pack$name" ]; then
+                echo "::error file=$pack$name::locale $code has no $name"
+                missing=1
+              fi
+            done
+          done
+          exit "$missing"
+
+      - name: No em-dashes in code, comments, templates or documentation
         run: |
           # The pattern is written as an escape so this file does not contain the very
           # character it is banning, which would make the job fail on itself.
-          if grep -rlIP '\x{2014}' --include='*.md' --include='*.rs' --include='*.toml' --include='*.yml' --include='*.vue' --include='*.ts' . ; then
+          if git grep -lIP '\x{2014}' -- '*.md' '*.rs' '*.toml' '*.yml' '*.ts' '*.js' '*.html' '*.css' '*.sql' '*.sh' ; then
             echo "::error::em-dashes found in the files above. House style forbids them."
             exit 1
           fi
@@ -148,8 +196,16 @@ jobs:
 
       - name: No secrets committed
         run: |
-          if git grep -nIE '(BEGIN (RSA|OPENSSH|EC|PGP) PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,})' -- . ; then
-            echo "::error::possible secret in the diff"
+          if git grep -nIE '(BEGIN (RSA|OPENSSH|EC|PGP) PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|[0-9]{8,10}:AA[A-Za-z0-9_-]{30,})' -- . ; then
+            echo "::error::possible secret in the tree"
             exit 1
           fi
           echo "clean"
+
+      - name: Shell scripts parse
+        run: |
+          status=0
+          for script in $(git ls-files '*.sh'); do
+            bash -n "$script" || status=1
+          done
+          exit "$status"

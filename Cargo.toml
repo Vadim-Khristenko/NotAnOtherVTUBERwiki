@@ -24,7 +24,9 @@ rust-version = "1.98.0"
 authors = ["Vadim Khristenko <vadim@vai-rice.space>"]
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki"
-homepage = "https://snackers.vai-rice.space"
+homepage = "https://filian.wiki"
+# Nothing here goes to crates.io: the engine ships as a binary and a container.
+publish = false
 
 [workspace.dependencies]
 # --- async runtime

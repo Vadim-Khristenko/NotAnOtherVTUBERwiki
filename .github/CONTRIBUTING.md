@@ -224,8 +224,8 @@ specifics and a reason; you owe them a response to each one.
 ## Labels and automation
 
 The label set lives in `.github/labels.yml` and is the single source of truth. It is synced
-to GitHub automatically when that file changes, and to Forgejo with
-`scripts/sync-labels-forgejo.ts`. Do not create labels by hand, they will drift.
+to GitHub and Forgejo by `scripts/sync-labels.ts`, which the label workflow runs
+whenever that file changes. Do not create labels by hand, they will drift.
 
 What the automation does:
 

@@ -9,6 +9,7 @@ on:
     paths:
       - ".github/labels.yml"
       - ".github/workflows/labels-sync.yml"
+      - "scripts/sync-labels.ts"
   workflow_dispatch:
 
 permissions:
@@ -21,13 +22,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: oven-sh/setup-bun@v2
+
       - name: Sync to GitHub
-        uses: micnncim/action-label-syncer@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          manifest: .github/labels.yml
-          prune: false
+        run: bun run scripts/sync-labels.ts --platform github
 
       - name: Sync to Forgejo
         if: ${{ vars.FORGEJO_URL != '' }}
@@ -35,21 +35,14 @@ jobs:
           FORGEJO_URL: ${{ vars.FORGEJO_URL }}
           FORGEJO_REPO: ${{ vars.FORGEJO_REPO }}
           FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
-        run: |
-          bun run scripts/sync-labels-forgejo.ts \
-            --url "$FORGEJO_URL" \
-            --repo "$FORGEJO_REPO" \
-            --token "$FORGEJO_TOKEN" \
-            --dry-run
+        run: bun run scripts/sync-labels.ts --platform forgejo --dry-run
 
-# prune is deliberately false. Removing a label destroys history that we might want to
+# Nothing is pruned. Removing a label destroys history that we might want to
 # read later, so deletions are done by hand on purpose.
 #
 # The Forgejo step runs with --dry-run on purpose: it changes nothing and only prints what
 # would change, so a bad secret or a typo in the manifest cannot damage a remote repo.
 # Drop --dry-run once you have reviewed a real run.
 #
-# Required settings, otherwise the Forgejo step is skipped and only GitHub is synced:
-#   vars.FORGEJO_URL       https://git.vai-rice.space
-#   vars.FORGEJO_REPO      VAI_PROG/NotAnOtherVTUBERwiki
-#   secrets.FORGEJO_TOKEN  token with write access to issues and labels
+# The Forgejo step is skipped unless the repository defines vars.FORGEJO_URL,
+# vars.FORGEJO_REPO and secrets.FORGEJO_TOKEN (write access to issues and labels).

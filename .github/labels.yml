@@ -1,7 +1,7 @@
 # Canonical label set for NotAnotherWiki
 #
-# Synced to GitHub by .github/workflows/labels-sync.yml (micnncim/action-label-syncer).
-# Synced to Forgejo by scripts/sync-labels-forgejo.ts, because Forgejo does not read this file.
+# Synced to GitHub and Forgejo by scripts/sync-labels.ts, run from .github/workflows/labels-sync.yml.
+# Neither platform reads this file on its own.
 #
 # Colours are six hex digits, no leading #.
 # Colour families: red = broken, green = progress, blue = area,

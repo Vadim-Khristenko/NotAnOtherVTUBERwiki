@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 /**
- * Sync the canonical label set to Forgejo or Gitea.
+ * Sync the canonical label set in .github/labels.yml to GitHub or Forgejo.
  *
- * GitHub reads .github/labels.yml through the label workflow. Forgejo does not,
- * so this script pushes the same manifest through its API.
+ * Both platforms speak nearly the same labels API (Forgejo copied GitHub's),
+ * so one script covers both. The differences are the base URL, the auth
+ * header and the page size, and they live in `PLATFORMS` below.
  *
  * Usage:
- *   bun run scripts/sync-labels-forgejo.ts \
- *     --url https://git.vai-rice.space \
- *     --repo VAI_PROG/NotAnOtherVTUBERwiki \
- *     --token "$FORGEJO_TOKEN"
+ *   bun run scripts/sync-labels.ts --platform github --repo OWNER/REPO --token "$GITHUB_TOKEN"
+ *   bun run scripts/sync-labels.ts --platform forgejo --url https://forgejo.example \
+ *     --repo OWNER/REPO --token "$FORGEJO_TOKEN"
  *
  * Add --dry-run to print changes without writing them. Add --prune only when
  * you explicitly want labels absent from the manifest deleted.
@@ -23,6 +23,23 @@ type Label = {
 
 type ExistingLabel = Label & { id?: number };
 
+type Platform = "github" | "forgejo";
+
+const PLATFORMS: Record<Platform, { api: (url: string) => string; auth: (token: string) => string; pageSize: number; env: string }> = {
+  github: {
+    api: (url) => (url || "https://api.github.com").replace(/\/$/, ""),
+    auth: (token) => `Bearer ${token}`,
+    pageSize: 100,
+    env: "GITHUB",
+  },
+  forgejo: {
+    api: (url) => `${url.replace(/\/$/, "")}/api/v1`,
+    auth: (token) => `token ${token}`,
+    pageSize: 50,
+    env: "FORGEJO",
+  },
+};
+
 const root = new URL("..", import.meta.url);
 const manifestPath = fileURLToPath(new URL(".github/labels.yml", root));
 
@@ -31,20 +48,24 @@ function fileURLToPath(url: URL): string {
 }
 
 function printHelp(): void {
-  console.log(`Usage: bun run scripts/sync-labels-forgejo.ts --url URL --repo OWNER/REPO --token TOKEN [options]
+  console.log(`Usage: bun run scripts/sync-labels.ts --platform github|forgejo --repo OWNER/REPO --token TOKEN [options]
 
 Options:
+  --platform NAME  github (default) or forgejo
+  --url URL        Forgejo instance URL; for GitHub only needed on Enterprise
   --manifest PATH  Label manifest, defaults to .github/labels.yml
   --dry-run        Print changes without writing them
   --prune          Delete labels absent from the manifest
   --help           Show this help
 
-Environment alternatives: FORGEJO_URL, FORGEJO_REPO, FORGEJO_TOKEN
+Environment alternatives: GITHUB_REPOSITORY and GITHUB_TOKEN for GitHub,
+FORGEJO_URL, FORGEJO_REPO and FORGEJO_TOKEN for Forgejo.
 `);
 }
 
 function parseArgs(): {
-  url: string;
+  platform: Platform;
+  api: string;
   repo: string;
   token: string;
   manifest: string;
@@ -81,16 +102,26 @@ function parseArgs(): {
     values.set(key, value);
   }
 
-  const required = (key: string, env: string): string => {
-    const value = values.get(key) ?? Bun.env[env];
-    if (!value) throw new Error(`--${key} or ${env} is required`);
+  const platform = (values.get("platform") ?? "github") as Platform;
+  if (!(platform in PLATFORMS)) throw new Error(`unknown platform: ${platform}`);
+  const spec = PLATFORMS[platform];
+  const env = (name: string) => Bun.env[`${spec.env}_${name}`];
+  const required = (key: string, fallback: string | undefined, hint: string): string => {
+    const value = values.get(key) ?? fallback;
+    if (!value) throw new Error(`--${key} or ${hint} is required`);
     return value;
   };
 
+  const url = values.get("url") ?? env("URL") ?? "";
+  if (platform === "forgejo" && !url) throw new Error("--url or FORGEJO_URL is required");
+  // GitHub Actions exposes the repository as GITHUB_REPOSITORY, not GITHUB_REPO.
+  const repoEnv = platform === "github" ? Bun.env.GITHUB_REPOSITORY : env("REPO");
+
   return {
-    url: required("url", "FORGEJO_URL").replace(/\/$/, ""),
-    repo: required("repo", "FORGEJO_REPO"),
-    token: required("token", "FORGEJO_TOKEN"),
+    platform,
+    api: spec.api(url),
+    repo: required("repo", repoEnv, platform === "github" ? "GITHUB_REPOSITORY" : "FORGEJO_REPO"),
+    token: required("token", env("TOKEN"), `${spec.env}_TOKEN`),
     manifest: values.get("manifest") ?? manifestPath,
     dryRun,
     prune,
@@ -157,15 +188,20 @@ async function parseManifest(path: string): Promise<Label[]> {
   return labels;
 }
 
-class ForgejoClient {
-  constructor(private readonly base: string, private readonly token: string) {}
+class LabelClient {
+  constructor(
+    private readonly api: string,
+    private readonly authorization: string,
+    private readonly pageSize: number,
+  ) {}
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const response = await fetch(`${this.base}/api/v1/${path.replace(/^\//, "")}`, {
+    const response = await fetch(`${this.api}/${path.replace(/^\//, "")}`, {
       method,
       headers: {
         Accept: "application/json",
-        Authorization: `token ${this.token}`,
+        Authorization: this.authorization,
+        "User-Agent": "notanotherwiki-label-sync",
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -180,13 +216,13 @@ class ForgejoClient {
   async listLabels(repo: string): Promise<ExistingLabel[]> {
     const result: ExistingLabel[] = [];
     for (let page = 1; ; page += 1) {
+      // `per_page` is GitHub's name, `limit` is Forgejo's. Each ignores the other.
       const batch = await this.request<ExistingLabel[]>(
         "GET",
-        `repos/${repo}/labels?page=${page}`,
+        `repos/${repo}/labels?page=${page}&per_page=${this.pageSize}&limit=${this.pageSize}`,
       );
-      if (!batch.length) return result;
       result.push(...batch);
-      if (batch.length < 50) return result;
+      if (batch.length < this.pageSize) return result;
     }
   }
 
@@ -205,8 +241,9 @@ class ForgejoClient {
 
 async function main(): Promise<void> {
   const args = parseArgs();
+  const spec = PLATFORMS[args.platform];
   const wanted = await parseManifest(args.manifest);
-  const client = new ForgejoClient(args.url, args.token);
+  const client = new LabelClient(args.api, spec.auth(args.token), spec.pageSize);
   const existing = new Map((await client.listLabels(args.repo)).map((label) => [label.name, label]));
 
   let created = 0;
@@ -223,7 +260,8 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const same = current.color.toLowerCase() === label.color.toLowerCase()
+    // Forgejo reports colours with a leading #, GitHub without.
+    const same = current.color.replace(/^#/, "").toLowerCase() === label.color.toLowerCase()
       && (current.description ?? "") === label.description;
     if (same) {
       unchanged += 1;
@@ -246,7 +284,7 @@ async function main(): Promise<void> {
   }
 
   const prefix = args.dryRun ? "dry run: " : "";
-  console.log(`${prefix}created ${created}, updated ${updated}, deleted ${deleted}, unchanged ${unchanged}`);
+  console.log(`${prefix}${args.platform}: created ${created}, updated ${updated}, deleted ${deleted}, unchanged ${unchanged}`);
 }
 
 main().catch((error: unknown) => {
