@@ -54,18 +54,18 @@
 
     <nav class="site-nav" id="site-nav" aria-label="{{ t('nav.main') }}">
       {% if can_create is defined and can_create %}
-      <a class="nav-link" href="/new">
+      <a class="nav-link" href="/new" title="{{ t('nav.new_page') }}" aria-label="{{ t('nav.new_page') }}">
         <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
         <span>{{ t("nav.new_page") }}</span>
       </a>
       {% endif %}
       {% if can_admin is defined and can_admin %}
-      <a class="nav-link" href="/admin">
+      <a class="nav-link" href="/admin" title="{{ t('nav.admin') }}" aria-label="{{ t('nav.admin') }}">
         <svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>
         <span>{{ t("nav.admin") }}</span>
       </a>
       {% endif %}
-      <a class="nav-link" href="/about">
+      <a class="nav-link" href="/about" title="{{ t('nav.about') }}" aria-label="{{ t('nav.about') }}">
         <svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>
         <span>{{ t("nav.about") }}</span>
       </a>
@@ -81,7 +81,8 @@
       <details class="lang-menu">
         <summary class="nav-link lang-summary" title="{{ t('nav.language') }}">
           <svg class="icon" aria-hidden="true"><use href="#i-world" /></svg>
-          {% for option in language_options %}{% if option.current %}<span>{{ option.native_name }}</span>{% endif %}{% endfor %}
+          {# The short code on the wide row, the full name in the drawer. #}
+          {% for option in language_options %}{% if option.current %}<b class="lang-code">{{ option.code | upper }}</b><span>{{ option.native_name }}</span>{% endif %}{% endfor %}
           <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron-down" /></svg>
         </summary>
         <div class="lang-panel">
@@ -117,8 +118,8 @@
 
       {% if signed_in is defined and signed_in %}
       <div class="nav-account">
-        <a class="nav-link nav-user" href="/settings" title="{{ t('settings.title') }}">
-          <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>
+        <a class="nav-link nav-user" href="/settings" title="{{ display_name }} · {{ t('settings.title') }}">
+          <b class="nav-avatar" aria-hidden="true">{{ display_name[:1] | upper }}</b>
           <span><bdi>{{ display_name }}</bdi></span>
         </a>
         {# Signing out changes state, so it is a POST, not a link. #}
@@ -130,7 +131,7 @@
         </form>
       </div>
       {% else %}
-      <a class="nav-link nav-signin" href="/login">
+      <a class="nav-link nav-signin nav-keep-label" href="/login">
         <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>
         <span>{{ t("nav.sign_in") }}</span>
       </a>

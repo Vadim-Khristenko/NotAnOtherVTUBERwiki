@@ -148,8 +148,15 @@ body > main { flex: 1 0 auto; width: 100%; box-sizing: border-box; }
 .nav-signin, .nav-user { color: var(--ink); font-weight: 600; }
 .nav-account { display: inline-flex; align-items: center; gap: var(--s1); }
 /* Labels that only make sense in the stacked drawer, where an icon alone is a
- * guess. On the wide row the icon and its title attribute carry them. */
+ * guess. On the wide row the icon carries the meaning, with the label kept for
+ * screen readers (aria-label) and pointers (title). Sign in keeps its text: it
+ * is the one thing a guest is looking for. */
 .nav-drawer-label { display: none; }
+.site-nav .nav-link:not(.nav-keep-label) > span { display: none; }
+.nav-link:not(.nav-keep-label) { padding: var(--s2); }
+.lang-code { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; }
+.nav-avatar { display: inline-grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 0.85rem; font-weight: 800; }
+.nav-user:hover .nav-avatar { background: var(--accent); color: var(--accent-ink); }
 
 /* One button, two glyphs: show the theme you would switch to, which is the only
  * way people read a theme toggle correctly. */
@@ -183,12 +190,6 @@ a.lang-option:hover, a.lang-option:focus-visible { background: var(--accent-soft
   to { opacity: 1; transform: none; }
 }
 
-@media (max-width: 62rem) {
-  /* The wide row runs out of room before the phone layout makes sense. Labels
-   * go first; every link keeps its title attribute. */
-  .site-nav .nav-link > span { display: none; }
-  .nav-link { padding: var(--s2); }
-}
 
 @media (max-width: 46rem) {
   .site-header-inner { gap: var(--s1); padding: var(--s2) var(--s3); min-height: 3.5rem; }
@@ -217,8 +218,9 @@ a.lang-option:hover, a.lang-option:focus-visible { background: var(--accent-soft
 
   /* The drawer: one action per row, full labels, thumb-sized targets. */
   .site-nav { flex-direction: column; align-items: stretch; gap: var(--s1); }
-  .site-nav .nav-link > span, .nav-drawer-label { display: inline; }
-  .nav-link { width: 100%; justify-content: flex-start; padding: var(--s3); font-size: 1rem; }
+  .site-nav .nav-link > span, .site-nav .nav-link:not(.nav-keep-label) > span, .nav-drawer-label { display: inline; }
+  .lang-code { display: none; }
+  .nav-link, .site-nav .nav-link:not(.nav-keep-label) { width: 100%; justify-content: flex-start; padding: var(--s3); font-size: 1rem; }
   .nav-account { flex-direction: column; align-items: stretch; }
   .nav-account .inline-form { display: block; }
   /* The rows cascade in rather than arriving as one slab. */
