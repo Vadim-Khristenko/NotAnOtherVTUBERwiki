@@ -16,10 +16,14 @@ pub async fn layer(req: Request<Body>, next: Next) -> Response {
     let nonce = crate::auth::random_token();
     let policy = policy(&nonce);
     let mut response = naw_core::csp::scope(nonce, next.run(req)).await;
+    // A 304 updates the headers of the copy the browser already holds. A new
+    // policy would carry a nonce that copy does not have and block its
+    // scripts, so the stored policy has to stay.
+    let not_modified = response.status() == axum::http::StatusCode::NOT_MODIFIED;
     let headers = response.headers_mut();
     // base64url only, so this always parses; a policy that did not would be
     // dropped rather than sent broken.
-    if let Ok(value) = HeaderValue::from_str(&policy) {
+    if !not_modified && let Ok(value) = HeaderValue::from_str(&policy) {
         headers
             .entry(header::CONTENT_SECURITY_POLICY)
             .or_insert(value);
@@ -28,15 +32,24 @@ pub async fn layer(req: Request<Body>, next: Next) -> Response {
     headers
         .entry(header::X_FRAME_OPTIONS)
         .or_insert(HeaderValue::from_static("DENY"));
+    // Links out carry no path: an article address can name a person.
+    headers
+        .entry(header::REFERRER_POLICY)
+        .or_insert(HeaderValue::from_static("strict-origin-when-cross-origin"));
+    headers
+        .entry(header::HeaderName::from_static(
+            "cross-origin-opener-policy",
+        ))
+        .or_insert(HeaderValue::from_static("same-origin"));
     response
 }
 
-/// Images may come from anywhere: articles embed them by URL, and an image
-/// cannot run code.
+/// Images come only from this origin: articles show local uploads, avatars
+/// and emote copies, and an outside image is rendered as a link.
 fn policy(nonce: &str) -> String {
     format!(
         "default-src 'self'; script-src 'self' 'nonce-{nonce}'; \
-         style-src 'self' 'unsafe-inline'; img-src * data:; object-src 'none'; \
+         style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; \
          base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
     )
 }
@@ -58,6 +71,7 @@ mod tests {
         );
         assert!(policy.contains("frame-ancestors 'none'"), "{policy}");
         assert!(policy.contains("object-src 'none'"), "{policy}");
+        assert!(policy.contains("img-src 'self' data:;"), "{policy}");
     }
 
     #[test]

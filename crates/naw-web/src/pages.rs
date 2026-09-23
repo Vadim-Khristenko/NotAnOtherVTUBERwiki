@@ -350,7 +350,15 @@ pub(crate) async fn warm_cache(state: &AppState, wiki_id: Uuid, body_md: &str) {
 /// person.
 pub(crate) fn html_response(html: String, headers: &HeaderMap) -> Response {
     use sha2::{Digest, Sha256};
-    let etag = format!("\"{}\"", hex::encode(Sha256::digest(html.as_bytes())));
+    // The script nonce differs on every response, so it stays out of the
+    // hash; a 304 then goes out without a new policy (see csp.rs).
+    let nonce = naw_core::csp::current();
+    let digest = if nonce.is_empty() {
+        Sha256::digest(html.as_bytes())
+    } else {
+        Sha256::digest(html.replace(&nonce, "").as_bytes())
+    };
+    let etag = format!("\"{}\"", hex::encode(digest));
     let fresh = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|v| v.to_str().ok())
