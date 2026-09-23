@@ -3,6 +3,12 @@
 //! Reader path contract: render on write, serve from cache. This function is
 //! the pure core of that pipeline: Markdown in, sanitized HTML out.
 
+mod scan;
+
+use std::collections::HashSet;
+
+use scan::{Closers, Counts};
+
 /// Renders Markdown to sanitized HTML.
 ///
 /// Chat-native set (v4): CommonMark plus tables, footnotes, task lists,
@@ -23,8 +29,8 @@
 /// - `> quote` is a blockquote, `>! Summary` plus `> body` lines is a
 ///   collapsible quote (`<details class="quote">`).
 /// - `:::details Title ... :::` and `:::pullquote ... :::` blocks.
-/// - `[[toc]]` alone in a paragraph becomes a nav of the page headings with
-///   exact final anchors. Footnote definitions collect at the end of the
+/// - The first `[[toc]]` alone in a paragraph becomes a nav of the page
+///   headings with exact final anchors; later ones vanish. Footnote definitions collect at the end of the
 ///   body no matter where their `[^n]:` lines stand.
 ///   `<mark>`, `++underline++` becomes `<u>`, `((keys))` becomes `<kbd>`,
 ///   and `:fire:` style shortcodes become Unicode pictographs from a fixed
@@ -36,13 +42,14 @@
 ///   and gain a class hook (`<pre class="mermaid">` etc) for the future
 ///   worker that renders them to SVG. No execution happens in Rust.
 pub fn render_html(markdown: &str) -> String {
-    render_html_with_depth(markdown, 0)
+    let mut state = BlockState::for_document(markdown);
+    render_html_with_depth(markdown, 0, &mut state)
 }
 
 /// Recursion guard for nested custom blocks (`:::details` inside a
 /// collapsible quote and the like). Depth 8 is far past sane authoring and
 /// stops a malicious nesting chain from recursing on input size.
-fn render_html_with_depth(markdown: &str, depth: usize) -> String {
+fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) -> String {
     use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
     if depth > 8 {
@@ -63,7 +70,7 @@ fn render_html_with_depth(markdown: &str, depth: usize) -> String {
 
     // Block sugar first: `:::details`, `:::pullquote`, `>!` collapsible
     // quotes become placeholders that survive the parser as plain paragraphs.
-    let (without_blocks, blocks) = extract_custom_blocks(markdown);
+    let (without_blocks, blocks) = extract_custom_blocks(markdown, state);
     // `__italic__` must reach pulldown-cmark as `*italic*`: the parser maps
     // `__` to `<strong>` and there is no flag to change that.
     let mapped = map_double_underscore_to_italic(&without_blocks);
@@ -120,7 +127,7 @@ fn render_html_with_depth(markdown: &str, depth: usize) -> String {
     pulldown_cmark::html::push_html(&mut dirty, parser);
     // Block placeholders back to HTML. Inner bodies render through the same
     // pipeline (depth + 1), so nesting works and preview matches save.
-    let dirty = restore_custom_blocks(&dirty, &blocks, depth);
+    let dirty = restore_custom_blocks(&dirty, blocks, depth, state);
     // Fenced diagrams keep text, gain a class hook for the worker.
     let dirty = postprocess_diagrams(&dirty);
     // Inline sugar on HTML text (inner formatting already rendered, so
@@ -179,8 +186,8 @@ fn is_allowed_raw_html(html: &str) -> bool {
 }
 
 /// One extracted block: `:::details`, `:::pullquote`, or a `>!` collapsible
-/// quote. The placeholder `NAWBLOCK{n}NAW` stands in for it while Markdown
-/// runs, then renders back to fixed safe HTML.
+/// quote. A placeholder paragraph stands in for it while Markdown runs, then
+/// renders back to fixed safe HTML.
 struct CustomBlock {
     kind: BlockKind,
     title: String,
@@ -194,73 +201,99 @@ enum BlockKind {
     CollapsibleQuote,
 }
 
-fn block_placeholder(idx: usize) -> String {
-    format!("NAWBLOCK{idx}NAW")
+/// Custom blocks one document may hold, nesting included. Every block renders
+/// through the whole pipeline, so a page of thousands of empty fences would
+/// cost thousands of renders. No real article comes near this.
+const BLOCK_MAX: usize = 256;
+
+/// What every nesting level of one render shares about custom blocks.
+struct BlockState {
+    /// Placeholder prefix, `NAWBLOCK` plus a hash of the whole document. A
+    /// document cannot contain a hash of itself, so an author can never type
+    /// a placeholder. A typed one would be swapped for the block as well, once
+    /// per copy, and copies nested in quotes multiply level by level.
+    tag: String,
+    /// Blocks the document may still open. Past the budget a fence stays
+    /// literal text, the same as an unclosed one.
+    left: usize,
+}
+
+impl BlockState {
+    fn for_document(markdown: &str) -> Self {
+        let hex: String = content_hash(markdown)[..8]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        Self {
+            tag: format!("NAWBLOCK{hex}x"),
+            left: BLOCK_MAX,
+        }
+    }
+
+    fn placeholder(&self, idx: usize) -> String {
+        format!("{}{idx}NAW", self.tag)
+    }
 }
 
 /// Pulls `:::details` / `:::pullquote` fences and `>!` quote groups out of
 /// the Markdown so the parser never sees their markers. Unclosed fences are
 /// left literal so authors always see what they wrote.
-fn extract_custom_blocks(markdown: &str) -> (String, Vec<CustomBlock>) {
+fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec<CustomBlock>) {
     let lines: Vec<&str> = markdown.split('\n').collect();
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     let mut blocks: Vec<CustomBlock> = Vec::new();
+    let mut closers_left = true;
     let mut i = 0;
     while i < lines.len() {
         let trimmed = lines[i].trim_start();
-        if let Some(rest) = trimmed
+        let fence = if let Some(rest) = trimmed
             .strip_prefix(":::details")
             .filter(|_| trimmed == ":::details" || trimmed.starts_with(":::details "))
         {
-            let title = rest.trim().to_string();
-            let mut body: Vec<&str> = Vec::new();
-            let mut j = i + 1;
-            while j < lines.len() && lines[j].trim() != ":::" {
-                body.push(lines[j]);
-                j += 1;
-            }
-            if j >= lines.len() {
+            Some((BlockKind::Details, rest.trim().to_string()))
+        } else if trimmed == ":::pullquote" || trimmed.starts_with(":::pullquote ") {
+            Some((BlockKind::Pullquote, String::new()))
+        } else {
+            None
+        };
+        if let Some((kind, title)) = fence {
+            let close = if closers_left {
+                (i + 1..lines.len()).find(|&j| lines[j].trim() == ":::")
+            } else {
+                None
+            };
+            let Some(j) = close else {
+                // No closer below this line means none below any later opener
+                // either. Without remembering that, a page of unclosed fences
+                // walks to its end once per fence.
+                closers_left = false;
                 out.push(lines[i].to_string());
                 i += 1;
+                continue;
+            };
+            if state.left == 0 {
+                out.push(escape_fence(lines[i]));
+                out.extend(lines[i + 1..j].iter().map(|line| line.to_string()));
+                out.push(escape_fence(lines[j]));
+                i = j + 1;
                 continue;
             }
             let idx = blocks.len();
             blocks.push(CustomBlock {
-                kind: BlockKind::Details,
+                kind,
                 title,
-                body: body.join("\n"),
+                body: lines[i + 1..j].join("\n"),
             });
+            state.left -= 1;
             out.push(String::new());
-            out.push(block_placeholder(idx));
+            out.push(state.placeholder(idx));
             out.push(String::new());
             i = j + 1;
             continue;
         }
-        if trimmed == ":::pullquote" || trimmed.starts_with(":::pullquote ") {
-            let mut body: Vec<&str> = Vec::new();
-            let mut j = i + 1;
-            while j < lines.len() && lines[j].trim() != ":::" {
-                body.push(lines[j]);
-                j += 1;
-            }
-            if j >= lines.len() {
-                out.push(lines[i].to_string());
-                i += 1;
-                continue;
-            }
-            let idx = blocks.len();
-            blocks.push(CustomBlock {
-                kind: BlockKind::Pullquote,
-                title: String::new(),
-                body: body.join("\n"),
-            });
-            out.push(String::new());
-            out.push(block_placeholder(idx));
-            out.push(String::new());
-            i = j + 1;
-            continue;
-        }
-        if let Some(summary) = parse_collapsible_opener(lines[i]) {
+        if state.left > 0
+            && let Some(summary) = parse_collapsible_opener(lines[i])
+        {
             let mut body: Vec<String> = Vec::new();
             let mut j = i + 1;
             while j < lines.len() {
@@ -279,8 +312,9 @@ fn extract_custom_blocks(markdown: &str) -> (String, Vec<CustomBlock>) {
                 title: summary,
                 body: body.join("\n"),
             });
+            state.left -= 1;
             out.push(String::new());
-            out.push(block_placeholder(idx));
+            out.push(state.placeholder(idx));
             out.push(String::new());
             i = j;
             continue;
@@ -289,6 +323,15 @@ fn extract_custom_blocks(markdown: &str) -> (String, Vec<CustomBlock>) {
         i += 1;
     }
     (out.join("\n"), blocks)
+}
+
+/// A fence line kept as text, its colon escaped. Past the block budget a
+/// block renders as the text it was written as, and a bare `:::` line would
+/// read as a `: definition`, turning the paragraph above it into a term: a
+/// block placeholder included, which then never renders.
+fn escape_fence(line: &str) -> String {
+    let trimmed = line.trim_start();
+    format!("{}\\{trimmed}", &line[..line.len() - trimmed.len()])
 }
 
 /// `>! Summary` opens a collapsible quote. Up to three leading spaces match
@@ -319,55 +362,83 @@ fn strip_quote_prefix(line: &str) -> Option<&str> {
     Some(rest.strip_prefix(' ').unwrap_or(rest))
 }
 
-/// Swaps block placeholders back for rendered HTML. Bodies render through
-/// the same pipeline (depth + 1); titles stay plain escaped text so a
-/// `<script>` in a summary never becomes markup.
-fn restore_custom_blocks(html: &str, blocks: &[CustomBlock], depth: usize) -> String {
-    let mut out = html.to_string();
-    for (idx, block) in blocks.iter().enumerate() {
-        let name = block_placeholder(idx);
-        let rendered_body = if block.body.trim().is_empty() {
-            String::new()
-        } else {
-            render_html_with_depth(&block.body, depth + 1)
-        };
-        let replacement = match block.kind {
-            BlockKind::Details => {
-                if rendered_body.is_empty() {
-                    format!(
-                        "<details class=\"details\"><summary>{}</summary></details>",
-                        escape_html_text(&block.title)
-                    )
-                } else {
-                    format!(
-                        "<details class=\"details\"><summary>{}</summary>\n{rendered_body}\n</details>",
-                        escape_html_text(&block.title)
-                    )
-                }
+/// Swaps block placeholders back for rendered HTML in one pass. Bodies render
+/// through the same pipeline (depth + 1); titles stay plain escaped text so a
+/// `<script>` in a summary never becomes markup. Only the HTML this level
+/// rendered is searched, never a body just put in, and each block is used
+/// once.
+fn restore_custom_blocks(
+    html: &str,
+    blocks: Vec<CustomBlock>,
+    depth: usize,
+    state: &mut BlockState,
+) -> String {
+    // The extractor emits the placeholder as its own paragraph, so only the
+    // paragraph form is replaced: one inside a code span never matches here.
+    let open = format!("<p>{}", state.tag);
+    let mut slots: Vec<Option<CustomBlock>> = blocks.into_iter().map(Some).collect();
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(pos) = rest.find(&open) {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + open.len()..];
+        let digits = after.bytes().take_while(u8::is_ascii_digit).count();
+        let block = after[digits..]
+            .strip_prefix("NAW</p>")
+            .and_then(|_| after[..digits].parse::<usize>().ok())
+            .and_then(|idx| slots.get_mut(idx)?.take());
+        match block {
+            Some(block) => {
+                out.push_str(&render_block(&block, depth, state));
+                rest = &after[digits + "NAW</p>".len()..];
             }
-            BlockKind::Pullquote => format!(
-                "<figure class=\"pullquote\"><blockquote>\n{rendered_body}\n</blockquote></figure>"
-            ),
-            BlockKind::CollapsibleQuote => {
-                if rendered_body.is_empty() {
-                    format!(
-                        "<details class=\"quote\"><summary>{}</summary></details>",
-                        escape_html_text(&block.title)
-                    )
-                } else {
-                    format!(
-                        "<details class=\"quote\"><summary>{}</summary>\n<blockquote>\n{rendered_body}\n</blockquote>\n</details>",
-                        escape_html_text(&block.title)
-                    )
-                }
+            None => {
+                out.push_str(&open);
+                rest = after;
             }
-        };
-        // The extractor emits the placeholder as its own paragraph, so only
-        // the paragraph form is replaced: a literal NAWBLOCK0NAW inside a
-        // code span never matches here.
-        out = out.replace(&format!("<p>{name}</p>"), &replacement);
+        }
     }
+    out.push_str(rest);
     out
+}
+
+fn render_block(block: &CustomBlock, depth: usize, state: &mut BlockState) -> String {
+    let rendered_body = if block.body.trim().is_empty() {
+        String::new()
+    } else {
+        render_html_with_depth(&block.body, depth + 1, state)
+    };
+    match block.kind {
+        BlockKind::Details => {
+            if rendered_body.is_empty() {
+                format!(
+                    "<details class=\"details\"><summary>{}</summary></details>",
+                    escape_html_text(&block.title)
+                )
+            } else {
+                format!(
+                    "<details class=\"details\"><summary>{}</summary>\n{rendered_body}\n</details>",
+                    escape_html_text(&block.title)
+                )
+            }
+        }
+        BlockKind::Pullquote => format!(
+            "<figure class=\"pullquote\"><blockquote>\n{rendered_body}\n</blockquote></figure>"
+        ),
+        BlockKind::CollapsibleQuote => {
+            if rendered_body.is_empty() {
+                format!(
+                    "<details class=\"quote\"><summary>{}</summary></details>",
+                    escape_html_text(&block.title)
+                )
+            } else {
+                format!(
+                    "<details class=\"quote\"><summary>{}</summary>\n<blockquote>\n{rendered_body}\n</blockquote>\n</details>",
+                    escape_html_text(&block.title)
+                )
+            }
+        }
+    }
 }
 
 fn escape_html_text(text: &str) -> String {
@@ -568,6 +639,9 @@ const MARK_COLORS: &[&str] = &[
 fn replace_mark_color(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let d = ['=', '='];
+    let delims = Counts::new(chars.len(), |i| matches_delim(&chars, i, &d));
+    let solid = Counts::new(chars.len(), |i| !chars[i].is_whitespace());
+    let mut closers = Closers::default();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
     while i < chars.len() {
@@ -580,16 +654,15 @@ fn replace_mark_color(text: &str) -> String {
             let piped = j < chars.len() && chars[j] == '|';
             if piped
                 && MARK_COLORS.contains(&name.as_str())
-                && let Some(end) = find_valid_closer(&chars, j + 1, &d)
+                && let Some(end) = closers.find(j + 1, |from| find_valid_closer(&chars, from, &d))
+                && solid.any(j + 1, end)
+                && !delims.any(j + 1, end + 1 - d.len())
             {
-                let inner: String = chars[j + 1..end].iter().collect();
-                if !inner.trim().is_empty() && !inner.contains("==") {
-                    out.push_str(&format!("<mark class=\"mark-{name}\">"));
-                    out.push_str(&inner);
-                    out.push_str("</mark>");
-                    i = end + 2;
-                    continue;
-                }
+                out.push_str(&format!("<mark class=\"mark-{name}\">"));
+                out.extend(&chars[j + 1..end]);
+                out.push_str("</mark>");
+                i = end + 2;
+                continue;
             }
             out.push_str("==");
             i += 2;
@@ -674,19 +747,26 @@ fn split_protected_html(html: &str) -> Vec<HtmlSegment<'_>> {
 fn replace_delimited(text: &str, delim: &str, open_tag: &str, close_tag: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let d: Vec<char> = delim.chars().collect();
+    // The inner text must hold something besides spaces and no delimiter.
+    // Both are span lookups: collecting the text first would walk it per
+    // opener, even for the ones that end up rejected.
+    let delims = Counts::new(chars.len(), |i| matches_delim(&chars, i, &d));
+    let solid = Counts::new(chars.len(), |i| !chars[i].is_whitespace());
+    let mut closers = Closers::default();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
     while i < chars.len() {
         if matches_delim(&chars, i, &d) && is_valid_opener(&chars, i, d.len()) {
-            if let Some(end) = find_valid_closer(&chars, i + d.len(), &d) {
-                let inner: String = chars[i + d.len()..end].iter().collect();
-                if !inner.trim().is_empty() && !inner.contains(delim) {
-                    out.push_str(open_tag);
-                    out.push_str(&inner);
-                    out.push_str(close_tag);
-                    i = end + d.len();
-                    continue;
-                }
+            let from = i + d.len();
+            if let Some(end) = closers.find(from, |from| find_valid_closer(&chars, from, &d))
+                && solid.any(from, end)
+                && !delims.any(from, end + 1 - d.len())
+            {
+                out.push_str(open_tag);
+                out.extend(&chars[from..end]);
+                out.push_str(close_tag);
+                i = end + d.len();
+                continue;
             }
             for _ in 0..d.len() {
                 out.push(chars[i]);
@@ -722,11 +802,13 @@ fn is_valid_opener(chars: &[char], at: usize, len: usize) -> bool {
     prev_ok && next_ok
 }
 
-fn find_valid_closer(chars: &[char], from: usize, d: &[char]) -> Option<usize> {
+/// The first valid closer on the line, and where the walk stopped: at the
+/// closer, at the line end, or at the text end.
+fn find_valid_closer(chars: &[char], from: usize, d: &[char]) -> (Option<usize>, usize) {
     let mut i = from;
     while i + d.len() <= chars.len() {
         if chars[i] == '\n' {
-            return None;
+            return (None, i);
         }
         if chars[i] == '<' {
             while i < chars.len() && chars[i] != '>' {
@@ -739,12 +821,12 @@ fn find_valid_closer(chars: &[char], from: usize, d: &[char]) -> Option<usize> {
             let prev_ok = i > 0 && !chars[i - 1].is_whitespace();
             let next_ok = i + d.len() >= chars.len() || !chars[i + d.len()].is_alphanumeric();
             if prev_ok && next_ok {
-                return Some(i);
+                return (Some(i), i);
             }
         }
         i += 1;
     }
-    None
+    (None, i)
 }
 
 /// `((Ctrl+C))` becomes `<kbd>Ctrl+C</kbd>`. Same flanking idea as the
@@ -752,6 +834,11 @@ fn find_valid_closer(chars: &[char], from: usize, d: &[char]) -> Option<usize> {
 /// like `:((` stay literal. HTML tags are skipped.
 fn replace_kbd(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
+    let pairs = Counts::new(chars.len(), |i| {
+        i + 1 < chars.len() && chars[i] == chars[i + 1] && matches!(chars[i], '(' | ')')
+    });
+    let solid = Counts::new(chars.len(), |i| !chars[i].is_whitespace());
+    let mut closers = Closers::default();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
     while i < chars.len() {
@@ -759,15 +846,16 @@ fn replace_kbd(text: &str) -> String {
         let prev_ok = i == 0 || chars[i - 1] != '(';
         let next_ok = i + 2 < chars.len() && !chars[i + 2].is_whitespace();
         if opens && prev_ok && next_ok {
-            if let Some(end) = find_kbd_close(&chars, i + 2) {
-                let inner: String = chars[i + 2..end].iter().collect();
-                if !inner.trim().is_empty() && !inner.contains("((") && !inner.contains("))") {
-                    out.push_str("<kbd>");
-                    out.push_str(&inner);
-                    out.push_str("</kbd>");
-                    i = end + 2;
-                    continue;
-                }
+            let from = i + 2;
+            if let Some(end) = closers.find(from, |from| find_kbd_close(&chars, from))
+                && solid.any(from, end)
+                && !pairs.any(from, end - 1)
+            {
+                out.push_str("<kbd>");
+                out.extend(&chars[from..end]);
+                out.push_str("</kbd>");
+                i = end + 2;
+                continue;
             }
             out.push_str("((");
             i += 2;
@@ -790,11 +878,12 @@ fn replace_kbd(text: &str) -> String {
     out
 }
 
-fn find_kbd_close(chars: &[char], from: usize) -> Option<usize> {
+/// Same contract as [`find_valid_closer`], for `))`.
+fn find_kbd_close(chars: &[char], from: usize) -> (Option<usize>, usize) {
     let mut i = from;
     while i + 1 < chars.len() {
         if chars[i] == '\n' {
-            return None;
+            return (None, i);
         }
         if chars[i] == '<' {
             while i < chars.len() && chars[i] != '>' {
@@ -807,14 +896,14 @@ fn find_kbd_close(chars: &[char], from: usize) -> Option<usize> {
             let prev_ok = i > 0 && !chars[i - 1].is_whitespace();
             let next_ok = i + 2 >= chars.len() || chars[i + 2] != ')';
             if prev_ok && next_ok {
-                return Some(i);
+                return (Some(i), i);
             }
             i += 2;
             continue;
         }
         i += 1;
     }
-    None
+    (None, i)
 }
 
 /// `:fire:` style shortcodes become Unicode pictographs from a fixed table.
@@ -1069,13 +1158,34 @@ fn dedupe_ids(html: &str) -> String {
         rest = &rest[val_start + end..];
     }
     out.push_str(rest);
-    for (old, new) in renames {
-        out = out.replace(
-            &format!("<sup class=\"footnote-reference\"><a href=\"#{old}\">"),
-            &format!("<sup class=\"footnote-reference\"><a href=\"#{new}\">"),
-        );
+    if renames.is_empty() {
+        return out;
     }
-    out
+    // One pass over the references, not one per renamed note. The first
+    // rename of an id is the one its references follow.
+    let mut targets: HashMap<String, String> = HashMap::new();
+    for (old, new) in renames {
+        targets.entry(old).or_insert(new);
+    }
+    const REF: &str = "<sup class=\"footnote-reference\"><a href=\"#";
+    let mut linked = String::with_capacity(out.len());
+    let mut rest = out.as_str();
+    while let Some(pos) = rest.find(REF) {
+        let split = pos + REF.len();
+        linked.push_str(&rest[..split]);
+        rest = &rest[split..];
+        let Some(end) = rest.find('"') else {
+            break;
+        };
+        let target = &rest[..end];
+        match targets.get(target) {
+            Some(new) if rest[end..].starts_with("\">") => linked.push_str(new),
+            _ => linked.push_str(target),
+        }
+        rest = &rest[end..];
+    }
+    linked.push_str(rest);
+    linked
 }
 /// Replaces a lone `[[toc]]` paragraph with a nav of the page headings.
 /// Runs on final HTML so links match the assigned ids exactly, duplicates
@@ -1132,8 +1242,15 @@ fn insert_toc(html: &str) -> String {
         nav.push_str("</ul></nav>");
         nav
     };
-    html.replace("<p>[[toc]]</p>", &nav)
-        .replace("<p><a href=\"toc\">toc</a></p>", &nav)
+    // The first marker gets the nav, later ones vanish. Every copy of a nav
+    // is the size of all headings, so a page of markers and headings would
+    // otherwise grow with the product of the two.
+    const TOC: &str = "<p>[[toc]]</p>";
+    let html = html.replace("<p><a href=\"toc\">toc</a></p>", TOC);
+    match html.split_once(TOC) {
+        Some((head, tail)) => format!("{head}{nav}{}", tail.replace(TOC, "")),
+        None => html,
+    }
 }
 
 /// Reads `attr="value"` from a tag fragment. First match wins.
@@ -1199,15 +1316,14 @@ fn collect_footnotes(html: &str) -> String {
     if defs.is_empty() {
         return out;
     }
+    let anchored = anchored_references(html);
     out.push_str("<div class=\"footnotes\">");
     for def in defs {
         // A note whose reference got an anchor links back to it, so a reader
         // who jumped down can return to the sentence they left.
         let back = attr_value(def, "id")
             .and_then(|id| id.strip_prefix("fn-").map(|n| format!("fnref-{n}")))
-            .filter(|back| {
-                out.contains(&format!("<sup class=\"footnote-reference\" id=\"{back}\">"))
-            });
+            .filter(|back| anchored.contains(back.as_str()));
         match (back, def.strip_suffix("</div>")) {
             (Some(back), Some(body)) => {
                 out.push_str(body);
@@ -1222,6 +1338,40 @@ fn collect_footnotes(html: &str) -> String {
     out
 }
 
+/// Anchors of footnote references that got one, collected in one pass rather
+/// than searched for per note.
+fn anchored_references(html: &str) -> HashSet<&str> {
+    const OPEN: &str = "<sup class=\"footnote-reference\" id=\"";
+    let mut found = HashSet::new();
+    let mut rest = html;
+    while let Some(pos) = rest.find(OPEN) {
+        let after = &rest[pos + OPEN.len()..];
+        let Some(end) = after.find('"') else {
+            break;
+        };
+        if after[end..].starts_with("\">") {
+            found.insert(&after[..end]);
+        }
+        rest = &after[end..];
+    }
+    found
+}
+
+/// Every `id="…"` value in the document, collected in one pass.
+fn ids_in(html: &str) -> HashSet<&str> {
+    let mut ids = HashSet::new();
+    let mut rest = html;
+    while let Some(pos) = rest.find("id=\"") {
+        let after = &rest[pos + 4..];
+        let Some(end) = after.find('"') else {
+            break;
+        };
+        ids.insert(&after[..end]);
+        rest = &after[end..];
+    }
+    ids
+}
+
 /// Gives the first reference to each footnote an anchor (`fnref-1` for
 /// `fn-1`), the target of the note's way back. Later references to the same
 /// note stay plain: one note can only return to one place. An id already in
@@ -1229,7 +1379,8 @@ fn collect_footnotes(html: &str) -> String {
 fn link_footnote_references(html: &str) -> String {
     const OPEN: &str = "<sup class=\"footnote-reference\"><a href=\"#fn-";
     let mut out = String::with_capacity(html.len() + 64);
-    let mut linked = std::collections::HashSet::new();
+    let taken_ids = ids_in(html);
+    let mut linked = HashSet::new();
     let mut rest = html;
     while let Some(pos) = rest.find(OPEN) {
         out.push_str(&rest[..pos]);
@@ -1239,7 +1390,7 @@ fn link_footnote_references(html: &str) -> String {
         };
         let label = &after[..quote];
         let anchor = format!("fnref-{label}");
-        let taken = html.contains(&format!("id=\"{anchor}\""));
+        let taken = taken_ids.contains(anchor.as_str());
         if !taken && linked.insert(label.to_string()) {
             out.push_str(&format!(
                 "<sup class=\"footnote-reference\" id=\"{anchor}\">"
@@ -1411,7 +1562,7 @@ fn slugify(text: &str) -> String {
 /// Skin and chrome changes no longer count. The cache holds the body fragment
 /// only, so a footer edit is not a new rendering, and the same article under
 /// two skins is one cache row instead of two.
-pub const RENDERER_VERSION: i32 = 14;
+pub const RENDERER_VERSION: i32 = 15;
 
 /// A rendered body fragment plus the key it is cached under.
 pub struct RenderedBody {
@@ -1836,6 +1987,92 @@ mod tests {
         let html = render_html(">! Title\n> body\n");
         assert!(html.contains("<details"), "{html}");
         assert!(html.contains("<summary>"), "{html}");
+    }
+
+    #[test]
+    fn a_typed_placeholder_is_only_text() {
+        // The old fixed placeholder, typed by an author: it once pulled in a
+        // copy of the block per paragraph.
+        let md = format!(
+            ":::details T\nbody\n:::\n\n{}",
+            "NAWBLOCK0NAW\n\n".repeat(50)
+        );
+        let html = render_html(&md);
+        assert_eq!(html.matches("<details").count(), 1, "{html}");
+        assert_eq!(html.matches("NAWBLOCK0NAW").count(), 50, "{html}");
+    }
+
+    #[test]
+    fn nested_placeholders_do_not_multiply() {
+        // Eight levels of `>!`, each also holding typed placeholders. Were any
+        // of them swapped for a block, the output would be exponential.
+        let mut md = String::from("core\n");
+        for level in 0..8 {
+            let quoted: String = md.lines().map(|line| format!("> {line}\n")).collect();
+            md = format!(
+                ">! level {level}\n{quoted}>\n{}",
+                "> NAWBLOCK0NAW\n>\n".repeat(20)
+            );
+        }
+        let html = render_html(&md);
+        assert!(html.len() < md.len() * 8, "{} bytes", html.len());
+    }
+
+    #[test]
+    fn blocks_past_the_budget_stay_literal() {
+        let md = ":::details T\nbody\n:::\n\n".repeat(BLOCK_MAX + 10);
+        let html = render_html(&md);
+        assert_eq!(html.matches("<details").count(), BLOCK_MAX);
+        assert_eq!(html.matches("<p>:::details T\nbody\n:::</p>").count(), 10);
+        assert!(!html.contains("NAWBLOCK"), "{html}");
+        assert!(!html.contains("<dt>"), "{html}");
+    }
+
+    #[test]
+    fn only_the_first_toc_marker_gets_the_nav() {
+        let md = format!("{}# A\n\n## B\n\n## C\n", "[[toc]]\n\n".repeat(30));
+        let html = render_html(&md);
+        assert_eq!(html.matches("<nav class=\"toc\">").count(), 1, "{html}");
+        assert!(!html.contains("[[toc]]"), "{html}");
+    }
+
+    #[test]
+    fn failed_openers_do_not_hide_a_later_pair() {
+        // The first opener finds a closer whose span holds another delimiter,
+        // so it is rejected; the second opener reuses that search.
+        let html = render_html("||a ||b||");
+        assert!(
+            html.contains("||a <span class=\"spoiler\" tabindex=\"0\">b</span>"),
+            "{html}"
+        );
+        let html = render_html("((a ((b))");
+        assert!(html.contains("((a <kbd>b</kbd>"), "{html}");
+        let html = render_html("==red|a ==red|b==");
+        assert!(
+            html.contains("==red|a <mark class=\"mark-red\">b</mark>"),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn a_line_of_unclosed_openers_stays_fast() {
+        // No opener here has a closer on the line. The bound is loose on
+        // purpose: it separates linear from quadratic, it is no benchmark.
+        let line = " ||a ==a ++a ((a ==red|a".repeat(10_000);
+        let started = std::time::Instant::now();
+        let html = render_html(&line);
+        assert!(!html.contains("<span class=\"spoiler\""));
+        assert!(started.elapsed() < std::time::Duration::from_secs(15));
+    }
+
+    #[test]
+    fn many_footnotes_render_with_their_way_back() {
+        let refs: String = (0..3_000).map(|n| format!("x[^{n}] ")).collect();
+        let defs: String = (0..3_000)
+            .map(|n| format!("[^{n}]: note {n}\n\n"))
+            .collect();
+        let html = render_html(&format!("{refs}\n\n{defs}"));
+        assert_eq!(html.matches("footnote-backref").count(), 3_000);
     }
 }
 
