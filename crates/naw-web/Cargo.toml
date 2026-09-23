@@ -33,6 +33,7 @@ cookie.workspace = true
 chrono.workspace = true
 ipnetwork.workspace = true
 reqwest.workspace = true
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 url = "2"
 jsonwebtoken.workspace = true
 async-trait.workspace = true

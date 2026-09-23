@@ -78,6 +78,11 @@
 </div>
 {# Without a script the button above stays hidden, and this link does the
    same job on its own page: upload, then copy the Markdown it gives back. #}
+<div class="editor-import" id="image-import" hidden>
+  <label class="visually-hidden" for="image-url">{{ t("media.from_url") }}</label>
+  <input class="field-input" id="image-url" type="url" placeholder="{{ t('media.from_url') }}: https://..." />
+  <button class="button-preview" type="button" id="image-url-go">{{ t("media.import") }}</button>
+</div>
 <p class="field-note editor-media-note"><a href="/media" target="_blank" rel="noopener">{{ t("media.upload_link") }}</a> · <a href="/emotes" target="_blank" rel="noopener">{{ t("emotes.title") }}</a> <span class="editor-media-status" id="image-status" role="status"></span></p>
 <label class="field">{{ t("editor.body") }}
 <textarea class="field-body" id="body-md" name="body_md" rows="20" required
@@ -263,6 +268,30 @@
       });
       chain.then(function () { say(problems.join(" · ")); imageFile.value = ""; });
     });
+  }
+  // An image from a URL: stored here, and its Markdown lands at the cursor.
+  var importRow = document.getElementById("image-import");
+  var importUrl = document.getElementById("image-url");
+  var importGo = document.getElementById("image-url-go");
+  if (importRow && importUrl && importGo && window.fetch) {
+    importRow.hidden = false;
+    var runImport = function () {
+      var url = importUrl.value.trim();
+      if (!url) return;
+      say(imageFile.dataset.uploading.replace("{name}", url));
+      fetch("/media/import", {
+        method: "POST",
+        headers: { "Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded" },
+        body: "url=" + encodeURIComponent(url)
+      }).then(function (res) {
+        return res.json().then(function (json) {
+          if (res.ok && json.markdown) { insertSnippet(json.markdown + "\n"); importUrl.value = ""; say(""); }
+          else say(json.error || imageFile.dataset.failed);
+        });
+      }).catch(function () { say(imageFile.dataset.failed); });
+    };
+    importGo.addEventListener("click", runImport);
+    importUrl.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); runImport(); } });
   }
   // The text limit, before the form is sent. The server holds the same line.
   var bodyMax = parseInt(area.dataset.max, 10) || 0;

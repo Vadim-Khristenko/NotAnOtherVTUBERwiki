@@ -32,6 +32,14 @@
     <svg class="icon" aria-hidden="true"><use href="#i-photo" /></svg>{{ t("media.upload") }}</button>
 </form>
 
+<form method="post" action="/media/import" class="settings-stack media-form">
+  <label class="field">{{ t("media.from_url") }}
+    <input class="field-input" name="url" type="url" required placeholder="https://..." />
+    <span class="field-note">{{ t("media.from_url_note") }}</span>
+  </label>
+  <button class="button-preview" type="submit">{{ t("media.import") }}</button>
+</form>
+
 <h2>{{ t("media.mine") }}</h2>
 {% if mine %}
 <ul class="media-grid">

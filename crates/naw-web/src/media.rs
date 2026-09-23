@@ -80,6 +80,10 @@ pub enum Refusal {
     BadDimensions,
     /// The uploader's allowance is used up for now.
     Quota,
+    /// An import URL that is not a public http(s) address.
+    Address,
+    /// An import that could not be downloaded.
+    Unreachable,
 }
 
 impl Refusal {
@@ -91,6 +95,8 @@ impl Refusal {
             Self::NotAnImage => "type",
             Self::BadDimensions => "dimensions",
             Self::Quota => "quota",
+            Self::Address => "address",
+            Self::Unreachable => "unreachable",
         }
     }
 
@@ -384,6 +390,181 @@ pub async fn page(
     render_page(&state, &ctx, StatusCode::OK, None, None).await
 }
 
+/// Records a stored image as this wiki's media, uploaded by the actor.
+async fn record(
+    state: &AppState,
+    ctx: &crate::resolve::Ctx,
+    stored: &Stored,
+    filename: &str,
+    action: &'static str,
+    source: Option<&str>,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        "INSERT INTO media (id, wiki_id, uploader_id, storage_key, filename, mime, size_bytes, width, height)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (wiki_id, storage_key) DO NOTHING",
+        Uuid::new_v4(),
+        ctx.wiki.id,
+        ctx.actor.user_id,
+        stored.key,
+        filename,
+        stored.kind.mime,
+        stored.size as i64,
+        stored.width.map(|w| w as i32),
+        stored.height.map(|h| h as i32)
+    )
+    .execute(&state.db)
+    .await?;
+    crate::audit::record_or_log(
+        &state.db,
+        crate::audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action,
+            entity_type: "media",
+            entity_id: None,
+            meta: json!({ "key": stored.key, "size": stored.size, "mime": stored.kind.mime, "source": source }),
+        },
+    )
+    .await;
+    Ok(())
+}
+
+/// A file name for an imported image: the last path segment of its URL.
+fn name_from_url(url: &str) -> String {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let last = path.rsplit('/').next().unwrap_or_default();
+    let decoded: String = percent_decode(last);
+    clean_filename(&decoded)
+}
+
+fn percent_decode(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && let Some(byte) = raw
+                .get(i + 1..i + 3)
+                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+        {
+            out.push(byte);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Downloads an image from `url` into this wiki's media, as an upload by the
+/// actor: the same checks, the same limit and the same daily allowance.
+pub async fn import(
+    state: &AppState,
+    ctx: &crate::resolve::Ctx,
+    url: &str,
+) -> Result<Result<(Stored, String), Refusal>, AppError> {
+    if !within_daily_quota(state, ctx).await? {
+        return Ok(Err(Refusal::Quota));
+    }
+    let data = match crate::fetch::get(state, url, state.config.upload_max_bytes).await {
+        Ok(fetched) => fetched.bytes,
+        Err(crate::fetch::FetchError::Refused) => return Ok(Err(Refusal::Address)),
+        Err(crate::fetch::FetchError::TooLarge) => return Ok(Err(Refusal::TooLarge)),
+        Err(err) => {
+            tracing::debug!(error = %err, "image import failed");
+            return Ok(Err(Refusal::Unreachable));
+        }
+    };
+    let stored = match store(state, "media", data, state.config.upload_max_bytes).await? {
+        Ok(stored) => stored,
+        Err(refusal) => return Ok(Err(refusal)),
+    };
+    let filename = name_from_url(url);
+    record(state, ctx, &stored, &filename, "media.import", Some(url)).await?;
+    Ok(Ok((stored, filename)))
+}
+
+/// Outside images a save downloads at most, and how many at once.
+const LOCALIZE_MAX: usize = 10;
+const LOCALIZE_AT_ONCE: usize = 4;
+/// Longest a save waits for its images; unfinished ones stay links.
+const LOCALIZE_WAIT: std::time::Duration = std::time::Duration::from_secs(25);
+
+/// Replaces outside images in a body with copies stored here, for an actor
+/// who may upload. Whatever cannot be downloaded in time stays as written.
+pub async fn localize(state: &AppState, ctx: &crate::resolve::Ctx, body: String) -> String {
+    if !ctx.actor.can(Capability::PageEdit) {
+        return body;
+    }
+    let found = naw_markdown::external_images(&body);
+    if found.is_empty() {
+        return body;
+    }
+    let mut urls: Vec<String> = found.iter().map(|(_, url)| url.clone()).collect();
+    urls.sort();
+    urls.dedup();
+    urls.truncate(LOCALIZE_MAX);
+    let mut local: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let work = async {
+        for batch in urls.chunks(LOCALIZE_AT_ONCE) {
+            let results = futures_util::future::join_all(
+                batch
+                    .iter()
+                    .map(|url| async move { (url.clone(), import(state, ctx, url).await) }),
+            )
+            .await;
+            for (url, result) in results {
+                if let Ok(Ok((stored, _))) = result {
+                    local.insert(url, stored.url);
+                }
+            }
+        }
+    };
+    let _ = tokio::time::timeout(LOCALIZE_WAIT, work).await;
+    let mut out = body.clone();
+    for (range, url) in found.into_iter().rev() {
+        if let Some(replacement) = local.get(&url) {
+            out.replace_range(range, replacement);
+        }
+    }
+    out
+}
+
+#[derive(serde::Deserialize)]
+pub struct ImportForm {
+    url: String,
+}
+
+/// POST /media/import: an image from a URL, answered like an upload.
+pub async fn import_url(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    axum::extract::Form(form): axum::extract::Form<ImportForm>,
+) -> Result<Response, AppError> {
+    let wants_json = headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("application/json"));
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
+    if !ctx.actor.can(Capability::PageEdit) {
+        return Ok((StatusCode::FORBIDDEN, "uploading needs edit rights").into_response());
+    }
+    let (stored, filename) = match import(&state, &ctx, &form.url).await? {
+        Ok(done) => done,
+        Err(refusal) => return refuse(&state, &ctx, wants_json, refusal).await,
+    };
+    let markdown = markdown_for(&stored.url, &filename);
+    if wants_json {
+        return Ok(axum::Json(json!({ "url": stored.url, "markdown": markdown })).into_response());
+    }
+    let uploaded =
+        minijinja::context! { url => stored.url, markdown => markdown, name => filename };
+    render_page(&state, &ctx, StatusCode::OK, Some(uploaded), None).await
+}
+
 /// POST /media/upload: JSON for the editor script, a page for a plain form.
 pub async fn upload(
     State(state): State<AppState>,
@@ -413,34 +594,7 @@ pub async fn upload(
         Err(refusal) => return refuse(&state, &ctx, wants_json, refusal).await,
     };
     let filename = clean_filename(&filename);
-    sqlx::query!(
-        "INSERT INTO media (id, wiki_id, uploader_id, storage_key, filename, mime, size_bytes, width, height)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (wiki_id, storage_key) DO NOTHING",
-        Uuid::new_v4(),
-        ctx.wiki.id,
-        ctx.actor.user_id,
-        stored.key,
-        filename,
-        stored.kind.mime,
-        stored.size as i64,
-        stored.width.map(|w| w as i32),
-        stored.height.map(|h| h as i32)
-    )
-    .execute(&state.db)
-    .await?;
-    crate::audit::record_or_log(
-        &state.db,
-        crate::audit::Entry {
-            wiki_id: Some(ctx.wiki.id),
-            user_id: ctx.actor.user_id,
-            action: "media.upload",
-            entity_type: "media",
-            entity_id: None,
-            meta: json!({ "key": stored.key, "size": stored.size, "mime": stored.kind.mime }),
-        },
-    )
-    .await;
+    record(&state, &ctx, &stored, &filename, "media.upload", None).await?;
     let markdown = markdown_for(&stored.url, &filename);
     if wants_json {
         return Ok(axum::Json(json!({
@@ -474,6 +628,15 @@ mod tests {
         );
         assert_eq!(sniff(b"<html>"), None);
         assert_eq!(sniff(b""), None);
+    }
+
+    #[test]
+    fn an_imported_file_is_named_after_its_url() {
+        assert_eq!(
+            name_from_url("https://x.test/art/Filian%20fan%20art.png?w=2#top"),
+            "Filian fan art.png"
+        );
+        assert_eq!(name_from_url("https://x.test/"), "image");
     }
 
     #[test]

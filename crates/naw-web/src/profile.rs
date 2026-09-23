@@ -333,10 +333,11 @@ pub async fn save(
         return Ok(forbidden(&ctx, &person));
     }
     // The title of a profile is the person's name.
-    let draft = match pages::validate(&person.username, &form.summary, &form.body_md) {
+    let mut draft = match pages::validate(&person.username, &form.summary, &form.body_md) {
         Ok(draft) => draft,
         Err(reason) => return Ok(pages::bad_request(reason)),
     };
+    draft.body_md = crate::media::localize(&state, &ctx, draft.body_md).await;
     let existing = profile_page(&state, ctx.wiki.id, &person.username).await?;
     if let Some(page) = &existing {
         if !page

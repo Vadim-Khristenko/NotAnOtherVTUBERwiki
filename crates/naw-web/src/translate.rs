@@ -320,10 +320,11 @@ pub async fn create(
     else {
         return Ok(crate::errors::not_found());
     };
-    let draft = match pages::validate(&form.title, &form.summary, &form.body_md) {
+    let mut draft = match pages::validate(&form.title, &form.summary, &form.body_md) {
         Ok(draft) => draft,
         Err(reason) => return Ok(pages::bad_request(reason)),
     };
+    draft.body_md = crate::media::localize(&state, &ctx, draft.body_md).await;
     // The posted base revision if it belongs to the source, else the current one.
     let matched = match pages::parse_uuid(&form.base_revision) {
         Some(id) => sqlx::query_scalar!(

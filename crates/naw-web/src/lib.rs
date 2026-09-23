@@ -177,6 +177,7 @@ fn routes(state: AppState) -> Router {
                 state.config.upload_max_bytes + 64 * 1024,
             )),
         )
+        .route("/media/import", post(media::import_url))
         .route("/media/{prefix}/{file}", get(media::serve))
         .route("/user/{name}", get(profile::show))
         .route(

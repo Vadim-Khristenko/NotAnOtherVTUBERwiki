@@ -738,10 +738,11 @@ pub async fn create_page(
             "slug: lowercase letters, digits and dashes, up to 100 characters",
         ));
     }
-    let draft = match validate(&form.title, &form.summary, &form.body_md) {
+    let mut draft = match validate(&form.title, &form.summary, &form.body_md) {
         Ok(draft) => draft,
         Err(reason) => return Ok(bad_request(reason)),
     };
+    draft.body_md = crate::media::localize(&state, &ctx, draft.body_md).await;
     let locale = chosen_locale(&ctx, &form.locale);
 
     // The unique index is the real guard; this answers the common case, and an
@@ -914,10 +915,11 @@ pub async fn save_page(
             &explanation,
         );
     }
-    let draft = match validate(&form.title, &form.summary, &form.body_md) {
+    let mut draft = match validate(&form.title, &form.summary, &form.body_md) {
         Ok(draft) => draft,
         Err(reason) => return Ok(bad_request(reason)),
     };
+    draft.body_md = crate::media::localize(&state, &ctx, draft.body_md).await;
 
     // The editor loaded an older revision: somebody saved in between.
     if let Some(base) = parse_uuid(&form.base_revision)
