@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT r.id, r.body_md, r.summary, r.is_minor, r.created_at, u.username AS \"author?\"\n        FROM revisions r\n        LEFT JOIN users u ON u.id = r.author_id\n        WHERE r.id = $1 AND r.page_id = $2\n        ",
+  "query": "\n        SELECT r.id AS \"id!\", r.body_md AS \"body_md!\", r.summary, r.is_minor AS \"is_minor!\",\n               r.created_at AS \"created_at!\", u.username AS \"author?\"\n        FROM revisions r\n        LEFT JOIN users u ON u.id = r.author_id\n        WHERE r.id = $1 AND r.page_id = $2\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "id",
+        "name": "id!",
         "type_info": "Uuid",
         "origin": {
           "Table": {
@@ -16,7 +16,7 @@
       },
       {
         "ordinal": 1,
-        "name": "body_md",
+        "name": "body_md!",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -38,7 +38,7 @@
       },
       {
         "ordinal": 3,
-        "name": "is_minor",
+        "name": "is_minor!",
         "type_info": "Bool",
         "origin": {
           "Table": {
@@ -49,7 +49,7 @@
       },
       {
         "ordinal": 4,
-        "name": "created_at",
+        "name": "created_at!",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
@@ -77,13 +77,13 @@
       ]
     },
     "nullable": [
-      false,
-      false,
       true,
-      false,
-      false,
-      true
+      true,
+      true,
+      true,
+      true,
+      false
     ]
   },
-  "hash": "bff82d087f81ef41a482eb8798ec2bf6760abf69c340b518bf2933670b17a28d"
+  "hash": "3dd87f02cf8de30667fd0b4793e9dc8604cdeb6960e2e80562431bc33db00e7c"
 }

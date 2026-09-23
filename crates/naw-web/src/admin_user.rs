@@ -1,7 +1,9 @@
 //! One account as this wiki's admins see it: `/admin/user/{username}`.
 //!
 //! Role and overrides, sanctions, notes, and account actions. Nobody acts on
-//! themselves or on an account at or above their own role.
+//! themselves or on an account at or above their own role, and what the
+//! account carries to every wiki (password, email, sessions, avatar, an
+//! install ban) needs the stricter `may_manage_account`.
 
 use axum::extract::{Extension, Form, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -12,7 +14,7 @@ use uuid::Uuid;
 use naw_core::error::AppError;
 use naw_core::state::AppState;
 
-use crate::admin::{gate, may_reset, render};
+use crate::admin::{gate, may_manage, may_manage_account, render};
 use crate::audit;
 use crate::auth::session::CurrentUser;
 use crate::pages;
@@ -53,8 +55,8 @@ fn back(t: &Target, done: &str) -> Response {
     pages::see_other(&format!("/admin/user/{}?done={done}", t.username))
 }
 
-fn refuse(reason: &'static str) -> Response {
-    (StatusCode::FORBIDDEN, reason).into_response()
+fn refuse(reason: impl Into<String>) -> Response {
+    (StatusCode::FORBIDDEN, reason.into()).into_response()
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -119,7 +121,7 @@ pub async fn show(
     .await?;
 
     let overrides = sqlx::query!(
-        r#"SELECT o.capability, o.allowed, u.username AS "set_by?"
+        r#"SELECT o.capability AS "capability!", o.allowed AS "allowed!", u.username AS "set_by?"
            FROM user_capabilities o LEFT JOIN users u ON u.id = o.set_by
            WHERE o.user_id = $1 AND o.wiki_id = $2"#,
         t.id,
@@ -139,7 +141,7 @@ pub async fn show(
         overrides: Vec::new(),
         sanction: None,
     };
-    let manage_rights = ctx.actor.can(Capability::UserRoleManage);
+    let manage_rights = ctx.actor.manages_accounts();
     let capabilities: Vec<minijinja::Value> = Capability::ALL
         .iter()
         .map(|cap| {
@@ -247,7 +249,8 @@ pub async fn show(
     .fetch_all(&state.db)
     .await?;
 
-    let manageable = may_reset(&ctx, t.id, t.global, t.role);
+    let manageable = may_manage(&ctx, t.id, t.global, t.role);
+    let account_reach = may_manage_account(&state, &ctx, t.id, t.global, t.role).await?;
     let grantable: Vec<&str> = WikiRole::ALL
         .iter()
         .filter(|role| ctx.actor.may_grant(**role))
@@ -263,7 +266,9 @@ pub async fn show(
             u_name => t.username.clone(),
             u_display => account.display_name,
             u_avatar => account.avatar_key.as_deref().map(crate::media::url_for_key),
-            u_email => account.email,
+            // An address is for whoever may act on the account, not every admin.
+            u_email => account.email.filter(|_| account_reach.is_ok()),
+            u_email_hidden => account_reach.is_err(),
             u_email_verified => account.email_verified_at.is_some(),
             u_global => t.global.as_str(),
             u_role => t.role.map(WikiRole::as_str),
@@ -302,7 +307,7 @@ pub async fn show(
 /// Granting an override needs the capability yourself; the capabilities that
 /// decide who may do what need an owner.
 fn may_override(ctx: &Ctx, cap: Capability, granting: bool) -> Result<(), &'static str> {
-    if !ctx.actor.can(Capability::UserRoleManage) {
+    if !ctx.actor.manages_accounts() {
         return Err("changing rights needs admin rights");
     }
     let owner =
@@ -329,8 +334,25 @@ async fn resolve_managed(
     let Some(t) = target(state, &ctx, name).await? else {
         return Ok(Err(crate::errors::not_found()));
     };
-    if let Err(reason) = may_reset(&ctx, t.id, t.global, t.role) {
-        return Ok(Err(refuse(reason)));
+    if let Err(reason) = may_manage(&ctx, t.id, t.global, t.role) {
+        return Ok(Err(refuse(ctx.t(reason))));
+    }
+    Ok(Ok((ctx, t)))
+}
+
+/// `resolve_managed` for actions that reach the account on every wiki.
+async fn resolve_account(
+    state: &AppState,
+    headers: &HeaderMap,
+    user: Option<&CurrentUser>,
+    name: &str,
+) -> Result<Result<(Ctx, Target), Response>, AppError> {
+    let (ctx, t) = match resolve_managed(state, headers, user, name).await? {
+        Ok(found) => found,
+        Err(response) => return Ok(Err(response)),
+    };
+    if let Err(reason) = may_manage_account(state, &ctx, t.id, t.global, t.role).await? {
+        return Ok(Err(refuse(ctx.t(reason))));
     }
     Ok(Ok((ctx, t)))
 }
@@ -437,6 +459,11 @@ pub async fn add_sanction(
         "ban_install" => {
             if !matches!(ctx.actor.global, GlobalRole::Root | GlobalRole::Staff) {
                 return Ok(refuse("only install staff may ban from every wiki"));
+            }
+            if let Err(reason) =
+                may_manage_account(&state, &ctx, t.id, t.global, t.role).await?
+            {
+                return Ok(refuse(ctx.t(reason)));
             }
             ("ban", None)
         }
@@ -589,7 +616,7 @@ pub async fn verify_email(
     Path(name): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
+    let (ctx, t) = or_respond!(resolve_account(&state, &headers, user.as_ref(), &name).await?);
     let updated = sqlx::query!(
         "UPDATE users SET email_verified_at = now()
          WHERE id = $1 AND email IS NOT NULL AND email_verified_at IS NULL",
@@ -622,7 +649,7 @@ pub async fn end_sessions(
     Path(name): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
+    let (ctx, t) = or_respond!(resolve_account(&state, &headers, user.as_ref(), &name).await?);
     let ended = crate::auth::session::delete_others(&state, t.id, None).await?;
     audit::record(
         &state.db,
@@ -646,7 +673,7 @@ pub async fn remove_avatar(
     Path(name): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
+    let (ctx, t) = or_respond!(resolve_account(&state, &headers, user.as_ref(), &name).await?);
     let removed = sqlx::query_scalar!(
         r#"WITH old AS (SELECT avatar_key FROM users WHERE id = $1 FOR UPDATE)
            UPDATE users u SET avatar_key = NULL FROM old
@@ -689,8 +716,8 @@ pub async fn set_curator(
     Form(form): Form<CuratorForm>,
 ) -> Result<Response, AppError> {
     let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
-    if !ctx.actor.can(Capability::UserRoleManage) {
-        return Ok(refuse("assigning curators needs admin rights"));
+    if !ctx.actor.manages_accounts() {
+        return Ok(refuse(ctx.t("admin.why_needs_admin")));
     }
     let wanted = form.curator.trim().to_lowercase();
     if wanted.is_empty() {

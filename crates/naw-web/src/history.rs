@@ -182,7 +182,8 @@ async fn load_revision(
 ) -> Result<Option<StoredRevision>, AppError> {
     let row = sqlx::query!(
         r#"
-        SELECT r.id, r.body_md, r.summary, r.is_minor, r.created_at, u.username AS "author?"
+        SELECT r.id AS "id!", r.body_md AS "body_md!", r.summary, r.is_minor AS "is_minor!",
+               r.created_at AS "created_at!", u.username AS "author?"
         FROM revisions r
         LEFT JOIN users u ON u.id = r.author_id
         WHERE r.id = $1 AND r.page_id = $2

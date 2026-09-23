@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT o.capability, o.allowed, u.username AS \"set_by?\"\n           FROM user_capabilities o LEFT JOIN users u ON u.id = o.set_by\n           WHERE o.user_id = $1 AND o.wiki_id = $2",
+  "query": "SELECT o.capability AS \"capability!\", o.allowed AS \"allowed!\", u.username AS \"set_by?\"\n           FROM user_capabilities o LEFT JOIN users u ON u.id = o.set_by\n           WHERE o.user_id = $1 AND o.wiki_id = $2",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "capability",
+        "name": "capability!",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -16,7 +16,7 @@
       },
       {
         "ordinal": 1,
-        "name": "allowed",
+        "name": "allowed!",
         "type_info": "Bool",
         "origin": {
           "Table": {
@@ -44,10 +44,10 @@
       ]
     },
     "nullable": [
-      false,
-      false,
-      true
+      true,
+      true,
+      false
     ]
   },
-  "hash": "af3df4b85eda7f906460033b50cba877ddda2b5ed88c0d756cef783fe499f0b3"
+  "hash": "6ae732f75f1d7373087065c4a205f19c249322b787fd82b7019cb3ba6803aa76"
 }

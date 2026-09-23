@@ -346,13 +346,20 @@ impl Actor {
         from.is_none_or(|level| self.at_least(level)) && to.is_none_or(|level| self.at_least(level))
     }
 
+    /// Whether this actor manages accounts: roles, sanctions, passwords. It
+    /// takes the role; an override may take it away but never hands it out,
+    /// so a curator given the capability still cannot reset a password.
+    pub fn manages_accounts(&self) -> bool {
+        self.can(Capability::UserRoleManage) && self.can_by_role(Capability::UserRoleManage)
+    }
+
     /// Whether this actor may hand out `target`: only roles below their own, so
     /// nobody can create a peer. Root is exempt.
     pub fn may_grant(&self, target: WikiRole) -> bool {
         if self.global == GlobalRole::Root {
             return true;
         }
-        if !self.can(Capability::UserRoleManage) {
+        if !self.manages_accounts() {
             return false;
         }
         self.effective_role().is_some_and(|mine| target < mine)
@@ -686,6 +693,28 @@ mod tests {
 
         let moderator = actor(GlobalRole::Registered, Some(WikiRole::Moderator));
         assert!(!moderator.may_grant(WikiRole::Registered));
+    }
+
+    #[test]
+    fn managing_accounts_takes_the_role_not_an_override() {
+        for role in [WikiRole::Curator, WikiRole::Moderator] {
+            let mut given = actor(GlobalRole::Registered, Some(role));
+            given.overrides = vec![(Capability::UserRoleManage, true)];
+            assert!(given.can(Capability::UserRoleManage));
+            assert!(!given.manages_accounts(), "{role:?} with an override");
+            assert!(!given.may_grant(WikiRole::Registered));
+        }
+        // Staff moderate everywhere; accounts are not theirs to run.
+        assert!(!actor(GlobalRole::Staff, None).manages_accounts());
+
+        let admin = actor(GlobalRole::Registered, Some(WikiRole::Admin));
+        assert!(admin.manages_accounts());
+        let mut denied = admin.clone();
+        denied.overrides = vec![(Capability::UserRoleManage, false)];
+        assert!(!denied.manages_accounts());
+        let mut banned = admin;
+        banned.sanction = Some(Sanction::Ban);
+        assert!(!banned.manages_accounts());
     }
 
     #[test]

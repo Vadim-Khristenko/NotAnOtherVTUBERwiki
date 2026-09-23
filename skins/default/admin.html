@@ -523,7 +523,7 @@
   <dl class="stat-grid au-stats">
     <div class="stat"><dt>{{ t("admin.au_edits") }}</dt><dd>{{ s_edits }}</dd></div>
     <div class="stat"><dt>{{ t("admin.au_created") }}</dt><dd>{{ s_created }}</dd></div>
-    <div class="stat"><dt>{{ t("admin.au_sessions") }}</dt><dd>{{ s_sessions }}</dd></div>
+    <div class="stat" title="{{ t('admin.au_sessions_note', days=active_days) }}"><dt>{{ t("admin.au_sessions") }}</dt><dd>{{ s_sessions }}</dd></div>
   </dl>
 
   <div class="settings-grid">
@@ -533,11 +533,15 @@
         <dt>{{ t("admin.joined") }}</dt><dd>{{ u_joined }}{% if u_created_by %} · {{ t("admin.au_created_by", name=u_created_by) }}{% endif %}</dd>
         <dt>{{ t("admin.au_last_edit") }}</dt><dd>{{ s_last_edit or "-" }}</dd>
         <dt>{{ t("admin.au_last_sign_in") }}</dt><dd>{{ s_last_sign_in or "-" }}</dd>
-        <dt>{{ t("admin.email") }}</dt><dd>{% if u_email %}<code>{{ u_email }}</code> {% if u_email_verified %}<span class="tag">{{ t("admin.verified") }}</span>{% else %}<span class="tag tag-warn">{{ t("admin.unverified") }}</span>{% endif %}{% else %}-{% endif %}</dd>
+        <dt>{{ t("admin.au_last_seen") }}</dt><dd>{{ s_last_seen or "-" }}</dd>
+        <dt>{{ t("admin.email") }}</dt><dd>{% if u_email %}<code>{{ u_email }}</code> {% if u_email_verified %}<span class="tag">{{ t("admin.verified") }}</span>{% else %}<span class="tag tag-warn">{{ t("admin.unverified") }}</span>{% endif %}{% elif u_email_hidden %}<span class="muted-cell">{{ t("admin.au_email_hidden") }}</span>{% else %}-{% endif %}</dd>
         <dt>{{ t("admin.au_sign_in") }}</dt><dd>{% if u_has_password %}{{ t("admin.au_password") }}{% endif %}{% for p in u_identities %}{% if u_has_password or not loop.first %}, {% endif %}{{ p }}{% endfor %}{% if not u_has_password and not u_identities %}-{% endif %}</dd>
         {% if u_aliases %}<dt>{{ t("admin.au_aliases") }}</dt><dd>{{ u_aliases | join(", ") }}</dd>{% endif %}
       </dl>
-      {% if manageable %}
+      {% if manageable and not account_manageable and account_block %}
+      <p class="field-note">{{ t("admin.au_account_readonly") }} ({{ account_block }})</p>
+      {% endif %}
+      {% if account_manageable %}
       <div class="settings-actions">
         {% if u_email and not u_email_verified %}
         <form method="post" action="/admin/user/{{ u_name }}/verify-email"><button class="button-preview" type="submit">{{ t("admin.au_verify_email") }}</button></form>

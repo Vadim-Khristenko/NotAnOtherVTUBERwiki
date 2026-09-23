@@ -246,7 +246,7 @@ pub async fn users(
             has_next => offset + PER_PAGE < total,
             prev_page => page_no - 1,
             next_page => page_no + 1,
-            can_create => ctx.actor.can(Capability::UserRoleManage),
+            can_create => ctx.actor.manages_accounts(),
         },
     )
 }
@@ -270,8 +270,8 @@ pub async fn set_role(
     Form(form): Form<RoleForm>,
 ) -> Result<Response, AppError> {
     let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
-    if !ctx.actor.can(Capability::UserRoleManage) {
-        return Ok((StatusCode::FORBIDDEN, "changing roles needs admin rights").into_response());
+    if !ctx.actor.manages_accounts() {
+        return Ok((StatusCode::FORBIDDEN, ctx.t("admin.why_needs_admin")).into_response());
     }
     let Some(target_id) = pages::parse_uuid(&form.user_id) else {
         return Ok((StatusCode::UNPROCESSABLE_ENTITY, "user_id: expected an id").into_response());
@@ -382,33 +382,70 @@ fn role_back(back: &str) -> &str {
 // The temporary password is shown once, never logged or stored in plain
 // text, and must be replaced at the first sign-in.
 
-/// Why this admin may not reset that account's password, if they may not.
-pub(crate) fn may_reset(
+/// Why this admin may not act on that account on this wiki, as a message key.
+pub(crate) fn may_manage(
     ctx: &Ctx,
     target: uuid::Uuid,
     target_global: GlobalRole,
     target_role: Option<WikiRole>,
 ) -> Result<(), &'static str> {
-    if !ctx.actor.can(Capability::UserRoleManage) {
-        return Err("resetting passwords needs admin rights");
+    if !ctx.actor.manages_accounts() {
+        return Err("admin.why_needs_admin");
     }
-    // Your own password is changed on the account page, which asks for it.
+    // Your own account is changed in settings, which ask for your password.
     if Some(target) == ctx.actor.user_id {
-        return Err("change your own password on the account page");
+        return Err("admin.why_own_password");
     }
     match target_global {
-        GlobalRole::Root => return Err("root accounts are reset from the command line"),
+        GlobalRole::Root => return Err("admin.why_root"),
         GlobalRole::Staff if ctx.actor.global != GlobalRole::Root => {
-            return Err("only root may reset a staff account");
+            return Err("admin.why_staff");
         }
         _ => {}
     }
     if let Some(held) = target_role
         && !ctx.actor.may_grant(held)
     {
-        return Err("that account holds a role at or above your own");
+        return Err("admin.why_higher_role");
     }
     Ok(())
+}
+
+/// Why this admin may not touch what the account carries to every wiki of
+/// the install: its password, email, sessions and avatar. The role here is
+/// not enough. Someone who never joined this wiki, or who holds rights on
+/// another one, is not this wiki's to take over.
+pub(crate) async fn may_manage_account(
+    state: &AppState,
+    ctx: &Ctx,
+    target: uuid::Uuid,
+    target_global: GlobalRole,
+    target_role: Option<WikiRole>,
+) -> Result<Result<(), &'static str>, AppError> {
+    if let Err(key) = may_manage(ctx, target, target_global, target_role) {
+        return Ok(Err(key));
+    }
+    if ctx.actor.global == GlobalRole::Root {
+        return Ok(Ok(()));
+    }
+    if target_role.is_none() {
+        return Ok(Err("admin.why_not_member"));
+    }
+    let elsewhere = sqlx::query_scalar!(
+        r#"SELECT role::text AS "role!" FROM wiki_memberships WHERE user_id = $1 AND wiki_id <> $2"#,
+        target,
+        ctx.wiki.id
+    )
+    .fetch_all(&state.db)
+    .await?;
+    if elsewhere
+        .iter()
+        .filter_map(|role| WikiRole::parse(role))
+        .any(|role| role >= WikiRole::Curator)
+    {
+        return Ok(Err("admin.why_rights_elsewhere"));
+    }
+    Ok(Ok(()))
 }
 
 /// One `@`, something on both sides, no spaces, a sane length.
@@ -476,12 +513,8 @@ pub async fn new_user(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
-    if !ctx.actor.can(Capability::UserRoleManage) {
-        return Ok((
-            StatusCode::FORBIDDEN,
-            "creating accounts needs admin rights",
-        )
-            .into_response());
+    if !ctx.actor.manages_accounts() {
+        return Ok((StatusCode::FORBIDDEN, ctx.t("admin.why_needs_admin")).into_response());
     }
     render_new_user(&ctx, StatusCode::OK, &NewUserForm::default(), None)
 }
@@ -518,12 +551,8 @@ pub async fn create_user(
     Form(form): Form<NewUserForm>,
 ) -> Result<Response, AppError> {
     let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
-    if !ctx.actor.can(Capability::UserRoleManage) {
-        return Ok((
-            StatusCode::FORBIDDEN,
-            "creating accounts needs admin rights",
-        )
-            .into_response());
+    if !ctx.actor.manages_accounts() {
+        return Ok((StatusCode::FORBIDDEN, ctx.t("admin.why_needs_admin")).into_response());
     }
     let username = form.username.trim().to_lowercase();
     let email = form.email.trim().to_lowercase();
@@ -652,13 +681,16 @@ pub async fn reset_password(
         return Ok(crate::errors::not_found());
     };
     let held = target.wiki_role.as_deref().and_then(WikiRole::parse);
-    if let Err(reason) = may_reset(
+    if let Err(reason) = may_manage_account(
+        &state,
         &ctx,
         target_id,
         GlobalRole::parse(&target.global_role),
         held,
-    ) {
-        return Ok((StatusCode::FORBIDDEN, reason).into_response());
+    )
+    .await?
+    {
+        return Ok((StatusCode::FORBIDDEN, ctx.t(reason)).into_response());
     }
 
     let temporary = crate::auth::password::temporary();
