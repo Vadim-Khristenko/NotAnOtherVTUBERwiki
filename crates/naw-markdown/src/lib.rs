@@ -32,23 +32,13 @@ pub fn render_html(markdown: &str) -> String {
 /// Nesting depth is capped at 8 so a crafted chain of blocks cannot recurse
 /// on input size.
 fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) -> String {
-    use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+    use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 
     if depth > 8 {
         return String::new();
     }
 
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_TABLES);
-    options.insert(Options::ENABLE_FOOTNOTES);
-    options.insert(Options::ENABLE_TASKLISTS);
-    options.insert(Options::ENABLE_STRIKETHROUGH);
-    options.insert(Options::ENABLE_MATH);
-    options.insert(Options::ENABLE_GFM);
-    options.insert(Options::ENABLE_SUPERSCRIPT);
-    options.insert(Options::ENABLE_SUBSCRIPT);
-    options.insert(Options::ENABLE_DEFINITION_LIST);
-    options.insert(Options::ENABLE_WIKILINKS);
+    let options = parser_options();
 
     let (without_blocks, blocks) = extract_custom_blocks(markdown, state);
     // pulldown-cmark hardwires `__` to `<strong>`.
@@ -125,6 +115,47 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
         .add_tag_attributes("img", ["loading", "decoding"])
         .clean(&anchored)
         .to_string()
+}
+
+/// The CommonMark extensions the engine enables.
+fn parser_options() -> pulldown_cmark::Options {
+    use pulldown_cmark::Options;
+    Options::ENABLE_TABLES
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_MATH
+        | Options::ENABLE_GFM
+        | Options::ENABLE_SUPERSCRIPT
+        | Options::ENABLE_SUBSCRIPT
+        | Options::ENABLE_DEFINITION_LIST
+        | Options::ENABLE_WIKILINKS
+}
+
+/// Outside images in `markdown`: the byte range of each destination URL in
+/// the source, and the URL. Only inline `![alt](http...)` images whose
+/// destination appears in the source as written; code, links and
+/// reference-style images are left alone.
+pub fn external_images(markdown: &str) -> Vec<(std::ops::Range<usize>, String)> {
+    use pulldown_cmark::{Event, Parser, Tag};
+    let mut found = Vec::new();
+    for (event, range) in Parser::new_ext(markdown, parser_options()).into_offset_iter() {
+        let Event::Start(Tag::Image { dest_url, .. }) = event else {
+            continue;
+        };
+        if !(dest_url.starts_with("https://") || dest_url.starts_with("http://")) {
+            continue;
+        }
+        let source = &markdown[range.clone()];
+        let at = source
+            .find("](")
+            .and_then(|open| source[open..].find(dest_url.as_ref()).map(|pos| open + pos));
+        if let Some(at) = at {
+            let start = range.start + at;
+            found.push((start..start + dest_url.len(), dest_url.to_string()));
+        }
+    }
+    found
 }
 
 /// An image stored by this wiki: under `/media/`, with no way off the site.
@@ -1792,6 +1823,17 @@ mod tests {
         assert!(html.contains("12:30"), "{html}");
         assert!(html.contains("https://x.test/a"), "{html}");
         assert!(html.contains(":nope:"), "{html}");
+    }
+
+    #[test]
+    fn outside_images_are_found_by_their_exact_source_range() {
+        let md = "![a](https://x.test/a.png) and [link](https://x.test/l)\n\n`![c](https://x.test/c.png)`\n\n![local](/media/ab/x.png) ![b](http://y.test/b.jpg \"t\")\n";
+        let found = external_images(md);
+        let urls: Vec<&str> = found.iter().map(|(_, u)| u.as_str()).collect();
+        assert_eq!(urls, vec!["https://x.test/a.png", "http://y.test/b.jpg"]);
+        for (range, url) in &found {
+            assert_eq!(&md[range.clone()], url);
+        }
     }
 
     #[test]
