@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO curatorships (wiki_id, user_id, curator_id, assigned_by)\n             VALUES ($1, $2, $3, $4)\n             ON CONFLICT (wiki_id, user_id)\n             DO UPDATE SET curator_id = EXCLUDED.curator_id, assigned_by = EXCLUDED.assigned_by,\n                           assigned_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5c7b0169c368528a72828c6f35352be940e9ef397e1cf3fdb08a00e537e39b79"
+}

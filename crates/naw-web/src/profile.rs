@@ -75,14 +75,34 @@ async fn lookup(state: &AppState, name: &str) -> Result<Lookup, AppError> {
     Ok(current.map_or(Lookup::Missing, Lookup::Renamed))
 }
 
-/// Whether the viewer may write this profile: its owner, or a moderator and up
-/// on this wiki, who may need to remove something from it.
-fn may_edit(ctx: &Ctx, person: &Person) -> bool {
-    ctx.actor.user_id == Some(person.id)
-        || ctx
-            .actor
-            .effective_role()
-            .is_some_and(|role| role >= WikiRole::Moderator)
+/// Whether the viewer may write this profile: its owner, the curator assigned
+/// to the person on this wiki (while they still hold a curator role or
+/// higher), or a moderator and up, who may need to remove something from it.
+async fn may_edit(state: &AppState, ctx: &Ctx, person: &Person) -> Result<bool, AppError> {
+    if ctx.actor.user_id == Some(person.id) {
+        return Ok(true);
+    }
+    let role = ctx.actor.effective_role();
+    if role.is_some_and(|r| r >= WikiRole::Moderator) {
+        return Ok(true);
+    }
+    if !role.is_some_and(|r| r >= WikiRole::Curator)
+        || !ctx.actor.can(crate::perm::Capability::PageEdit)
+    {
+        return Ok(false);
+    }
+    let Some(me) = ctx.actor.user_id else {
+        return Ok(false);
+    };
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM curatorships
+             WHERE wiki_id = $1 AND user_id = $2 AND curator_id = $3) AS "yes!""#,
+        ctx.wiki.id,
+        person.id,
+        me
+    )
+    .fetch_one(&state.db)
+    .await?)
 }
 
 struct ProfilePage {
@@ -90,6 +110,7 @@ struct ProfilePage {
     revision_id: Uuid,
     body_md: String,
     locked: bool,
+    protection: Option<WikiRole>,
 }
 
 async fn profile_page(
@@ -98,7 +119,7 @@ async fn profile_page(
     username: &str,
 ) -> Result<Option<ProfilePage>, AppError> {
     let row = sqlx::query!(
-        r#"SELECT p.id, p.is_locked, r.id AS revision_id, r.body_md
+        r#"SELECT p.id, p.is_locked, p.edit_level, r.id AS revision_id, r.body_md
            FROM pages p JOIN revisions r ON r.id = p.current_revision_id
            WHERE p.wiki_id = $1 AND p.namespace = 'user' AND p.slug = $2
              AND p.deleted_at IS NULL"#,
@@ -112,6 +133,7 @@ async fn profile_page(
         revision_id: row.revision_id,
         body_md: row.body_md,
         locked: row.is_locked,
+        protection: pages::protection_of(row.is_locked, row.edit_level.as_deref()),
     }))
 }
 
@@ -195,6 +217,7 @@ pub async fn show(
         })
         .collect();
 
+    let can_edit_profile = may_edit(&state, &ctx, &person).await?;
     let shown_name = person
         .display_name
         .clone()
@@ -210,7 +233,7 @@ pub async fn show(
         person_edits => edits,
         recent => recent,
         is_me => is_me,
-        can_edit_profile => may_edit(&ctx, &person),
+        can_edit_profile => can_edit_profile,
         has_profile => body_html.is_some(),
     };
     let html = pages::render_shell(
@@ -237,7 +260,7 @@ pub async fn edit(
         Ok(found) => found,
         Err(response) => return Ok(response),
     };
-    if !may_edit(&ctx, &person) {
+    if !may_edit(&state, &ctx, &person).await? {
         return Ok(forbidden(&ctx, &person));
     }
     let page = profile_page(&state, ctx.wiki.id, &person.username).await?;
@@ -306,7 +329,7 @@ pub async fn save(
         Ok(found) => found,
         Err(response) => return Ok(response),
     };
-    if !may_edit(&ctx, &person) {
+    if !may_edit(&state, &ctx, &person).await? {
         return Ok(forbidden(&ctx, &person));
     }
     // The title of a profile is the person's name, not something to type.
@@ -316,7 +339,10 @@ pub async fn save(
     };
     let existing = profile_page(&state, ctx.wiki.id, &person.username).await?;
     if let Some(page) = &existing {
-        if page.locked && !ctx.actor.can(crate::perm::Capability::PageLock) {
+        if !page
+            .protection
+            .is_none_or(|level| ctx.actor.effective_role().is_some_and(|r| r >= level))
+        {
             return Ok(forbidden(&ctx, &person));
         }
         if let Some(base) = pages::parse_uuid(&form.base_revision)

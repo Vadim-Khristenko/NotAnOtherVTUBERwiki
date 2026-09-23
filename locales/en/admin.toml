@@ -237,6 +237,11 @@ cap_admin_panel = "Open the admin panel"
 cap_user_role = "Change other people's rights"
 cap_wiki_settings = "Change wiki settings"
 
+au_curator = "Curator"
+au_no_curator = "no curator"
+au_curator_note = "The curator may edit this person's profile. Only curators and up on this wiki can be chosen."
+done_curator = "Curator updated."
+
 [unindexed_warning]
 one = "{n} live page is missing from the search index and cannot be found by searching."
 other = "{n} live pages are missing from the search index and cannot be found by searching."

@@ -126,6 +126,10 @@ pub enum Sanction {
 pub enum WikiRole {
     Registered,
     Sponsor,
+    /// A trusted editor who looks after other people: may protect pages (up to
+    /// curator level), mark edits as checked, and edit the profiles of the
+    /// people assigned to them.
+    Curator,
     Moderator,
     Admin,
     Owner,
@@ -136,6 +140,7 @@ impl WikiRole {
         match raw {
             "registered" => Some(Self::Registered),
             "sponsor" => Some(Self::Sponsor),
+            "curator" => Some(Self::Curator),
             "moderator" => Some(Self::Moderator),
             "admin" => Some(Self::Admin),
             "owner" => Some(Self::Owner),
@@ -147,6 +152,7 @@ impl WikiRole {
         match self {
             Self::Registered => "registered",
             Self::Sponsor => "sponsor",
+            Self::Curator => "curator",
             Self::Moderator => "moderator",
             Self::Admin => "admin",
             Self::Owner => "owner",
@@ -154,9 +160,10 @@ impl WikiRole {
     }
 
     /// The roles an admin panel may offer, weakest first.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Registered,
         Self::Sponsor,
+        Self::Curator,
         Self::Moderator,
         Self::Admin,
         Self::Owner,
@@ -352,26 +359,36 @@ impl Actor {
             Capability::PageEdit => {
                 self.may_write(self.rules.anonymous_edit, self.rules.registered_edit)
             }
-            Capability::PageDelete
-            | Capability::PageLock
-            | Capability::RevisionPatrol
-            | Capability::AuditRead => self.at_least(WikiRole::Moderator),
+            // Protecting a page and checking edits is curator work; how high
+            // a curator may protect is limited separately, in `may_protect`.
+            Capability::PageLock | Capability::RevisionPatrol => self.at_least(WikiRole::Curator),
+            Capability::PageDelete | Capability::AuditRead => self.at_least(WikiRole::Moderator),
             Capability::AdminPanel | Capability::WikiSettings | Capability::UserRoleManage => {
                 self.at_least(WikiRole::Admin)
             }
         }
     }
 
-    /// Editing one specific page, which adds the lock on top of the capability.
+    /// Editing one specific page: the capability, plus the page's protection.
     ///
-    /// A lock is a signal to ordinary editors, not a vault: moderators and
-    /// above edit through it, which is the point of locking a page during a
-    /// dispute.
-    pub fn can_edit_page(&self, locked: bool) -> bool {
+    /// A protected page is editable by its protection level and above, which
+    /// is the point of protecting a page during a dispute: the people trusted
+    /// to settle it can still edit.
+    pub fn can_edit_page(&self, protection: Option<WikiRole>) -> bool {
         if !self.can(Capability::PageEdit) {
             return false;
         }
-        !locked || self.at_least(WikiRole::Moderator)
+        protection.is_none_or(|level| self.at_least(level))
+    }
+
+    /// Whether this actor may change a page's protection from `from` to `to`.
+    /// Curators and up may protect, but never above their own role, and never
+    /// loosen a protection set above them.
+    pub fn may_protect(&self, from: Option<WikiRole>, to: Option<WikiRole>) -> bool {
+        if !self.can(Capability::PageLock) {
+            return false;
+        }
+        from.is_none_or(|level| self.at_least(level)) && to.is_none_or(|level| self.at_least(level))
     }
 
     /// Whether this actor may hand out `target`.
@@ -678,16 +695,36 @@ mod tests {
     }
 
     #[test]
-    fn a_lock_stops_editors_and_not_moderators() {
+    fn protection_stops_everyone_below_its_level() {
         let editor = actor(GlobalRole::Registered, None);
-        assert!(editor.can_edit_page(false));
-        assert!(!editor.can_edit_page(true));
+        assert!(editor.can_edit_page(None));
+        assert!(!editor.can_edit_page(Some(WikiRole::Curator)));
+
+        let curator = actor(GlobalRole::Registered, Some(WikiRole::Curator));
+        assert!(curator.can_edit_page(Some(WikiRole::Curator)));
+        assert!(!curator.can_edit_page(Some(WikiRole::Moderator)));
 
         let moderator = actor(GlobalRole::Registered, Some(WikiRole::Moderator));
-        assert!(moderator.can_edit_page(true));
+        assert!(moderator.can_edit_page(Some(WikiRole::Moderator)));
 
-        // A guest is stopped by the capability, before the lock is consulted.
-        assert!(!Actor::anonymous(Rules::default()).can_edit_page(false));
+        // A guest is stopped by the capability, before protection is consulted.
+        assert!(!Actor::anonymous(Rules::default()).can_edit_page(None));
+    }
+
+    #[test]
+    fn protection_goes_up_to_your_own_level_and_no_further() {
+        let curator = actor(GlobalRole::Registered, Some(WikiRole::Curator));
+        assert!(curator.may_protect(None, Some(WikiRole::Curator)));
+        assert!(!curator.may_protect(None, Some(WikiRole::Moderator)));
+        assert!(
+            !curator.may_protect(Some(WikiRole::Moderator), None),
+            "cannot loosen above you"
+        );
+        let editor = actor(GlobalRole::Registered, None);
+        assert!(!editor.may_protect(None, Some(WikiRole::Curator)));
+        let admin = actor(GlobalRole::Registered, Some(WikiRole::Admin));
+        assert!(admin.may_protect(Some(WikiRole::Moderator), Some(WikiRole::Admin)));
+        assert!(!admin.may_protect(None, Some(WikiRole::Owner)));
     }
 
     #[test]

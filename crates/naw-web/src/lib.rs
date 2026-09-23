@@ -18,6 +18,7 @@ mod pages;
 mod perm;
 mod policy;
 mod profile;
+mod protect;
 mod resolve;
 mod search;
 mod settings;
@@ -114,6 +115,7 @@ fn routes(state: AppState) -> Router {
             post(admin_user::lift_sanction),
         )
         .route("/admin/user/{name}/note", post(admin_user::add_note))
+        .route("/admin/user/{name}/curator", post(admin_user::set_curator))
         .route(
             "/admin/user/{name}/verify-email",
             post(admin_user::verify_email),
@@ -175,6 +177,7 @@ fn routes(state: AppState) -> Router {
         .route("/{slug}/rev/{revision}", get(history::revision))
         .route("/{slug}/revert", post(history::revert))
         .route("/{slug}/patrol", post(history::patrol))
+        .route("/{slug}/protect", post(protect::set))
         // Declared before `.layer` on purpose: axum only wraps what already
         // exists, and a fallback added afterwards would skip every middleware,
         // including the one that turns a bare 404 into a page.

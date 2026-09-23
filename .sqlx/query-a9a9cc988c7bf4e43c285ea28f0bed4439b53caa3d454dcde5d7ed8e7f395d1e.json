@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT is_locked, edit_level FROM pages WHERE id = $1 AND wiki_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_locked",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "is_locked"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "edit_level",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "edit_level"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "a9a9cc988c7bf4e43c285ea28f0bed4439b53caa3d454dcde5d7ed8e7f395d1e"
+}

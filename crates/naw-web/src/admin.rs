@@ -1160,15 +1160,38 @@ pub async fn page_action(
     // The wiki_id in the WHERE clause is the tenancy check. Without it an
     // admin of one wiki could archive a page on another by posting its id.
     let slug = match action {
-        PageAction::Lock | PageAction::Unlock => sqlx::query!(
-            "UPDATE pages SET is_locked = $3 WHERE id = $1 AND wiki_id = $2 RETURNING slug",
-            page_id,
-            ctx.wiki.id,
-            action == PageAction::Lock
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .map(|row| row.slug),
+        PageAction::Lock | PageAction::Unlock => {
+            // "Lock" here is protection at moderator level, as it always was.
+            // The ladder still applies: nobody loosens a protection set above
+            // them, and a curator cannot lock at moderator level.
+            let Some(current) = sqlx::query!(
+                "SELECT is_locked, edit_level FROM pages WHERE id = $1 AND wiki_id = $2",
+                page_id,
+                ctx.wiki.id
+            )
+            .fetch_optional(&state.db)
+            .await?
+            else {
+                return Ok((StatusCode::NOT_FOUND, "nothing to change").into_response());
+            };
+            let from = pages::protection_of(current.is_locked, current.edit_level.as_deref());
+            let to = (action == PageAction::Lock).then_some(WikiRole::Moderator);
+            if !ctx.actor.may_protect(from, to) {
+                return Ok(
+                    (StatusCode::FORBIDDEN, "that protection is above your role").into_response(),
+                );
+            }
+            sqlx::query!(
+                "UPDATE pages SET is_locked = $3, edit_level = $4 WHERE id = $1 AND wiki_id = $2 RETURNING slug",
+                page_id,
+                ctx.wiki.id,
+                to.is_some(),
+                to.map(WikiRole::as_str)
+            )
+            .fetch_optional(&state.db)
+            .await?
+            .map(|row| row.slug)
+        }
         PageAction::Archive => sqlx::query!(
             "UPDATE pages SET deleted_at = now(), deleted_by = $3
              WHERE id = $1 AND wiki_id = $2 AND deleted_at IS NULL RETURNING slug",

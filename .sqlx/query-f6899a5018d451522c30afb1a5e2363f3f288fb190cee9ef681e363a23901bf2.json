@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.id, p.is_locked, r.id AS revision_id, r.body_md\n           FROM pages p JOIN revisions r ON r.id = p.current_revision_id\n           WHERE p.wiki_id = $1 AND p.namespace = 'user' AND p.slug = $2\n             AND p.deleted_at IS NULL",
+  "query": "SELECT p.id, p.is_locked, p.edit_level, r.id AS revision_id, r.body_md\n           FROM pages p JOIN revisions r ON r.id = p.current_revision_id\n           WHERE p.wiki_id = $1 AND p.namespace = 'user' AND p.slug = $2\n             AND p.deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,17 @@
       },
       {
         "ordinal": 2,
+        "name": "edit_level",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "edit_level"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "revision_id",
         "type_info": "Uuid",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "body_md",
         "type_info": "Text",
         "origin": {
@@ -57,9 +68,10 @@
     "nullable": [
       false,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "b31b834959c9a1cfe6a0767e9f91ea286fce821f692dde3ee92d66685b0df50b"
+  "hash": "f6899a5018d451522c30afb1a5e2363f3f288fb190cee9ef681e363a23901bf2"
 }

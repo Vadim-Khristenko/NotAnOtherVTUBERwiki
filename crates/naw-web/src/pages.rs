@@ -312,6 +312,9 @@ pub(crate) struct FoundPage {
     pub id: Uuid,
     pub title: String,
     pub locked: bool,
+    /// Who may edit a protected page: this role and above. `None` when the
+    /// page is not protected.
+    pub protection: Option<crate::perm::WikiRole>,
     pub revision_id: Uuid,
     pub body_md: String,
     pub summary: Option<String>,
@@ -332,7 +335,7 @@ pub(crate) async fn find_page(
 ) -> Result<Option<FoundPage>, AppError> {
     let row = sqlx::query!(
         r#"
-        SELECT p.id, p.title, p.is_locked, p.updated_at,
+        SELECT p.id, p.title, p.is_locked, p.edit_level, p.updated_at,
                p.translation_source_locale, p.translation_source_revision_id,
                r.id AS revision_id, r.body_md, r.summary
         FROM pages p
@@ -353,6 +356,7 @@ pub(crate) async fn find_page(
         id: row.id,
         title: row.title,
         locked: row.is_locked,
+        protection: protection_of(row.is_locked, row.edit_level.as_deref()),
         revision_id: row.revision_id,
         body_md: row.body_md,
         summary: row.summary,
@@ -360,6 +364,16 @@ pub(crate) async fn find_page(
         translation_source_locale: row.translation_source_locale,
         translation_source_revision_id: row.translation_source_revision_id,
     }))
+}
+
+/// A page's protection from its two columns. A locked page with no level is
+/// an old lock, which meant "moderators and up".
+pub(crate) fn protection_of(locked: bool, level: Option<&str>) -> Option<crate::perm::WikiRole> {
+    match level.and_then(crate::perm::WikiRole::parse) {
+        Some(level) => Some(level),
+        None if locked => Some(crate::perm::WikiRole::Moderator),
+        None => None,
+    }
 }
 
 /// Display flags readers can append to any page URL. `?jump_to=` scrolls to a
@@ -485,7 +499,9 @@ pub async fn page(
                 slug => slug.clone(),
                 locked => found.locked,
                 updated_at => found.updated_at.format("%Y-%m-%d %H:%M UTC").to_string(),
-                can_edit_this => ctx.actor.can_edit_page(found.locked),
+                can_edit_this => ctx.actor.can_edit_page(found.protection),
+                protection => found.protection.map(crate::perm::WikiRole::as_str),
+                protect_choices => crate::protect::choices(&ctx, found.protection),
                 other_languages => crate::translate::others(&ctx, &slug, &versions),
                 reader_version => reader_version,
                 translate => translate,
@@ -825,7 +841,7 @@ pub async fn edit_page(
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
     };
-    if !ctx.actor.can_edit_page(found.locked) {
+    if !ctx.actor.can_edit_page(found.protection) {
         let explanation = ctx.t(if found.locked {
             "error.page_locked"
         } else {
@@ -884,7 +900,7 @@ pub async fn save_page(
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
     };
-    if !ctx.actor.can_edit_page(found.locked) {
+    if !ctx.actor.can_edit_page(found.protection) {
         let explanation = ctx.t(if found.locked {
             "error.page_locked"
         } else {

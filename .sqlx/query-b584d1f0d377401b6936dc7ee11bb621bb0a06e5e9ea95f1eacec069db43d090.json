@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.username FROM wiki_memberships m JOIN users u ON u.id = m.user_id\n           WHERE m.wiki_id = $1 AND m.user_id <> $2\n             AND m.role IN ('curator', 'moderator', 'admin', 'owner')\n           ORDER BY u.username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b584d1f0d377401b6936dc7ee11bb621bb0a06e5e9ea95f1eacec069db43d090"
+}

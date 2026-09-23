@@ -233,6 +233,26 @@ pub async fn show(
         })
         .collect();
 
+    // The curator looking after this person, and who could.
+    let curator = sqlx::query_scalar!(
+        "SELECT u.username FROM curatorships c JOIN users u ON u.id = c.curator_id
+         WHERE c.wiki_id = $1 AND c.user_id = $2",
+        ctx.wiki.id,
+        t.id
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let curator_choices: Vec<String> = sqlx::query_scalar!(
+        r#"SELECT u.username FROM wiki_memberships m JOIN users u ON u.id = m.user_id
+           WHERE m.wiki_id = $1 AND m.user_id <> $2
+             AND m.role IN ('curator', 'moderator', 'admin', 'owner')
+           ORDER BY u.username"#,
+        ctx.wiki.id,
+        t.id
+    )
+    .fetch_all(&state.db)
+    .await?;
+
     let manageable = may_reset(&ctx, t.id, t.global, t.role);
     let grantable: Vec<&str> = WikiRole::ALL
         .iter()
@@ -273,6 +293,8 @@ pub async fn show(
             can_install_ban => matches!(ctx.actor.global, GlobalRole::Root | GlobalRole::Staff),
             can_manage_rights => manage_rights,
             grantable => grantable,
+            curator => curator,
+            curator_choices => curator_choices,
             done => query.done.filter(|d| d.len() < 24 && d.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')),
         },
     )
@@ -635,4 +657,83 @@ pub async fn end_sessions(
     )
     .await?;
     Ok(back(&t, "sessions_ended"))
+}
+
+#[derive(serde::Deserialize)]
+pub struct CuratorForm {
+    /// The curator's username, or empty for none.
+    #[serde(default)]
+    curator: String,
+}
+
+/// POST /admin/user/{name}/curator
+pub async fn set_curator(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    Path(name): Path<String>,
+    headers: HeaderMap,
+    Form(form): Form<CuratorForm>,
+) -> Result<Response, AppError> {
+    let (ctx, t) = match resolve_managed(&state, &headers, user.as_ref(), &name).await? {
+        Ok(found) => found,
+        Err(response) => return Ok(response),
+    };
+    if !ctx.actor.can(Capability::UserRoleManage) {
+        return Ok(refuse("assigning curators needs admin rights"));
+    }
+    let wanted = form.curator.trim().to_lowercase();
+    if wanted.is_empty() {
+        sqlx::query!(
+            "DELETE FROM curatorships WHERE wiki_id = $1 AND user_id = $2",
+            ctx.wiki.id,
+            t.id
+        )
+        .execute(&state.db)
+        .await?;
+    } else {
+        // Only someone who is a curator or above on this wiki may look after
+        // people here, and nobody curates themselves.
+        let Some(curator_id) = sqlx::query_scalar!(
+            "SELECT u.id FROM users u JOIN wiki_memberships m ON m.user_id = u.id
+             WHERE lower(u.username) = $1 AND m.wiki_id = $2
+               AND m.role IN ('curator', 'moderator', 'admin', 'owner')",
+            wanted,
+            ctx.wiki.id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .filter(|id| *id != t.id) else {
+            return Ok((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "curator: not a curator on this wiki",
+            )
+                .into_response());
+        };
+        sqlx::query!(
+            "INSERT INTO curatorships (wiki_id, user_id, curator_id, assigned_by)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (wiki_id, user_id)
+             DO UPDATE SET curator_id = EXCLUDED.curator_id, assigned_by = EXCLUDED.assigned_by,
+                           assigned_at = now()",
+            ctx.wiki.id,
+            t.id,
+            curator_id,
+            ctx.actor.user_id
+        )
+        .execute(&state.db)
+        .await?;
+    }
+    audit::record(
+        &state.db,
+        audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action: "admin.user.curator",
+            entity_type: "user",
+            entity_id: Some(t.id),
+            meta: json!({ "curator": (!wanted.is_empty()).then_some(wanted) }),
+        },
+    )
+    .await?;
+    Ok(back(&t, "curator"))
 }

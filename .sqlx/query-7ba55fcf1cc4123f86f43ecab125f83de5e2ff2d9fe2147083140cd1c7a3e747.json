@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM curatorships\n             WHERE wiki_id = $1 AND user_id = $2 AND curator_id = $3) AS \"yes!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "yes!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7ba55fcf1cc4123f86f43ecab125f83de5e2ff2d9fe2147083140cd1c7a3e747"
+}

@@ -129,7 +129,7 @@ pub async fn history(
         })
         .collect();
 
-    let may_edit = ctx.actor.can_edit_page(found.locked);
+    let may_edit = ctx.actor.can_edit_page(found.protection);
     let items: Vec<minijinja::Value> = revisions
         .iter()
         .map(|rev| {
@@ -267,7 +267,7 @@ pub async fn revision(
                 // above the front page.
                 edit_summary => stored.summary.clone(),
                 is_current => revision_id == found.revision_id,
-                may_edit => ctx.actor.can_edit_page(found.locked),
+                may_edit => ctx.actor.can_edit_page(found.protection),
             },
         },
     )?;
@@ -510,7 +510,7 @@ pub async fn diff(
                 to_author => to.author.clone(),
                 from_at => from.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
                 to_at => to.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
-                may_edit => ctx.actor.can_edit_page(found.locked),
+                may_edit => ctx.actor.can_edit_page(found.protection),
                 to_is_current => to_id == found.revision_id,
             }
         })
@@ -550,7 +550,7 @@ pub async fn revert(
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
     };
-    if !ctx.actor.can_edit_page(found.locked) {
+    if !ctx.actor.can_edit_page(found.protection) {
         return Ok((StatusCode::FORBIDDEN, "reverting needs edit rights").into_response());
     }
     let Some(target_id) = pages::parse_uuid(&form.revision) else {

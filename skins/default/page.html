@@ -22,6 +22,22 @@
     <span class="page-action is-static" title="{{ t('page.locked_hint') }}"><svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg>{{ t("page.locked") }}</span>
   {% endif %}
   <a class="page-action" href="{{ base }}/{{ slug }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
+  {% if protect_choices %}
+  {# Curators and up: who may edit this page. Only the levels this reader may
+     set are offered, so the form cannot promise what the server refuses. #}
+  <details class="lang-menu protect-menu">
+    <summary class="page-action" title="{{ t('page.protect') }}">
+      <svg class="icon" aria-hidden="true"><use href="#i-{% if protection %}lock{% else %}lock-open{% endif %}" /></svg>{{ t("page.protect") }}
+    </summary>
+    <form class="lang-panel protect-panel" method="post" action="{{ base }}/{{ slug }}/protect">
+      <p class="field-note">{{ t("page.protect_note") }}</p>
+      {% for c in protect_choices %}
+      <label class="check"><input type="radio" name="level" value="{{ c.id }}" {% if c.current %}checked{% endif %} /> {{ c.label }}</label>
+      {% endfor %}
+      <button class="button-save" type="submit">{{ t("page.protect_save") }}</button>
+    </form>
+  </details>
+  {% endif %}
   {% if translate %}
     <a class="page-action" href="{{ translate.href }}" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-language" /></svg>{{ t("translate.offer", language=translate.name) }}</a>
   {% endif %}

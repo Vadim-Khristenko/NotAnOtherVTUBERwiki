@@ -519,6 +519,20 @@
       {% else %}
       <p>{{ u_role or t("admin.registered_no_membership") }}</p>
       {% endif %}
+      <h3 class="au-subhead">{{ t("admin.au_curator") }}</h3>
+      {% if manageable and can_manage_rights %}
+      <form method="post" action="/admin/user/{{ u_name }}/curator" class="settings-row">
+        <label class="visually-hidden" for="au-curator">{{ t("admin.au_curator") }}</label>
+        <select class="field-input" id="au-curator" name="curator">
+          <option value="">{{ t("admin.au_no_curator") }}</option>
+          {% for c in curator_choices %}<option value="{{ c }}" {% if curator == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select>
+        <button class="button-preview" type="submit">{{ t("admin.apply") }}</button>
+      </form>
+      <p class="field-note">{{ t("admin.au_curator_note") }}</p>
+      {% else %}
+      <p>{{ curator or t("admin.au_no_curator") }}</p>
+      {% endif %}
       {% if recent %}
       <h3 class="au-subhead">{{ t("admin.au_recent") }}</h3>
       <ul class="settings-list">
