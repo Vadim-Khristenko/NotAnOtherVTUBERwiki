@@ -215,8 +215,8 @@ pub async fn serve(
     Path((prefix, file)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    // Only names this module writes: 64 hex characters and a known extension,
-    // under a two-character hex shard or the avatars directory.
+    // Only names this engine writes: 64 hex characters and a known extension,
+    // under a two-character hex shard, the avatars or the emotes directory.
     let Some((stem, _)) = file.rsplit_once('.') else {
         return Ok(crate::errors::not_found());
     };
@@ -230,8 +230,8 @@ pub async fn serve(
     if stem.len() != 64 || !hex(stem) {
         return Ok(crate::errors::not_found());
     }
-    let key = if prefix == "avatars" {
-        format!("avatars/{file}")
+    let key = if prefix == "avatars" || prefix == "emotes" {
+        format!("{prefix}/{file}")
     } else if prefix.len() == 2 && hex(&prefix) && stem.starts_with(&prefix) {
         format!("media/{prefix}/{file}")
     } else {

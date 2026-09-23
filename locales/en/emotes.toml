@@ -1,0 +1,6 @@
+# The public emote list at /emotes.
+
+title = "Emotes"
+intro = "Write an emote's name between colons, like :catJAM:, anywhere in an article. Names are case sensitive. These pictures are kept on this wiki, so reading an article never contacts 7TV."
+manage = "Manage emote sources"
+none = "This wiki has no emotes yet."

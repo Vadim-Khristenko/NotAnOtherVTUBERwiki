@@ -317,6 +317,15 @@ a.button-save, a.button-preview { display: inline-flex; align-items: center; jus
 .settings-stack { display: grid; gap: var(--s2); justify-items: start; }
 .settings-stack .field-input { width: 100%; }
 .media-form { margin: var(--s4) 0; }
+/* An emote sits in the line like a word: text height, never taller. */
+img.emote { display: inline-block; height: 1.75em; width: auto; vertical-align: middle; margin: -0.25em 0.05em 0; border-radius: 0; }
+.emote-grid { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: var(--s3, 0.75rem); }
+.emote-card { display: grid; justify-items: center; gap: 0.3rem; padding: var(--s3, 0.75rem); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elevated); text-align: center; }
+.emote-card img { height: 2.5rem; width: auto; }
+.emote-card code { font-family: var(--font-mono); font-size: 0.8rem; word-break: break-all; }
+.emote-budget { display: flex; align-items: center; gap: var(--s3, 0.75rem); flex-wrap: wrap; }
+.emote-budget meter { width: 12rem; }
+.admin-row-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .media-md { font-family: var(--font-mono); font-size: 0.85rem; }
 .media-grid { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--s4); }
 .media-item { display: grid; gap: var(--s2); align-content: start; }

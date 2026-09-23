@@ -71,7 +71,7 @@
 </div>
 {# Without a script the button above stays hidden, and this link does the
    same job on its own page: upload, then copy the Markdown it gives back. #}
-<p class="field-note editor-media-note"><a href="/media" target="_blank" rel="noopener">{{ t("media.upload_link") }}</a> <span class="editor-media-status" id="image-status" role="status"></span></p>
+<p class="field-note editor-media-note"><a href="/media" target="_blank" rel="noopener">{{ t("media.upload_link") }}</a> · <a href="/emotes" target="_blank" rel="noopener">{{ t("emotes.title") }}</a> <span class="editor-media-status" id="image-status" role="status"></span></p>
 <label class="field">{{ t("editor.body") }}
 <textarea class="field-body" id="body-md" name="body_md" rows="20" required
           data-max="{{ body_max }}" data-too-large="{{ t('editor.body_too_large', max=body_max_mb) }}">{{ body_md }}</textarea>

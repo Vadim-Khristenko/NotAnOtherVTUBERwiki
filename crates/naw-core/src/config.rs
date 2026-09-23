@@ -48,6 +48,10 @@ pub struct Config {
     /// Largest avatar, in bytes. Smaller than uploads: it is shown everywhere.
     #[serde(default = "default_avatar_max_bytes")]
     pub avatar_max_bytes: usize,
+    /// How much storage 7TV emotes may take across the install, in bytes. An
+    /// import stops at this line and says so.
+    #[serde(default = "default_emote_budget_bytes")]
+    pub emote_budget_bytes: u64,
     /// Defaults for how accounts may change. The install owner can override
     /// each value from the admin panel; these apply until they do.
     #[serde(default)]
@@ -175,6 +179,7 @@ impl Default for Config {
             accounts: AccountPolicy::default(),
             upload_max_bytes: default_upload_max_bytes(),
             avatar_max_bytes: default_avatar_max_bytes(),
+            emote_budget_bytes: default_emote_budget_bytes(),
             auth: AuthConfig::default(),
         }
     }
@@ -321,6 +326,10 @@ fn default_upload_max_bytes() -> usize {
     20 * 1024 * 1024
 }
 
+fn default_emote_budget_bytes() -> u64 {
+    1024 * 1024 * 1024
+}
+
 fn default_avatar_max_bytes() -> usize {
     2 * 1024 * 1024
 }
@@ -403,6 +412,7 @@ impl fmt::Debug for Config {
             .field("accounts", &self.accounts)
             .field("upload_max_bytes", &self.upload_max_bytes)
             .field("avatar_max_bytes", &self.avatar_max_bytes)
+            .field("emote_budget_bytes", &self.emote_budget_bytes)
             .field("auth", &self.auth)
             .finish()
     }
@@ -510,6 +520,13 @@ impl Config {
                     })?
                     .clamp(64 * 1024, 64 * 1024 * 1024);
             }
+        }
+        if let Ok(raw) = std::env::var("NAW_EMOTE_BUDGET_BYTES") {
+            cfg.emote_budget_bytes = raw.trim().parse::<u64>().map_err(|_| {
+                AppError::Config(format!(
+                    "NAW_EMOTE_BUDGET_BYTES must be a number of bytes, got {raw:?}"
+                ))
+            })?;
         }
         cfg.bootstrap_owner = BootstrapOwner::from_env()?;
         cfg.check_dev_login()?;

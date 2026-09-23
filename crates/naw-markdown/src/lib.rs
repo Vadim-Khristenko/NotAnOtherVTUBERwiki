@@ -858,6 +858,19 @@ fn replace_emoji(text: &str) -> String {
                 i = j + 1;
                 continue;
             }
+            // Not a Unicode shortcode: maybe one of the wiki's emotes. The
+            // renderer does not know which exist, so it marks the spot and
+            // the web layer swaps in the picture when it serves the page.
+            // Unknown names keep reading as the text the author typed.
+            if closed && next_ok && is_emote_name(&name) {
+                out.push_str(EMOTE_OPEN);
+                out.push(':');
+                out.push_str(&name);
+                out.push(':');
+                out.push_str(EMOTE_CLOSE);
+                i = j + 1;
+                continue;
+            }
             out.push(':');
             i += 1;
             continue;
@@ -866,6 +879,30 @@ fn replace_emoji(text: &str) -> String {
         i += 1;
     }
     out
+}
+
+/// How an emote reference leaves the renderer: `:name:` inside this span.
+/// Only this module writes it (raw HTML never reaches the output), so the
+/// web layer can trust any span of this exact shape to hold a valid name.
+pub const EMOTE_OPEN: &str = "<span class=\"naw-emote\">";
+pub const EMOTE_CLOSE: &str = "</span>";
+
+/// A name that can be written as `:name:`: an ASCII letter or digit first,
+/// then letters, digits, `_`, `-` and `+`, up to 64 in all. Emotes with
+/// other names cannot be referenced and are not imported.
+pub fn is_emote_name(name: &str) -> bool {
+    name.len() <= 64
+        && name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric())
+        && name.chars().all(is_shortcode_char)
+}
+
+/// Whether `:name:` already means a Unicode emoji. Such a name always renders
+/// as the emoji, so an emote by that name would never show.
+pub fn is_unicode_shortcode(name: &str) -> bool {
+    emoji_for(name).is_some()
 }
 
 fn is_shortcode_char(c: char) -> bool {
@@ -1374,7 +1411,7 @@ fn slugify(text: &str) -> String {
 /// Skin and chrome changes no longer count. The cache holds the body fragment
 /// only, so a footer edit is not a new rendering, and the same article under
 /// two skins is one cache row instead of two.
-pub const RENDERER_VERSION: i32 = 13;
+pub const RENDERER_VERSION: i32 = 14;
 
 /// A rendered body fragment plus the key it is cached under.
 pub struct RenderedBody {
@@ -1770,6 +1807,28 @@ mod tests {
         assert!(html.contains("12:30"), "{html}");
         assert!(html.contains("https://x.test/a"), "{html}");
         assert!(html.contains(":nope:"), "{html}");
+    }
+
+    #[test]
+    fn unknown_shortcodes_are_marked_for_emotes() {
+        let html = render_html("Filian :catJAM: and :KEKW: but `:code:` stays.\n");
+        assert!(
+            html.contains(r#"<span class="naw-emote">:catJAM:</span>"#),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="naw-emote">:KEKW:</span>"#),
+            "{html}"
+        );
+        assert!(html.contains("<code>:code:</code>"), "{html}");
+        assert!(is_emote_name("peepoHappy") && is_emote_name("a-b_c+1"));
+        assert!(
+            !is_emote_name("")
+                && !is_emote_name("_x")
+                && !is_emote_name("a b")
+                && !is_emote_name("Кот")
+        );
+        assert!(is_unicode_shortcode("fire") && !is_unicode_shortcode("catJAM"));
     }
 
     #[test]

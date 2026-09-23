@@ -245,7 +245,8 @@ pub(crate) async fn cached_body(
     .fetch_optional(&state.db)
     .await?
     {
-        return Ok((row.html, None));
+        let html = crate::emotes::expand(state, wiki_id, row.html).await?;
+        return Ok((html, None));
     }
     let rendered = naw_markdown::render_body(body_md);
     sqlx::query!(
@@ -258,7 +259,8 @@ pub(crate) async fn cached_body(
     )
     .execute(&state.db)
     .await?;
-    Ok((rendered.html, Some(rendered.render_ms)))
+    let html = crate::emotes::expand(state, wiki_id, rendered.html).await?;
+    Ok((html, Some(rendered.render_ms)))
 }
 
 /// Stores the rendering for a body that was just saved, so the author's
@@ -1235,16 +1237,18 @@ pub async fn preview(
     }
     if query.fragment.unwrap_or(0) == 1 {
         let body_html = naw_markdown::render_html(&form.body_md);
+        let body_html = crate::emotes::expand(&state, ctx.wiki.id, body_html).await?;
         return Ok(([HTML], body_html).into_response());
     }
     let title = form.title.trim();
     let title = if title.is_empty() { "Preview" } else { title };
     let rendered = naw_markdown::render_body(&form.body_md);
+    let body_html = crate::emotes::expand(&state, ctx.wiki.id, rendered.html).await?;
     let html = render_shell(
         &ctx,
         &Shell {
             title,
-            body_html: &rendered.html,
+            body_html: &body_html,
             render_ms: Some(rendered.render_ms),
             template: "page.html",
             extra: minijinja::context! { preview => true },

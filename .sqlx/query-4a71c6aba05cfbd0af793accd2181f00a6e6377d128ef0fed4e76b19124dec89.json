@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO emote_sources (id, wiki_id, kind, ref, added_by)\n         VALUES ($1, $2, $3, $4, $5)\n         ON CONFLICT (wiki_id, provider, kind, ref) DO NOTHING\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "emote_sources",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4a71c6aba05cfbd0af793accd2181f00a6e6377d128ef0fed4e76b19124dec89"
+}

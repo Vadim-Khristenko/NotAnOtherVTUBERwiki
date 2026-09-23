@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+{#
+  Every emote this wiki has, with the text that shows it in an article.
+
+  `emotes`      name, url, width, height, source
+  `can_manage`  whether the viewer may add or remove sources
+#}
+{% block body %}
+<h1>{{ t("emotes.title") }}</h1>
+<p>{{ t("emotes.intro") }}</p>
+{% if can_manage %}<p><a href="/admin/emotes">{{ t("emotes.manage") }}</a></p>{% endif %}
+{% if emotes %}
+<ul class="emote-grid">
+  {% for e in emotes %}
+  <li class="emote-card">
+    <img src="{{ e.url }}" alt="" width="{{ e.width }}" height="{{ e.height }}" loading="lazy" decoding="async" />
+    <code>:{{ e.name }}:</code>
+    <span class="muted-cell">{{ e.source }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted-cell">{{ t("emotes.none") }}</p>
+{% endif %}
+{% endblock %}

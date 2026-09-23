@@ -8,6 +8,7 @@ mod auth;
 pub mod bootstrap;
 mod chrome;
 mod display_name;
+mod emotes;
 mod errors;
 mod history;
 mod lang;
@@ -161,6 +162,11 @@ fn routes(state: AppState) -> Router {
         .route("/admin/errors/{kind}", get(admin::error_preview))
         .route("/search", get(search::search_page))
         .route("/media", get(media::page))
+        .route("/emotes", get(emotes::list))
+        .route("/admin/emotes", get(emotes::admin_page))
+        .route("/admin/emotes/add", post(emotes::add))
+        .route("/admin/emotes/{id}/sync", post(emotes::resync))
+        .route("/admin/emotes/{id}/remove", post(emotes::remove))
         .route(
             "/media/upload",
             post(media::upload).layer(axum::extract::DefaultBodyLimit::max(

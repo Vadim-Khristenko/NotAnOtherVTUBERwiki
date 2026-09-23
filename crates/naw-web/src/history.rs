@@ -248,11 +248,12 @@ pub async fn revision(
     };
 
     let rendered = naw_markdown::render_body(&stored.body_md);
+    let body_html = crate::emotes::expand(&state, ctx.wiki.id, rendered.html).await?;
     let html = pages::render_shell(
         &ctx,
         &pages::Shell {
             title: &ctx.t_with("revision.suffix", &[("page", &found.title)]),
-            body_html: &rendered.html,
+            body_html: &body_html,
             render_ms: Some(rendered.render_ms),
             template: "revision.html",
             extra: minijinja::context! {

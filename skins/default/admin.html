@@ -44,6 +44,7 @@
       <p class="admin-nav-group">{{ t("admin.group_look") }}</p>
       {{ nav_item("/admin/languages", "languages", "language", t("admin.languages")) }}
       {{ nav_item("/admin/chrome", "chrome", "menu-2", t("admin.chrome")) }}
+      {{ nav_item("/admin/emotes", "emotes", "mood-smile", t("admin.emotes")) }}
       {{ nav_item("/admin/errors", "errors", "alert-triangle", t("admin.errors")) }}
       <p class="admin-nav-group">{{ t("admin.group_setup") }}</p>
       {{ nav_item("/admin/wiki", "wiki", "settings", t("admin.settings")) }}
@@ -425,6 +426,51 @@
       <button class="button-save" type="submit">{{ t("admin.save_settings") }}</button>
     </div>
   </form>
+
+{% elif section == "emotes" %}
+  {#
+    7TV sources. Adding one starts a download in the background; the list
+    says how far it got. Readers only ever load the copies kept here.
+  #}
+  {% if done %}<p class="notice {% if done in ['unreadable', 'already'] %}notice-warn{% else %}notice-ok{% endif %}" role="status">{{ t("admin.emotes_done_" ~ done) }}</p>{% endif %}
+  <p class="field-note">{{ t("admin.emotes_note") }} <a href="/emotes">{{ t("admin.emotes_all") }}</a></p>
+  <p class="emote-budget">
+    <span>{{ t("admin.emotes_budget", used=used_mb, budget=budget_mb) }}</span>
+    <meter min="0" max="100" value="{{ used_percent }}" high="90">{{ used_percent }}%</meter>
+  </p>
+  <form method="post" action="/admin/emotes/add" class="admin-form">
+    <label class="field">{{ t("admin.emotes_add") }}
+      <input class="field-input" name="source" required maxlength="200" placeholder="https://7tv.app/users/..." autocomplete="off" />
+      <span class="field-note">{{ t("admin.emotes_add_note") }}</span>
+    </label>
+    <div class="form-actions"><button class="button-save" type="submit">{{ t("admin.emotes_add_submit") }}</button></div>
+  </form>
+  {% if syncing %}<p class="notice" role="status">{{ t("admin.emotes_syncing_note") }} <a href="/admin/emotes">{{ t("admin.emotes_refresh") }}</a></p>{% endif %}
+  {% if sources %}
+  <table class="admin-table">
+    <thead><tr>
+      <th>{{ t("admin.emotes_source") }}</th><th>{{ t("admin.emotes_status") }}</th>
+      <th>{{ t("admin.emotes_count") }}</th><th>{{ t("admin.emotes_synced") }}</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for s in sources %}
+      <tr>
+        <td><a href="{{ s.link }}" target="_blank" rel="noopener noreferrer">{{ s.label }}</a>
+          <span class="muted-cell">{{ t("admin.emotes_kind_" ~ s.kind) }}</span></td>
+        <td>{{ t("admin.emotes_status_" ~ s.status) }}{% if s.error %}<br /><span class="muted-cell">{{ s.error }}</span>{% endif %}</td>
+        <td>{{ s.count }}{% if s.skipped %} <span class="muted-cell">{{ t("admin.emotes_skipped", count=s.skipped) }}</span>{% endif %}</td>
+        <td class="muted-cell">{{ s.synced or "-" }}</td>
+        <td class="admin-row-actions">
+          <form method="post" action="/admin/emotes/{{ s.id }}/sync"><button class="button-preview" type="submit">{{ t("admin.emotes_sync") }}</button></form>
+          <form method="post" action="/admin/emotes/{{ s.id }}/remove"><button class="button-preview" type="submit">{{ t("admin.emotes_remove") }}</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted-cell">{{ t("admin.emotes_none") }}</p>
+  {% endif %}
 
 {% elif section == "accounts" %}
   {# Install-wide: accounts are shared by every wiki here. Values saved on this
