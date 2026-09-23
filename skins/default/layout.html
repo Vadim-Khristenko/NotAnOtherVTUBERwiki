@@ -24,6 +24,9 @@
   --accent: #0b5fff;
   --accent-ink: #ffffff;
   --accent-soft: rgba(11, 95, 255, 0.09);
+  /* Shadows are always dark. Mixing them from --ink made them near white in
+   * dark mode, which read as a glow around every popover. */
+  --shadow: rgba(10, 10, 20, 0.22);
   --radius: 0.6rem;
   --radius-sm: 0.35rem;
   --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -61,6 +64,7 @@ html[data-theme="dark"] {
   --accent: #5b8cff;
   --accent-ink: #04060c;
   --accent-soft: rgba(91, 140, 255, 0.14);
+  --shadow: rgba(0, 0, 0, 0.75);
 }
 @media (prefers-color-scheme: dark) {
   html[data-theme="auto"] {
@@ -77,6 +81,7 @@ html[data-theme="dark"] {
     --accent: #5b8cff;
     --accent-ink: #04060c;
     --accent-soft: rgba(91, 140, 255, 0.14);
+  --shadow: rgba(0, 0, 0, 0.75);
   }
 }
 * { box-sizing: border-box; }
@@ -175,7 +180,7 @@ html[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
 .lang-summary .chevron { width: 0.9em; height: 0.9em; transition: transform var(--fast) var(--ease); }
 .lang-menu[open] .lang-summary { color: var(--ink); background: var(--surface-sunken); }
 .lang-menu[open] .lang-summary .chevron { transform: rotate(180deg); }
-.lang-panel { position: absolute; right: 0; top: calc(100% + var(--s2)); z-index: 30; width: 15rem; max-height: min(22rem, 70vh); overflow-y: auto; padding: var(--s2); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: 0 12px 32px -12px color-mix(in srgb, var(--ink) 35%, transparent); animation: drop-in var(--slow) var(--ease); }
+.lang-panel { position: absolute; right: 0; top: calc(100% + var(--s2)); z-index: 30; width: 15rem; max-height: min(22rem, 70vh); overflow-y: auto; padding: var(--s2); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: 0 12px 32px -12px var(--shadow); animation: drop-in var(--slow) var(--ease); }
 .lang-filter { margin: 0 0 var(--s2); padding: var(--s2) var(--s3); font-size: 0.88rem; }
 .lang-list { list-style: none; margin: 0; padding: 0; }
 .lang-option { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s2) var(--s3); border-radius: var(--radius-sm); color: var(--ink); text-decoration: none; font-size: 0.92rem; }
@@ -204,7 +209,7 @@ a.lang-option:hover, a.lang-option:focus-visible { background: var(--accent-soft
     position: absolute; left: 0; right: 0; top: 100%;
     margin: 0; padding: var(--s3);
     background: var(--bg-elevated); border-bottom: 1px solid var(--line);
-    box-shadow: 0 18px 30px -22px color-mix(in srgb, var(--ink) 45%, transparent);
+    box-shadow: 0 18px 30px -22px var(--shadow);
     opacity: 0; visibility: hidden; transform: translateY(-0.6rem);
     transition: opacity var(--slow) var(--ease), transform var(--slow) var(--ease), visibility 0s linear var(--slow);
   }
