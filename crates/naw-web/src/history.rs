@@ -15,25 +15,19 @@ use naw_core::state::AppState;
 
 use crate::audit;
 use crate::auth::session::CurrentUser;
+use crate::diff::{self, Row, Side};
 use crate::pages::{self, ENGINE_VERSION, find_page};
 use crate::perm::Capability;
 
 /// Revisions per page of history.
 const PER_PAGE: i64 = 50;
 
-/// Unchanged lines kept either side of a change.
-const CONTEXT: usize = 3;
+/// An edit this many bytes or more either way is shown in bold, as a hint
+/// that it is worth a look.
+const BIG_EDIT_BYTES: i32 = 500;
 
-/// Most rows in one diff; past this it is truncated and says so.
-const DIFF_ROW_MAX: usize = 1500;
-
-/// Search deadline on a page anyone can open; past it the diff is correct
-/// but coarser. Needs the crate's `std` feature, or the deadline is `()`.
-const DIFF_TIME_MAX: std::time::Duration = std::time::Duration::from_millis(250);
-
-/// Longest body, in lines, whose diff is compacted. Compaction ignores the
-/// deadline and is quadratic on long repetitive bodies.
-const COMPACT_LINES_MAX: usize = 2000;
+/// Jump links above a diff; a diff with more runs of changes lists the first ones.
+const HUNK_LINKS_MAX: usize = 30;
 
 const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; charset=utf-8");
 
@@ -42,16 +36,12 @@ fn slug_or_404(raw: &str) -> Option<String> {
     pages::slug_is_valid(&slug).then_some(slug)
 }
 
-/// One row of the history list.
-struct RevisionRow {
-    id: Uuid,
-    author: Option<String>,
-    summary: Option<String>,
-    is_minor: bool,
-    is_patrolled: bool,
-    restored_from: Option<Uuid>,
-    bytes: i32,
-    created_at: chrono::DateTime<chrono::Utc>,
+fn time_of(at: chrono::DateTime<chrono::Utc>) -> String {
+    at.format("%H:%M").to_string()
+}
+
+fn stamp(at: chrono::DateTime<chrono::Utc>) -> String {
+    at.format("%Y-%m-%d %H:%M UTC").to_string()
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -90,16 +80,24 @@ pub async fn history(
     .await?
     .count;
 
-    // The size, not fifty bodies of text.
+    // The window runs over the whole history before the page is cut, so the
+    // oldest row on a page still knows the revision before it.
     let rows = sqlx::query!(
         r#"
         SELECT r.id, r.summary, r.is_minor, r.is_patrolled, r.created_at,
-               r.reverted_revision_id,
-               octet_length(r.body_md) AS "bytes!",
+               r.reverted_revision_id, r.bytes AS "bytes!",
+               r.prev_bytes, r.prev_id,
                u.username AS "author?"
-        FROM revisions r
+        FROM (
+          SELECT id, author_id, summary, is_minor, is_patrolled, created_at,
+                 reverted_revision_id, bytes,
+                 lag(bytes) OVER w AS prev_bytes,
+                 lag(id) OVER w AS prev_id
+          FROM revisions
+          WHERE page_id = $1
+          WINDOW w AS (ORDER BY created_at, id)
+        ) r
         LEFT JOIN users u ON u.id = r.author_id
-        WHERE r.page_id = $1
         ORDER BY r.created_at DESC, r.id DESC
         LIMIT $2 OFFSET $3
         "#,
@@ -110,33 +108,26 @@ pub async fn history(
     .fetch_all(&state.db)
     .await?;
 
-    let revisions: Vec<RevisionRow> = rows
-        .into_iter()
-        .map(|row| RevisionRow {
-            id: row.id,
-            author: row.author,
-            summary: row.summary,
-            is_minor: row.is_minor,
-            is_patrolled: row.is_patrolled,
-            restored_from: row.reverted_revision_id,
-            bytes: row.bytes,
-            created_at: row.created_at,
-        })
-        .collect();
-
     let may_edit = ctx.actor.can_edit_page(found.protection);
-    let items: Vec<minijinja::Value> = revisions
+    let items: Vec<minijinja::Value> = rows
         .iter()
         .map(|rev| {
+            let delta = rev.prev_bytes.map(|before| rev.bytes - before);
             minijinja::context! {
                 id => rev.id.to_string(),
                 author => rev.author.clone(),
                 summary => rev.summary.clone(),
                 is_minor => rev.is_minor,
                 is_patrolled => rev.is_patrolled,
-                restored_from => rev.restored_from.map(|id| id.to_string()),
+                restored_from => rev.reverted_revision_id.map(|id| id.to_string()),
                 bytes => rev.bytes,
-                created_at => rev.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+                // The first revision's delta is its whole size.
+                delta => delta.unwrap_or(rev.bytes),
+                delta_big => delta.unwrap_or(rev.bytes).abs() >= BIG_EDIT_BYTES,
+                prev_id => rev.prev_id.map(|id| id.to_string()),
+                day => ctx.day(rev.created_at),
+                time => time_of(rev.created_at),
+                created_at => stamp(rev.created_at),
                 is_current => rev.id == found.revision_id,
             }
         })
@@ -157,6 +148,7 @@ pub async fn history(
                 slug => slug.clone(),
                 locked => found.locked,
                 revisions => items,
+                current_id => found.revision_id.to_string(),
                 total => total,
                 page_no => page_no,
                 has_prev => page_no > 1,
@@ -165,8 +157,6 @@ pub async fn history(
                 next_page => page_no + 1,
                 may_edit => may_edit,
                 may_patrol => ctx.actor.can(Capability::RevisionPatrol),
-                // With one revision there is nothing earlier to restore.
-                has_restorable => total > 1,
             }
         })
         .map_err(pages::template_error)?;
@@ -175,9 +165,11 @@ pub async fn history(
 
 /// One stored revision, checked against its page.
 struct StoredRevision {
+    id: Uuid,
     body_md: String,
     summary: Option<String>,
     author: Option<String>,
+    is_minor: bool,
     created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -190,7 +182,7 @@ async fn load_revision(
 ) -> Result<Option<StoredRevision>, AppError> {
     let row = sqlx::query!(
         r#"
-        SELECT r.body_md, r.summary, r.created_at, u.username AS "author?"
+        SELECT r.id, r.body_md, r.summary, r.is_minor, r.created_at, u.username AS "author?"
         FROM revisions r
         LEFT JOIN users u ON u.id = r.author_id
         WHERE r.id = $1 AND r.page_id = $2
@@ -201,11 +193,44 @@ async fn load_revision(
     .fetch_optional(db)
     .await?;
     Ok(row.map(|row| StoredRevision {
+        id: row.id,
         body_md: row.body_md,
         summary: row.summary,
         author: row.author,
+        is_minor: row.is_minor,
         created_at: row.created_at,
     }))
+}
+
+/// The revision just before or just after `rev` in the page's history.
+async fn neighbour(
+    db: &sqlx::PgPool,
+    page_id: Uuid,
+    rev: &StoredRevision,
+    older: bool,
+) -> Result<Option<Uuid>, AppError> {
+    let id = if older {
+        sqlx::query_scalar!(
+            "SELECT id FROM revisions WHERE page_id = $1 AND (created_at, id) < ($2, $3)
+             ORDER BY created_at DESC, id DESC LIMIT 1",
+            page_id,
+            rev.created_at,
+            rev.id
+        )
+        .fetch_optional(db)
+        .await?
+    } else {
+        sqlx::query_scalar!(
+            "SELECT id FROM revisions WHERE page_id = $1 AND (created_at, id) > ($2, $3)
+             ORDER BY created_at, id LIMIT 1",
+            page_id,
+            rev.created_at,
+            rev.id
+        )
+        .fetch_optional(db)
+        .await?
+    };
+    Ok(id)
 }
 
 /// GET /{slug}/rev/{revision}: an old revision through the live pipeline,
@@ -246,7 +271,7 @@ pub async fn revision(
                 page_title => found.title.clone(),
                 revision_id => revision_id.to_string(),
                 author => stored.author.clone(),
-                created_at => stored.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+                created_at => stamp(stored.created_at),
                 edit_summary => stored.summary.clone(),
                 is_current => revision_id == found.revision_id,
                 may_edit => ctx.actor.can_edit_page(found.protection),
@@ -260,163 +285,42 @@ pub async fn revision(
 // Diff
 // ---------------------------------------------------------------------------
 
-/// What one line of a diff is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RowKind {
-    Context,
-    Added,
-    Removed,
-    /// A collapsed run of unchanged lines.
-    Gap,
+fn side_value(side: &Option<Side>) -> Option<minijinja::Value> {
+    side.as_ref().map(|side| {
+        let segments: Vec<minijinja::Value> = side
+            .segments
+            .iter()
+            .map(|s| minijinja::context! { text => s.text.clone(), changed => s.changed })
+            .collect();
+        minijinja::context! { line => side.line, segments => segments }
+    })
 }
 
-impl RowKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Context => "ctx",
-            Self::Added => "add",
-            Self::Removed => "del",
-            Self::Gap => "gap",
-        }
+fn row_value(row: &Row) -> minijinja::Value {
+    match row {
+        Row::Context {
+            old_line,
+            new_line,
+            text,
+        } => minijinja::context! {
+            kind => row.kind(), old_line => old_line, new_line => new_line, text => text.clone(),
+        },
+        Row::Change { old, new, hunk } => minijinja::context! {
+            kind => row.kind(), hunk => hunk, old => side_value(old), new => side_value(new),
+        },
+        Row::Gap { hidden } => minijinja::context! { kind => row.kind(), hidden => hidden },
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DiffRow {
-    pub kind: RowKind,
-    /// 1-based line in the old text; absent for an added line.
-    pub old_line: Option<usize>,
-    /// 1-based line in the new text; absent for a removed line.
-    pub new_line: Option<usize>,
-    pub text: String,
-    /// Lines a `Gap` stands in for; the template words it.
-    pub hidden: Option<usize>,
-}
-
-/// The result of diffing two bodies.
-#[derive(Debug, PartialEq, Eq)]
-pub struct Diff {
-    pub rows: Vec<DiffRow>,
-    pub added: usize,
-    pub removed: usize,
-    /// `DIFF_ROW_MAX` cut the output short.
-    pub truncated: bool,
-}
-
-/// Line diff with unchanged runs collapsed.
-pub fn diff_bodies(old: &str, new: &str) -> Diff {
-    use similar::algorithms::{Capture, diff_deadline};
-    use similar::{Algorithm, ChangeTag, capture_diff_deadline};
-
-    // Lines keep their terminator, so a last line with and without a newline differ.
-    let old_lines: Vec<&str> = old.split_inclusive('\n').collect();
-    let new_lines: Vec<&str> = new.split_inclusive('\n').collect();
-    let deadline = Some(std::time::Instant::now() + DIFF_TIME_MAX);
-    let ops = if old_lines.len().max(new_lines.len()) <= COMPACT_LINES_MAX {
-        capture_diff_deadline(
-            Algorithm::Myers,
-            &old_lines,
-            0..old_lines.len(),
-            &new_lines,
-            0..new_lines.len(),
-            deadline,
-        )
-    } else {
-        let mut capture = Capture::new();
-        let Ok(()) = diff_deadline(
-            Algorithm::Myers,
-            &mut capture,
-            &old_lines,
-            0..old_lines.len(),
-            &new_lines,
-            0..new_lines.len(),
-            deadline,
-        );
-        capture.into_ops()
-    };
-    let mut all: Vec<DiffRow> = Vec::new();
-    let mut added = 0usize;
-    let mut removed = 0usize;
-
-    for op in &ops {
-        for change in op.iter_changes(&old_lines, &new_lines) {
-            let kind = match change.tag() {
-                ChangeTag::Equal => RowKind::Context,
-                ChangeTag::Insert => {
-                    added += 1;
-                    RowKind::Added
-                }
-                ChangeTag::Delete => {
-                    removed += 1;
-                    RowKind::Removed
-                }
-            };
-            all.push(DiffRow {
-                kind,
-                old_line: change.old_index().map(|i| i + 1),
-                new_line: change.new_index().map(|i| i + 1),
-                text: change.value().trim_end_matches(['\n', '\r']).to_string(),
-                hidden: None,
-            });
-        }
+fn revision_head(rev: &StoredRevision) -> minijinja::Value {
+    minijinja::context! {
+        id => rev.id.to_string(),
+        author => rev.author.clone(),
+        summary => rev.summary.clone(),
+        is_minor => rev.is_minor,
+        at => stamp(rev.created_at),
+        bytes => rev.body_md.len(),
     }
-
-    let rows = collapse(all);
-    let truncated = rows.len() > DIFF_ROW_MAX;
-    let rows = if truncated {
-        rows.into_iter().take(DIFF_ROW_MAX).collect()
-    } else {
-        rows
-    };
-    Diff {
-        rows,
-        added,
-        removed,
-        truncated,
-    }
-}
-
-/// Replaces runs of unchanged lines with one `Gap` row, when the run is
-/// longer than the context kept at both ends plus the gap row.
-fn collapse(rows: Vec<DiffRow>) -> Vec<DiffRow> {
-    let keep = CONTEXT * 2 + 1;
-    let mut out: Vec<DiffRow> = Vec::with_capacity(rows.len());
-    let mut index = 0;
-    while index < rows.len() {
-        if rows[index].kind != RowKind::Context {
-            out.push(rows[index].clone());
-            index += 1;
-            continue;
-        }
-        let start = index;
-        while index < rows.len() && rows[index].kind == RowKind::Context {
-            index += 1;
-        }
-        let run = &rows[start..index];
-        if run.len() <= keep {
-            out.extend_from_slice(run);
-            continue;
-        }
-        // A run at the start or end has one inner edge to keep context for.
-        let at_start = start == 0;
-        let at_end = index == rows.len();
-        if !at_start {
-            out.extend_from_slice(&run[..CONTEXT]);
-        }
-        let hidden =
-            run.len() - if at_start { 0 } else { CONTEXT } - if at_end { 0 } else { CONTEXT };
-        out.push(DiffRow {
-            kind: RowKind::Gap,
-            old_line: None,
-            new_line: None,
-            text: String::new(),
-            hidden: Some(hidden),
-        });
-        if !at_end {
-            out.extend_from_slice(&run[run.len() - CONTEXT..]);
-        }
-    }
-    out
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -454,27 +358,23 @@ pub async fn diff(
         .and_then(pages::parse_uuid)
         .unwrap_or(found.revision_id);
 
-    let (Some(from), Some(to)) = (
+    let (Some(mut from), Some(mut to)) = (
         load_revision(&state.db, found.id, from_id).await?,
         load_revision(&state.db, found.id, to_id).await?,
     ) else {
         return Ok(crate::errors::not_found());
     };
+    // Picked the wrong way round in the history: old on the left regardless.
+    if (from.created_at, from.id) > (to.created_at, to.id) {
+        std::mem::swap(&mut from, &mut to);
+    }
 
-    let computed = diff_bodies(&from.body_md, &to.body_md);
-    let rows: Vec<minijinja::Value> = computed
-        .rows
-        .iter()
-        .map(|row| {
-            minijinja::context! {
-                kind => row.kind.as_str(),
-                old_line => row.old_line,
-                new_line => row.new_line,
-                text => row.text.clone(),
-                hidden => row.hidden,
-            }
-        })
-        .collect();
+    let computed = diff::diff_bodies(&from.body_md, &to.body_md);
+    let rows: Vec<minijinja::Value> = computed.rows.iter().map(row_value).collect();
+    let hunk_links: Vec<usize> = (1..=computed.hunks.min(HUNK_LINKS_MAX)).collect();
+    let older = neighbour(&state.db, found.id, &from, true).await?;
+    let newer = neighbour(&state.db, found.id, &to, false).await?;
+    let delta = to.body_md.len() as i64 - from.body_md.len() as i64;
 
     let template = ctx
         .skin
@@ -492,16 +392,18 @@ pub async fn diff(
                 rows => rows,
                 added => computed.added,
                 removed => computed.removed,
+                hunks => computed.hunks,
+                hunk_links => hunk_links,
                 truncated => computed.truncated,
                 identical => computed.added == 0 && computed.removed == 0,
-                from_id => from_id.to_string(),
-                to_id => to_id.to_string(),
-                from_author => from.author.clone(),
-                to_author => to.author.clone(),
-                from_at => from.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
-                to_at => to.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+                from => revision_head(&from),
+                to => revision_head(&to),
+                delta => delta,
+                // Stepping one edit back pairs the older neighbour with `from`.
+                older_edit => older.map(|id| format!("from={id}&to={}", from.id)),
+                newer_edit => newer.map(|id| format!("from={}&to={id}", to.id)),
                 may_edit => ctx.actor.can_edit_page(found.protection),
-                to_is_current => to_id == found.revision_id,
+                to_is_current => to.id == found.revision_id,
             }
         })
         .map_err(pages::template_error)?;
@@ -673,154 +575,3 @@ pub async fn patrol(
     Ok(pages::see_other(&ctx.link(&format!("/{slug}/history"))))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn kinds(diff: &Diff) -> Vec<&'static str> {
-        diff.rows.iter().map(|r| r.kind.as_str()).collect()
-    }
-
-    #[test]
-    fn an_identical_body_has_no_changes() {
-        let diff = diff_bodies("a\nb\nc\n", "a\nb\nc\n");
-        assert_eq!(diff.added, 0);
-        assert_eq!(diff.removed, 0);
-        assert!(!diff.truncated);
-    }
-
-    #[test]
-    fn a_changed_line_is_one_removal_and_one_addition() {
-        let diff = diff_bodies("a\nb\nc\n", "a\nB\nc\n");
-        assert_eq!(diff.added, 1);
-        assert_eq!(diff.removed, 1);
-        assert_eq!(kinds(&diff), vec!["ctx", "del", "add", "ctx"]);
-    }
-
-    #[test]
-    fn line_numbers_are_one_based_and_side_specific() {
-        let diff = diff_bodies("keep\nold\n", "keep\nnew\n");
-        let removed = diff
-            .rows
-            .iter()
-            .find(|r| r.kind == RowKind::Removed)
-            .expect("a removal");
-        assert_eq!(removed.old_line, Some(2));
-        assert_eq!(removed.new_line, None);
-        let added = diff
-            .rows
-            .iter()
-            .find(|r| r.kind == RowKind::Added)
-            .expect("an addition");
-        assert_eq!(added.new_line, Some(2));
-        assert_eq!(added.old_line, None);
-    }
-
-    #[test]
-    fn trailing_newlines_do_not_reach_the_row_text() {
-        // The newline stays on the value; it must not show as a blank row.
-        let diff = diff_bodies("one\r\n", "two\r\n");
-        assert!(diff.rows.iter().all(|r| !r.text.contains('\n')));
-        assert!(diff.rows.iter().all(|r| !r.text.contains('\r')));
-    }
-
-    #[test]
-    fn a_long_unchanged_run_collapses_to_one_gap() {
-        let old: String = (0..60).map(|i| format!("line {i}\n")).collect();
-        let new = old.replace("line 30", "LINE 30");
-        let diff = diff_bodies(&old, &new);
-        let gaps = diff.rows.iter().filter(|r| r.kind == RowKind::Gap).count();
-        assert_eq!(gaps, 2);
-        assert!(diff.rows.len() < 20, "{} rows", diff.rows.len());
-        // 60 lines, line 30 replaced: the run above keeps 3 trailing lines
-        // (30 - 3 = 27 hidden), the run below 3 leading (29 - 3 = 26 hidden).
-        let hidden: Vec<Option<usize>> = diff
-            .rows
-            .iter()
-            .filter(|r| r.kind == RowKind::Gap)
-            .map(|r| r.hidden)
-            .collect();
-        assert_eq!(hidden, vec![Some(27), Some(26)]);
-        let shown_context = diff
-            .rows
-            .iter()
-            .filter(|r| r.kind == RowKind::Context)
-            .count();
-        assert_eq!(shown_context + 27 + 26, 59);
-        assert!(
-            diff.rows
-                .iter()
-                .filter(|r| r.kind == RowKind::Gap)
-                .all(|r| r.text.is_empty())
-        );
-        assert!(
-            diff.rows
-                .iter()
-                .filter(|r| r.kind != RowKind::Gap)
-                .all(|r| r.hidden.is_none())
-        );
-    }
-
-    #[test]
-    fn a_short_run_is_left_alone_rather_than_swapped_for_a_marker() {
-        // Seven lines between changes is exactly the radius on both sides plus one.
-        let old = format!(
-            "X\n{}Y\n",
-            (0..7).map(|i| format!("c{i}\n")).collect::<String>()
-        );
-        let new = old.replace("X\n", "x\n").replace("Y\n", "y\n");
-        let diff = diff_bodies(&old, &new);
-        assert!(!diff.rows.iter().any(|r| r.kind == RowKind::Gap));
-    }
-
-    #[test]
-    fn a_run_at_the_start_of_the_file_keeps_no_leading_context() {
-        let old: String = (0..40).map(|i| format!("line {i}\n")).collect();
-        let new = format!("{old}tail\n");
-        let diff = diff_bodies(&old, &new);
-        assert_eq!(diff.rows.first().map(|r| r.kind), Some(RowKind::Gap));
-        assert_eq!(diff.added, 1);
-        assert_eq!(diff.removed, 0);
-    }
-
-    #[test]
-    fn an_enormous_diff_is_cut_and_admits_it() {
-        let old: String = (0..4000).map(|i| format!("old {i}\n")).collect();
-        let new: String = (0..4000).map(|i| format!("new {i}\n")).collect();
-        let diff = diff_bodies(&old, &new);
-        assert!(diff.truncated);
-        assert_eq!(diff.rows.len(), DIFF_ROW_MAX);
-        // Totals are counted before truncation.
-        assert_eq!(diff.added, 4000);
-        assert_eq!(diff.removed, 4000);
-    }
-
-    #[test]
-    fn a_long_repetitive_diff_stays_cheap() {
-        let old: String = (0..60_000).map(|i| format!("{}\n", i % 3)).collect();
-        let new: String = (0..60_000).map(|i| format!("{}\n", (i + 1) % 2)).collect();
-        let started = std::time::Instant::now();
-        let diff = diff_bodies(&old, &new);
-        assert!(started.elapsed() < std::time::Duration::from_secs(10));
-        assert!(diff.truncated);
-        assert!(diff.added > 0 && diff.removed > 0);
-    }
-
-    #[test]
-    fn diffing_against_an_empty_body_is_all_additions() {
-        let diff = diff_bodies("", "a\nb\n");
-        assert_eq!(diff.added, 2);
-        assert_eq!(diff.removed, 0);
-    }
-
-    #[test]
-    fn cyrillic_lines_survive_the_diff_intact() {
-        let diff = diff_bodies("Филиан\nснекерс\n", "Филиан\nСнекерс\n");
-        let added = diff
-            .rows
-            .iter()
-            .find(|r| r.kind == RowKind::Added)
-            .expect("an addition");
-        assert_eq!(added.text, "Снекерс");
-    }
-}

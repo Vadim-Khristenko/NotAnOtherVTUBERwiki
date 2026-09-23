@@ -1,66 +1,98 @@
 {% extends "layout.html" %}
 {#
-  A unified diff as a table. Two line-number columns, then the text, which is
-  what makes a diff readable without colour: the numbers say which side a row
-  belongs to even if the row tints do not render.
+  Two revisions side by side: old on the left, new on the right, each line
+  with its number. A line that became another line shares a row with it, and
+  the words that changed inside it are marked with <del> and <ins>, so a one
+  word edit in a long paragraph shows as that one word.
+
+  Narrow screens stack the sides: an unchanged line shows once, a changed row
+  shows the old line over the new one. Same markup, the stylesheet decides.
 
   Every cell is escaped. The diff text is page source written by anybody.
 #}
+{% macro side(s, cls, mark) -%}
+{%- if s -%}
+<td class="d-num {{ cls }}">{{ s.line }}</td><td class="d-text {{ cls }}">{% for seg in s.segments %}{% if seg.changed %}<{{ mark }}>{{ seg.text }}</{{ mark }}>{% else %}{{ seg.text }}{% endif %}{% endfor %}</td>
+{%- else -%}
+<td class="d-num d-none"></td><td class="d-text d-none"></td>
+{%- endif -%}
+{%- endmacro %}
+{% macro head(rev, label, current) %}
+<div class="diff-head">
+  <p class="diff-head-label">{{ label }}{% if current %}{{ t("diff.current_suffix") }}{% endif %}</p>
+  <p><a href="{{ base }}/{{ slug }}/rev/{{ rev.id }}">{{ rev.at }}</a></p>
+  <p>{% if rev.author %}<a href="/user/{{ rev.author }}"><bdi>{{ rev.author }}</bdi></a>{% else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif %}
+    <span class="muted-cell">· {{ tn("history.bytes", rev.bytes) }}</span></p>
+  {% if rev.summary or rev.is_minor %}
+  <p class="diff-head-summary">{% if rev.is_minor %}<abbr class="tag tag-minor" title="{{ t('history.minor_title') }}">{{ t("history.minor") }}</abbr> {% endif %}{% if rev.summary %}{{ rev.summary }}{% endif %}</p>
+  {% endif %}
+</div>
+{% endmacro %}
+{# Two columns of source need more than the prose measure. #}
+{% block main_class %}content content-wide{% endblock %}
 {% block body %}
 <nav class="crumbs"><a href="{{ base }}/{{ slug }}">{{ page_title }}</a> /
   <a href="{{ base }}/{{ slug }}/history">{{ t("history.crumb") }}</a> / {{ t("diff.crumb") }}</nav>
 <h1>{{ t("diff.title", page=page_title) }}</h1>
 
 <div class="diff-heads">
-  <div class="diff-head">
-    <p class="diff-head-label">{{ t("diff.old") }}</p>
-    <p><a href="{{ base }}/{{ slug }}/rev/{{ from_id }}">{{ from_at }}</a></p>
-    <p class="muted-cell">{% if from_author %}{{ from_author }}{% else %}{{ t("history.anonymous") }}{% endif %}</p>
-  </div>
-  <div class="diff-head">
-    <p class="diff-head-label">{{ t("diff.new") }}{% if to_is_current %}{{ t("diff.current_suffix") }}{% endif %}</p>
-    <p><a href="{{ base }}/{{ slug }}/rev/{{ to_id }}">{{ to_at }}</a></p>
-    <p class="muted-cell">{% if to_author %}{{ to_author }}{% else %}{{ t("history.anonymous") }}{% endif %}</p>
-  </div>
+  {{ head(from, t("diff.old"), false) }}
+  {{ head(to, t("diff.new"), to_is_current) }}
 </div>
+
+<nav class="diff-steps" aria-label="{{ t('diff.steps') }}">
+  {% if older_edit %}<a href="{{ base }}/{{ slug }}/diff?{{ older_edit }}"><svg class="icon" aria-hidden="true"><use href="#i-chevron-left" /></svg>{{ t("diff.older_edit") }}</a>{% else %}<span></span>{% endif %}
+  {% if newer_edit %}<a href="{{ base }}/{{ slug }}/diff?{{ newer_edit }}">{{ t("diff.newer_edit") }}<svg class="icon" aria-hidden="true"><use href="#i-chevron-right" /></svg></a>{% endif %}
+</nav>
 
 {% if identical %}
   <p class="notice" role="status">{{ t("diff.identical") }}</p>
 {% else %}
-  <p class="diff-summary" role="status">
-    <span class="diff-plus">+{{ added }}</span>
-    <span class="diff-minus">&minus;{{ removed }}</span>
-    {{ tn("diff.lines", added + removed) }}
-  </p>
+  <div class="diff-summary" role="status">
+    <span class="diff-plus" title="{{ t('diff.added_title') }}">+{{ added }}</span>
+    <span class="diff-minus" title="{{ t('diff.removed_title') }}">&minus;{{ removed }}</span>
+    <span>{{ tn("diff.lines", added + removed) }}</span>
+    <span class="diff-bytes {% if delta > 0 %}is-plus{% elif delta < 0 %}is-minus{% endif %}">
+      ({% if delta > 0 %}+{{ delta }}{% elif delta < 0 %}&minus;{{ -delta }}{% else %}0{% endif %} {{ t("diff.bytes_short") }})</span>
+    {% if hunks > 1 %}
+    <span class="diff-jumps">{{ tn("diff.places", hunks) }}:
+      {% for n in hunk_links %}<a href="#change-{{ n }}">{{ n }}</a>{% if not loop.last %} {% endif %}{% endfor %}{% if hunks > hunk_links | length %} …{% endif %}</span>
+    {% endif %}
+  </div>
   {% if truncated %}
     <p class="notice notice-warn" role="status">{{ t("diff.too_large") }}</p>
   {% endif %}
+  <div class="diff-scroll">
   <table class="diff">
+    <colgroup><col class="d-num-col" /><col /><col class="d-num-col" /><col /></colgroup>
     <thead>
-      <tr>
-        <th scope="col" class="diff-num">{{ t("diff.old") }}</th>
-        <th scope="col" class="diff-num">{{ t("diff.new") }}</th>
-        <th scope="col">{{ t("diff.column_line") }}</th>
-      </tr>
+      <tr><th scope="colgroup" colspan="2">{{ t("diff.old") }}</th><th scope="colgroup" colspan="2">{{ t("diff.new") }}</th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
-      <tr class="diff-row diff-{{ row.kind }}">
-        <td class="diff-num">{% if row.old_line %}{{ row.old_line }}{% endif %}</td>
-        <td class="diff-num">{% if row.new_line %}{{ row.new_line }}{% endif %}</td>
-        {% if row.kind == "gap" %}
-          <td class="diff-gap">{{ t("diff.unchanged", n=row.hidden) }}</td>
-        {% else %}
-          <td class="diff-text"><span class="diff-sign" aria-hidden="true">{% if row.kind == "add" %}+{% elif row.kind == "del" %}&minus;{% else %}&nbsp;{% endif %}</span><code>{{ row.text }}</code></td>
-        {% endif %}
-      </tr>
+      {% if row.kind == "ctx" %}
+      <tr class="d-ctx"><td class="d-num d-old">{{ row.old_line }}</td><td class="d-text d-old">{{ row.text }}</td><td class="d-num">{{ row.new_line }}</td><td class="d-text">{{ row.text }}</td></tr>
+      {% elif row.kind == "chg" %}
+      <tr class="d-chg"{% if row.hunk %} id="change-{{ row.hunk }}"{% endif %}>{{ side(row.old, "d-del", "del") }}{{ side(row.new, "d-add", "ins") }}</tr>
+      {% else %}
+      <tr class="d-gap"><td colspan="4">{{ tn("diff.unchanged_lines", row.hidden) }}</td></tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>
+  </div>
 {% endif %}
 
 <p class="form-actions">
   <a class="button-preview" href="{{ base }}/{{ slug }}/history">{{ t("diff.back") }}</a>
+  {% if may_edit and not to_is_current %}
+  <button class="button-preview" type="submit" form="restore-from-diff" title="{{ t('history.restore_title') }}">{{ t("diff.restore_new") }}</button>
+  {% endif %}
   {% if may_edit %}<a class="button-preview" href="{{ base }}/{{ slug }}/edit">{{ t("diff.edit_page") }}</a>{% endif %}
 </p>
+{% if may_edit and not to_is_current %}
+<form id="restore-from-diff" method="post" action="{{ base }}/{{ slug }}/revert" hidden>
+  <input type="hidden" name="revision" value="{{ to.id }}" />
+</form>
+{% endif %}
 {% endblock %}

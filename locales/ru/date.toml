@@ -1,0 +1,17 @@
+# Russian interface messages: dates.
+#
+# Keys here are asked for as date.<key>. The file name is the prefix.
+
+day = "{d} {month} {y}"
+month_1 = "января"
+month_2 = "февраля"
+month_3 = "марта"
+month_4 = "апреля"
+month_5 = "мая"
+month_6 = "июня"
+month_7 = "июля"
+month_8 = "августа"
+month_9 = "сентября"
+month_10 = "октября"
+month_11 = "ноября"
+month_12 = "декабря"

@@ -1,10 +1,14 @@
 {% extends "layout.html" %}
 {#
-  Revision history. Two radio columns pick the pair to compare, which is the one
-  interaction pattern for this that works with no JavaScript at all: the radios
-  are plain form fields and the submit is a GET to /{slug}/diff.
+  Revision history, one line per revision, grouped by day, newest first.
 
-  Revert is a POST with the revision id, gated server side on edit rights.
+  Each line starts with two links, "cur" (this revision against the current
+  one) and "prev" (what this edit changed), so the usual question takes one
+  click. The two radio columns still pick any pair: they are plain form fields
+  and the submit is a GET to /{slug}/diff, so it works with no script.
+
+  Restore and patrol are POSTs. Their forms live after the compare form,
+  because HTML forbids nesting forms, and the buttons point at them by id.
 #}
 {% block body %}
 <nav class="crumbs"><a href="{{ base }}/{{ slug }}">{{ page_title }}</a> / {{ t("history.crumb") }}</nav>
@@ -15,121 +19,106 @@
 </p>
 
 {% if revisions %}
-<form method="get" action="{{ base }}/{{ slug }}/diff">
-  {# Comparing needs two revisions. With one, the button could only fail. #}
+<details class="history-help">
+  <summary>{{ t("history.help_title") }}</summary>
+  <ul>
+    <li>{{ t("history.help_cur") }}</li>
+    <li>{{ t("history.help_prev") }}</li>
+    <li>{{ t("history.help_pick") }}</li>
+    <li>{{ t("history.help_size") }}</li>
+    {% if may_edit %}<li>{{ t("history.help_restore") }}</li>{% endif %}
+  </ul>
+</details>
+
+<form method="get" action="{{ base }}/{{ slug }}/diff" class="history-form">
   {% if total > 1 %}
-  <div class="form-actions history-actions">
+  <div class="history-toolbar">
     <button class="button-save" type="submit">
-      <svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>
+      <svg class="icon" aria-hidden="true"><use href="#i-arrows-diff" /></svg>
       {{ t("history.compare") }}
     </button>
   </div>
   {% endif %}
-  <table class="history-table">
-    <thead>
-      <tr>
-        <th scope="col" class="history-pick">{{ t("history.column_old") }}</th>
-        <th scope="col" class="history-pick">{{ t("history.column_new") }}</th>
-        <th scope="col">{{ t("history.column_when") }}</th>
-        <th scope="col">{{ t("history.column_who") }}</th>
-        <th scope="col">{{ t("history.column_size") }}</th>
-        <th scope="col">{{ t("history.column_summary") }}</th>
-        {% if may_patrol %}<th scope="col">{{ t("history.column_checked") }}</th>{% endif %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for rev in revisions %}
-      <tr{% if rev.is_current %} class="history-current"{% endif %}>
-        <td class="history-pick" data-label="{{ t('history.column_old') }}">
-          <input type="radio" name="from" value="{{ rev.id }}"
-                 aria-label="{{ t('history.compare_from') }}"
-                 {% if loop.index == 2 %}checked{% endif %} />
-        </td>
-        <td class="history-pick" data-label="{{ t('history.column_new') }}">
-          <input type="radio" name="to" value="{{ rev.id }}"
-                 aria-label="{{ t('history.compare_to') }}"
-                 {% if loop.first %}checked{% endif %} />
-        </td>
-        <td class="history-when" data-label="{{ t('history.column_when') }}"><a href="{{ base }}/{{ slug }}/rev/{{ rev.id }}">{{ rev.created_at }}</a></td>
-        <td class="history-who" data-label="{{ t('history.column_who') }}">
-          {%- if rev.author %}{{ rev.author }}{% else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif -%}
-        </td>
-        <td class="history-bytes" data-label="{{ t('history.column_size') }}">{{ rev.bytes }}</td>
-        <td class="history-summary" data-label="{{ t('history.column_summary') }}">
-          {%- if rev.is_minor %}<span class="tag tag-minor" title="{{ t('history.minor_title') }}">{{ t("history.minor") }}</span> {% endif -%}
-          {%- if rev.is_patrolled %}<span class="tag tag-patrolled" title="{{ t('history.patrolled_title') }}">✓</span> {% endif -%}
-          {%- if rev.summary %}{{ rev.summary }}{% else %}<span class="muted-cell">{{ t("history.no_summary") }}</span>{% endif -%}
-          {%- if rev.restored_from %}
-            <span class="muted-cell">{{ t("history.restored", slug=slug, revision=rev.restored_from) }}</span>
-          {%- endif -%}
-          {%- if rev.is_current %} <span class="tag tag-current">{{ t("history.current") }}</span>{% endif -%}
-        </td>
-        {% if may_patrol %}
-        <td class="history-patrol" data-label="{{ t('history.column_checked') }}">
-          {% if rev.is_patrolled %}
-            <span class="muted-cell">{{ t("history.checked") }}</span>
-          {% else %}
-          {# A nested form would be invalid HTML inside the compare form, so the
-             patrol button posts through the form attribute instead. #}
-          <button class="button-preview" type="submit"
-                  form="patrol-{{ rev.id }}">{{ t("history.mark_checked") }}</button>
-          {% endif %}
-        </td>
-        {% endif %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+
+  {% for rev in revisions %}
+  {% if loop.first or rev.day != loop.previtem.day %}
+  {% if not loop.first %}</ol>{% endif %}
+  <h2 class="history-day">{{ rev.day }}</h2>
+  <ol class="history-list" role="list">
+  {% endif %}
+    <li class="history-item{% if rev.is_current %} is-current{% endif %}">
+      <span class="history-links">(
+        {%- if rev.is_current %}<span class="muted-cell" title="{{ t('history.cur_title') }}">{{ t("history.cur") }}</span>
+        {%- else %}<a href="{{ base }}/{{ slug }}/diff?from={{ rev.id }}&to={{ current_id }}" title="{{ t('history.cur_title') }}">{{ t("history.cur") }}</a>{% endif %}
+        <span aria-hidden="true"> | </span>
+        {%- if rev.prev_id %}<a href="{{ base }}/{{ slug }}/diff?from={{ rev.prev_id }}&to={{ rev.id }}" title="{{ t('history.prev_title') }}">{{ t("history.prev") }}</a>
+        {%- else %}<span class="muted-cell" title="{{ t('history.first_title') }}">{{ t("history.prev") }}</span>{% endif -%}
+      )</span>
+      {% if total > 1 %}
+      <span class="history-pick">
+        <input type="radio" name="from" value="{{ rev.id }}" aria-label="{{ t('history.compare_from') }}"
+               {% if loop.index == 2 and page_no == 1 %}checked{% endif %} />
+        <input type="radio" name="to" value="{{ rev.id }}" aria-label="{{ t('history.compare_to') }}"
+               {% if loop.first and page_no == 1 %}checked{% endif %} />
+      </span>
+      {% endif %}
+      <a class="history-time" href="{{ base }}/{{ slug }}/rev/{{ rev.id }}" title="{{ rev.created_at }}">{{ rev.time }}</a>
+      <span class="history-who">
+        {%- if rev.author %}<a href="/user/{{ rev.author }}"><bdi>{{ rev.author }}</bdi></a>
+        {%- else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif -%}
+      </span>
+      <span class="history-size" title="{{ tn('history.bytes', rev.bytes) }}">
+        {{- tn("history.bytes", rev.bytes) -}}
+      </span>
+      <span class="history-delta {% if rev.delta > 0 %}is-plus{% elif rev.delta < 0 %}is-minus{% else %}is-zero{% endif %}{% if rev.delta_big %} is-big{% endif %}"
+            title="{{ t('history.delta_title') }}">
+        {%- if rev.delta > 0 %}+{{ rev.delta }}{% elif rev.delta < 0 %}&minus;{{ -rev.delta }}{% else %}0{% endif -%}
+      </span>
+      <span class="history-summary">
+        {%- if rev.is_minor %}<abbr class="tag tag-minor" title="{{ t('history.minor_title') }}">{{ t("history.minor") }}</abbr> {% endif -%}
+        {%- if not rev.prev_id %}<span class="tag tag-new" title="{{ t('history.first_title') }}">{{ t("history.first") }}</span> {% endif -%}
+        {%- if rev.summary %}<span class="history-comment">{{ rev.summary }}</span>{% elif rev.prev_id %}<span class="muted-cell">{{ t("history.no_summary") }}</span>{% endif -%}
+        {%- if rev.restored_from %} <a class="muted-cell" href="{{ base }}/{{ slug }}/rev/{{ rev.restored_from }}">{{ t("history.restored_link") }}</a>{% endif -%}
+        {%- if rev.is_current %} <span class="tag tag-current">{{ t("history.current") }}</span>{% endif -%}
+      </span>
+      <span class="history-tools">
+        {%- if rev.is_patrolled %}<span class="tag tag-patrolled" title="{{ t('history.patrolled_title') }}">{{ t("history.checked") }}</span>
+        {%- elif may_patrol %}<button class="link-button" type="submit" form="patrol-{{ rev.id }}">{{ t("history.mark_checked") }}</button>{% endif -%}
+        {%- if may_edit and not rev.is_current %}<button class="link-button" type="submit" form="restore-{{ rev.id }}" title="{{ t('history.restore_title') }}">{{ t("history.restore") }}</button>{% endif -%}
+      </span>
+    </li>
+  {% if loop.last %}</ol>{% endif %}
+  {% endfor %}
+
+  {% if total > 1 %}
+  <div class="history-toolbar">
+    <button class="button-preview" type="submit">{{ t("history.compare") }}</button>
+  </div>
+  {% else %}
+  <p class="notice" role="status">{{ t("history.only_one") }}</p>
+  {% endif %}
 </form>
 
-{% if may_patrol %}
-{#
-  One form per unchecked revision, outside the compare form because HTML forbids
-  nesting them. The buttons in the table above point here by id.
-#}
 {% for rev in revisions %}
-  {% if not rev.is_patrolled %}
+  {% if may_patrol and not rev.is_patrolled %}
   <form id="patrol-{{ rev.id }}" method="post" action="{{ base }}/{{ slug }}/patrol" hidden>
     <input type="hidden" name="revision" value="{{ rev.id }}" />
   </form>
   {% endif %}
-{% endfor %}
-{% endif %}
-
-{% if may_edit and not has_restorable %}
-<section class="settings-section">
-  <h2>{{ t("history.restore_heading") }}</h2>
-  <p class="notice">{{ t("history.nothing_to_restore") }}</p>
-</section>
-{% elif may_edit %}
-<section class="settings-section">
-  <h2>{{ t("history.restore_heading") }}</h2>
-  <p class="muted-cell">{{ t("history.restore_hint") }}</p>
-  <form method="post" action="{{ base }}/{{ slug }}/revert">
-    <label class="field" for="revert-pick">{{ t("history.restore_pick") }}
-      <select class="field-input" id="revert-pick" name="revision" required>
-        {% for rev in revisions %}
-          {% if not rev.is_current %}
-          <option value="{{ rev.id }}">{{ rev.created_at }} ·
-            {%- if rev.author %} {{ rev.author }}{% else %} {{ t("history.anonymous") }}{% endif -%}
-            {%- if rev.summary %} · {{ rev.summary }}{% endif -%}
-          </option>
-          {% endif %}
-        {% endfor %}
-      </select>
-    </label>
-    <div class="form-actions">
-      <button class="button-preview" type="submit">{{ t("history.restore_submit") }}</button>
-    </div>
+  {% if may_edit and not rev.is_current %}
+  <form id="restore-{{ rev.id }}" method="post" action="{{ base }}/{{ slug }}/revert" hidden>
+    <input type="hidden" name="revision" value="{{ rev.id }}" />
   </form>
-</section>
-{% endif %}
+  {% endif %}
+{% endfor %}
 
+{% if has_prev or has_next %}
 <nav class="pager">
   {% if has_prev %}<a href="{{ base }}/{{ slug }}/history?page={{ prev_page }}">{{ t("history.newer") }}</a>{% endif %}
   <span class="muted-cell">{{ t("history.page_no", n=page_no) }}</span>
   {% if has_next %}<a href="{{ base }}/{{ slug }}/history?page={{ next_page }}">{{ t("history.older") }}</a>{% endif %}
 </nav>
+{% endif %}
 {% else %}
 <p class="notice">{{ t("history.empty") }}</p>
 {% endif %}

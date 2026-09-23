@@ -108,6 +108,20 @@ impl Ctx {
         self.skin.messages.render(&self.lang, key, &owned)
     }
 
+    /// A calendar day in words, "23 сентября 2026" or "September 23, 2026".
+    pub fn day(&self, at: chrono::DateTime<chrono::Utc>) -> String {
+        use chrono::Datelike;
+        let month = self.t(&format!("date.month_{}", at.month()));
+        self.t_with(
+            "date.day",
+            &[
+                ("d", &at.day().to_string()),
+                ("month", &month),
+                ("y", &at.year().to_string()),
+            ],
+        )
+    }
+
     /// A local path in this request's article language: `/about` becomes
     /// `/ru/about` on a Russian page reached by prefix.
     pub fn link(&self, path: &str) -> String {

@@ -4,18 +4,30 @@
 
 title = "Changes to {page}"
 crumb = "Changes"
-old = "Old"
-new = "New"
+old = "Old revision"
+new = "New revision"
 current_suffix = " · current"
+steps = "Neighbouring edits"
+older_edit = "Previous edit"
+newer_edit = "Next edit"
+added_title = "Lines added or changed in the new revision"
+removed_title = "Lines removed or changed in the old revision"
+bytes_short = "bytes"
 identical = "These two revisions have the same text."
 too_large = "This change is too large to show in full. The rows below are the start of it, and the counts above are the whole of it."
-column_line = "Line"
 back = "Back to the history"
+restore_new = "Restore the new revision"
 edit_page = "Edit the page"
-unchanged = "{n} unchanged lines"
 
 
 [lines]
 one = "line"
 other = "lines"
 
+[places]
+one = "{n} place"
+other = "{n} places"
+
+[unchanged_lines]
+one = "{n} unchanged line"
+other = "{n} unchanged lines"

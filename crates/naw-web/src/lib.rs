@@ -24,6 +24,7 @@ mod display_name;
 mod emotes;
 mod errors;
 mod fetch;
+mod diff;
 mod history;
 mod lang;
 mod locale_path;

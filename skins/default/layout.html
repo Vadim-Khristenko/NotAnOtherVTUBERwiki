@@ -84,6 +84,38 @@ html[data-theme="dark"] {
   --shadow: rgba(0, 0, 0, 0.75);
   }
 }
+:root {
+  --diff-add-bg: #e6ffec;
+  --diff-add-num: #ccffd8;
+  --diff-add-mark: #9be9a8;
+  --diff-del-bg: #ffebe9;
+  --diff-del-num: #ffd7d5;
+  --diff-del-mark: #ffb3ad;
+  --diff-plus: #1a7f37;
+  --diff-minus: #cf222e;
+}
+html[data-theme="dark"] {
+  --diff-add-bg: rgba(46, 160, 67, 0.15);
+  --diff-add-num: rgba(46, 160, 67, 0.3);
+  --diff-add-mark: rgba(46, 160, 67, 0.5);
+  --diff-del-bg: rgba(248, 81, 73, 0.12);
+  --diff-del-num: rgba(248, 81, 73, 0.25);
+  --diff-del-mark: rgba(248, 81, 73, 0.5);
+  --diff-plus: #56d364;
+  --diff-minus: #ff7b72;
+}
+@media (prefers-color-scheme: dark) {
+  html[data-theme="auto"] {
+    --diff-add-bg: rgba(46, 160, 67, 0.15);
+    --diff-add-num: rgba(46, 160, 67, 0.3);
+    --diff-add-mark: rgba(46, 160, 67, 0.5);
+    --diff-del-bg: rgba(248, 81, 73, 0.12);
+    --diff-del-num: rgba(248, 81, 73, 0.25);
+    --diff-del-mark: rgba(248, 81, 73, 0.5);
+    --diff-plus: #56d364;
+    --diff-minus: #ff7b72;
+  }
+}
 * { box-sizing: border-box; }
 /* The hidden attribute has to win. The browser's own [hidden] rule has the
  * lowest possible specificity, so any class that sets display (.field-input
@@ -576,69 +608,98 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
 .search-hit-snippet { margin: 0.3rem 0; color: var(--ink-soft); }
 .search-hit-snippet mark { background: var(--accent-soft); color: var(--ink); font-weight: 700; }
 .search-hit-slug { margin: 0; font-family: var(--font-mono); font-size: 0.8rem; color: var(--faint); }
-/* History, diff and the admin tables share one table skin. */
-.history-table, .admin-table, .diff { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-.history-table, .admin-table { display: block; overflow-x: auto; }
+/* The admin tables share one table skin. */
+.admin-table { border-collapse: collapse; width: 100%; font-size: 0.9rem; display: block; overflow-x: auto; }
 .button-save .icon, .button-preview .icon { margin-right: var(--s2); }
-/* Narrow screens get cards, not a squeezed table.
- *
- * Seven columns at 390px wrapped a date across four lines and pushed the edit
- * summary off the right edge, which is the one column people read. Each row
- * becomes a card, each cell a labelled line, and the label comes from the
- * data-label attribute so it is translated with the rest of the template. */
-@media (max-width: 46rem) {
-  /* Selectors carry the tbody on purpose. The desktop cell rules further down
-   * this file have the same specificity and come later, so without the extra
-   * step they win and repaint the table borders inside every card. */
-  .history-table { display: block; overflow: visible; }
-  .history-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .history-table tbody, .history-table tbody tr, .history-table tbody td { display: block; }
-  .history-table tbody tr { margin-bottom: var(--s3); padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
-  .history-table tbody tr.history-current { border-color: var(--accent); background: var(--accent-soft); }
-  .history-table tbody td { border: none; padding: var(--s1) 0; width: auto; text-align: left; }
-  .history-table tbody td[data-label]::before { content: attr(data-label); display: block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
-  /* The compare radios share the first line, label then control, where a thumb
-   * reaches them. The desktop column is 2.2rem wide and centred; left alone it
-   * crushed the label onto the neighbouring radio. */
-  .history-table tbody td.history-pick { display: inline-flex; align-items: center; gap: var(--s2); margin-right: var(--s5); }
-  .history-table tbody td.history-pick::before { display: inline; }
-  .history-table tbody td.history-pick input { width: 1.2rem; height: 1.2rem; margin: 0; accent-color: var(--accent); }
-  /* Who and size are short, so they share a line instead of costing two. */
-  .history-table tbody td.history-who, .history-table tbody td.history-bytes { display: inline-block; margin-right: var(--s5); vertical-align: top; }
-  .history-table tbody td.history-when a { font-weight: 600; }
-  .history-table tbody td.history-patrol .button-preview { margin-top: var(--s1); padding: var(--s2) var(--s4); }
-}
-.history-table th, .history-table td, .admin-table th, .admin-table td { border-bottom: 1px solid var(--line); padding: 0.45rem 0.6rem; text-align: left; vertical-align: top; }
-.history-table thead, .admin-table thead { background: var(--bg-elevated); }
-.history-pick { width: 2.2rem; text-align: center; }
-.history-bytes { font-family: var(--font-mono); text-align: right; }
-.history-current { background: var(--accent-soft); }
-.history-actions { margin: 0 0 0.8rem; }
-.history-meta { color: var(--muted); }
+.admin-table th, .admin-table td { border-bottom: 1px solid var(--line); padding: 0.45rem 0.6rem; text-align: left; vertical-align: top; }
+.admin-table thead { background: var(--bg-elevated); }
 .pager { display: flex; gap: 1rem; align-items: baseline; margin: 1.2rem 0; }
-/* Diff */
-.diff-heads { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
-.diff-head { border: 1px solid var(--line); border-radius: var(--radius); padding: 0.6rem 0.8rem; background: var(--bg-elevated); }
-.diff-head p { margin: 0.1rem 0; }
+/* ---------------------------------------------------------------------------
+ * History: one line per revision, grouped by day. A list wraps on a phone
+ * where a seven column table had to become cards.
+ * ------------------------------------------------------------------------- */
+.history-meta { color: var(--muted); }
+.history-help { margin: 0 0 var(--s4); font-size: 0.9rem; color: var(--muted); }
+.history-help summary { cursor: pointer; width: fit-content; }
+.history-help ul { margin: var(--s2) 0 0; padding-left: var(--s5); }
+.history-toolbar { margin: var(--s3) 0; }
+.history-day { font-size: 0.95rem; margin: var(--s5) 0 var(--s1); padding-bottom: var(--s1); color: var(--ink-soft); border-bottom: 1px solid var(--line); }
+.history-list { list-style: none; margin: 0; padding: 0; }
+.history-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); padding: var(--s2); border-radius: var(--radius-sm); font-size: 0.92rem; }
+.history-item:hover { background: var(--bg-elevated); }
+.history-item.is-current { background: var(--accent-soft); }
+.history-links { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+.history-links a { color: var(--muted); }
+.history-links a:hover { color: var(--accent); }
+.history-pick { display: inline-flex; gap: var(--s1); }
+.history-pick input { width: 1rem; height: 1rem; margin: 0; accent-color: var(--accent); vertical-align: -0.15em; }
+.history-time { font-weight: 600; font-variant-numeric: tabular-nums; }
+.history-size { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+.history-delta, .diff-bytes { font-family: var(--font-mono); font-size: 0.82rem; white-space: nowrap; }
+.is-plus { color: var(--diff-plus); }
+.is-minus { color: var(--diff-minus); }
+.is-zero { color: var(--muted); }
+.history-delta.is-big { font-weight: 700; }
+.history-summary { flex: 1 1 14rem; min-width: 0; overflow-wrap: anywhere; color: var(--ink-soft); }
+.history-tools { display: inline-flex; gap: var(--s3); margin-left: auto; font-size: 0.85rem; }
+.tag-new { color: var(--diff-plus); border-color: currentColor; background: transparent; }
+@media (max-width: 46rem) {
+  .history-item { padding: var(--s2) 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+  .history-summary { flex-basis: 100%; }
+  .history-pick input { width: 1.25rem; height: 1.25rem; }
+}
+/* ---------------------------------------------------------------------------
+ * Diff: old beside new. Colours come from the --diff-* tokens above.
+ * ------------------------------------------------------------------------- */
+.diff-heads { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); margin: var(--s4) 0 var(--s2); }
+.diff-head { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--s2) var(--s3); background: var(--bg-elevated); min-width: 0; }
+.diff-head p { margin: 0.1rem 0; overflow-wrap: anywhere; }
+.diff-head:first-child { border-top: 3px solid var(--diff-minus); }
+.diff-head:last-child { border-top: 3px solid var(--diff-plus); }
 .diff-head-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-.diff-summary { font-family: var(--font-mono); }
-.diff-plus { color: #167c3c; font-weight: 700; }
-.diff-minus { color: #a8112b; font-weight: 700; }
-html[data-theme="dark"] .diff-plus { color: #56c47e; }
-html[data-theme="dark"] .diff-minus { color: #ff8a9e; }
-.diff { table-layout: fixed; }
-.diff th { border-bottom: 1px solid var(--line); padding: 0.3rem 0.5rem; text-align: left; background: var(--bg-elevated); }
-.diff-num { width: 3.6rem; font-family: var(--font-mono); font-size: 0.8rem; color: var(--faint); text-align: right; padding: 0.1rem 0.5rem; user-select: none; }
-.diff-text { padding: 0.1rem 0.5rem; }
-.diff-text code { font-family: var(--font-mono); font-size: 0.82rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-.diff-sign { display: inline-block; width: 1ch; margin-right: 0.4rem; font-family: var(--font-mono); color: var(--faint); }
-/* Tinted rows, not coloured text: the line numbers already say which side a
- * row is on, so the fill can stay quiet enough to read the code through. */
-.diff-add { background: rgba(22, 124, 60, 0.1); }
-.diff-del { background: rgba(168, 17, 43, 0.1); }
-html[data-theme="dark"] .diff-add { background: rgba(86, 196, 126, 0.12); }
-html[data-theme="dark"] .diff-del { background: rgba(255, 138, 158, 0.12); }
-.diff-gap { padding: 0.25rem 0.5rem; font-size: 0.78rem; color: var(--faint); background: var(--surface-sunken); font-style: italic; }
+.diff-head-summary { font-size: 0.9rem; color: var(--ink-soft); }
+.diff-steps { display: flex; justify-content: space-between; gap: var(--s3); margin: 0 0 var(--s3); font-size: 0.9rem; }
+.diff-steps a { display: inline-flex; align-items: center; gap: var(--s1); }
+.diff-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); margin: var(--s3) 0; font-size: 0.92rem; }
+.diff-plus, .diff-minus { font-family: var(--font-mono); font-weight: 700; }
+.diff-plus { color: var(--diff-plus); }
+.diff-minus { color: var(--diff-minus); }
+.diff-jumps { color: var(--muted); }
+.diff-jumps a { font-family: var(--font-mono); padding: 0 0.15rem; }
+.diff-scroll { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.diff { border-collapse: collapse; width: 100%; table-layout: fixed; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; }
+.d-num-col { width: 3.4rem; }
+.diff th { padding: var(--s2) var(--s3); text-align: left; font-family: var(--font-body); font-size: 0.8rem; color: var(--muted); background: var(--bg-elevated); border-bottom: 1px solid var(--line); }
+.diff th + th { border-left: 1px solid var(--line); }
+.diff td { padding: 0.1rem var(--s2); vertical-align: top; }
+.d-num { text-align: right; color: var(--faint); user-select: none; font-size: 0.78rem; }
+.diff td.d-num:nth-child(3) { border-left: 1px solid var(--line); }
+.d-text { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+.d-del.d-text { background: var(--diff-del-bg); }
+.d-add.d-text { background: var(--diff-add-bg); }
+.d-del.d-num { background: var(--diff-del-num); color: var(--ink-soft); }
+.d-add.d-num { background: var(--diff-add-num); color: var(--ink-soft); }
+.d-none { background: var(--surface-sunken); }
+.d-text del, .d-text ins { text-decoration: none; border-radius: 0.2em; padding: 0.05em 0; }
+.d-text del { background: var(--diff-del-mark); }
+.d-text ins { background: var(--diff-add-mark); }
+.d-chg { scroll-margin-top: 5rem; }
+.d-chg:target .d-text { outline: 2px solid var(--accent); outline-offset: -2px; }
+.d-gap td { padding: var(--s1) var(--s3); font-family: var(--font-body); font-size: 0.78rem; font-style: italic; color: var(--muted); background: var(--bg-elevated); border-block: 1px solid var(--line); }
+/* Narrow: one column. An unchanged line shows once, a changed row shows the
+ * old line over the new one, and an empty side is left out. */
+@media (max-width: 46rem) {
+  .diff-heads { grid-template-columns: 1fr; }
+  .diff, .diff tbody { display: block; }
+  .diff colgroup, .diff thead { display: none; }
+  .diff tr { display: grid; grid-template-columns: 2.6rem minmax(0, 1fr); }
+  .diff td { display: block; }
+  .diff td.d-num:nth-child(3) { border-left: none; }
+  .d-ctx .d-old, .d-none { display: none !important; }
+  .d-gap td { grid-column: 1 / -1; }
+  .d-del.d-num::before { content: "\2212 "; }
+  .d-add.d-num::before { content: "+ "; }
+}
 /* Old revision banner */
 .revision-banner { border: 1px solid var(--accent); border-left-width: 4px; background: var(--accent-soft); border-radius: 0 var(--radius) var(--radius) 0; padding: 0.7rem 1rem; margin: 0 0 1.5rem; }
 .revision-banner p { margin: 0.2rem 0; }
