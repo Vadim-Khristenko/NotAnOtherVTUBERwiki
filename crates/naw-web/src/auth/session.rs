@@ -8,7 +8,7 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, Request, header};
 use axum::middleware::Next;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use cookie::time::Duration;
 use cookie::{Cookie, SameSite};
 use uuid::Uuid;
@@ -34,6 +34,9 @@ pub struct CurrentUser {
     /// somebody who picked a language in their settings means it, and their
     /// browser may well be somebody else's browser.
     pub locale: String,
+    /// The password was issued by an admin and has not been replaced yet.
+    /// Until it is, the session reaches only the change password page.
+    pub must_change_password: bool,
 }
 
 /// Builds the session cookie attributes: Path=/, HttpOnly, SameSite=Lax,
@@ -90,7 +93,7 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
         SELECT s.expires_at, u.id AS user_id, u.username,
                u.email AS email_opt,
                (u.email_verified_at IS NOT NULL) AS email_verified,
-               u.global_role, u.locale
+               u.global_role, u.locale, u.must_change_password
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.id = $1
@@ -114,6 +117,7 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
         email_verified: row.email_verified.unwrap_or(false),
         global_role: row.global_role,
         locale: row.locale,
+        must_change_password: row.must_change_password,
     })
 }
 
@@ -144,6 +148,23 @@ pub async fn create(
     Ok(id)
 }
 
+/// Ends every session of `user_id` except `keep`. A password change or an
+/// admin reset signs out every other device that might hold the old one.
+pub async fn delete_others(
+    state: &AppState,
+    user_id: Uuid,
+    keep: Option<Uuid>,
+) -> Result<u64, naw_core::error::AppError> {
+    let result = sqlx::query!(
+        "DELETE FROM sessions WHERE user_id = $1 AND ($2::uuid IS NULL OR id <> $2)",
+        user_id,
+        keep
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 /// Deletes the session row.
 pub async fn delete(state: &AppState, session_id: Uuid) {
     let _ = sqlx::query!("DELETE FROM sessions WHERE id = $1", session_id)
@@ -155,11 +176,18 @@ pub async fn delete(state: &AppState, session_id: Uuid) {
 /// route. Anonymous stays anonymous, handlers opt in explicitly.
 pub async fn layer(State(app): State<AppState>, mut req: Request<Body>, next: Next) -> Response {
     let user = load_from_cookie(&app, req.headers()).await;
-    req.extensions_mut().insert(user);
     let path = req.uri().path().to_string();
+    // An admin-issued password is a key handed over in plain text. Until its
+    // owner replaces it, the session is good for replacing it and nothing else.
+    if user.as_ref().is_some_and(|u| u.must_change_password) && !reachable_before_change(&path) {
+        let target = password_page_for(req.uri());
+        return axum::response::Redirect::to(&target).into_response();
+    }
+    req.extensions_mut().insert(user);
     let mut response = next.run(req).await;
     // Auth pages must never be cached with someone's chrome attached.
-    if path == "/login"
+    if path.starts_with("/login")
+        || path.starts_with("/account")
         || path.starts_with("/settings")
         || path.starts_with("/auth")
         || path.starts_with("/verify-email")
@@ -175,9 +203,67 @@ pub async fn layer(State(app): State<AppState>, mut req: Request<Body>, next: Ne
     response
 }
 
+/// Paths a session with a temporary password may still use: the page that
+/// replaces it, signing out, the language switch and the things every page
+/// loads on its own (icons, the manifest, health checks).
+fn reachable_before_change(path: &str) -> bool {
+    matches!(
+        path,
+        PASSWORD_PAGE
+            | "/logout"
+            | "/lang"
+            | "/health"
+            | "/ready"
+            | "/favicon.ico"
+            | "/favicon-96x96.png"
+            | "/apple-touch-icon.png"
+            | "/site.webmanifest"
+            | "/web-app-manifest-192x192.png"
+            | "/web-app-manifest-512x512.png"
+    )
+}
+
+/// Where a password change happens.
+pub const PASSWORD_PAGE: &str = "/account/password";
+
+/// The change password page, remembering where the person was headed so the
+/// change lands them there. Only a local path is kept.
+fn password_page_for(uri: &axum::http::Uri) -> String {
+    let wanted = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
+    let next = super::redirect::safe_next(Some(wanted));
+    if next == "/" {
+        PASSWORD_PAGE.to_string()
+    } else {
+        format!(
+            "{PASSWORD_PAGE}?next={}",
+            super::redirect::encode_component(&next)
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_temporary_password_reaches_only_the_way_out() {
+        assert!(reachable_before_change("/account/password"));
+        assert!(reachable_before_change("/logout"));
+        assert!(!reachable_before_change("/"));
+        assert!(!reachable_before_change("/admin"));
+        assert!(!reachable_before_change("/account/password/extra"));
+    }
+
+    #[test]
+    fn the_detour_remembers_a_local_destination_only() {
+        let uri: axum::http::Uri = "/some-page/edit?x=1".parse().unwrap();
+        assert_eq!(
+            password_page_for(&uri),
+            "/account/password?next=%2Fsome-page%2Fedit%3Fx%3D1"
+        );
+        let root: axum::http::Uri = "/".parse().unwrap();
+        assert_eq!(password_page_for(&root), "/account/password");
+    }
 
     #[test]
     fn cookie_attributes_match_the_locked_rules() {

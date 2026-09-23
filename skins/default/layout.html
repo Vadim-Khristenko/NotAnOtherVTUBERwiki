@@ -276,9 +276,32 @@ a.button-save, a.button-preview { display: inline-flex; align-items: center; jus
 .notice-ok { border-left-color: var(--accent); color: var(--ink); }
 .notice-warn { border-left-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
 .notice-error { border-left-color: var(--accent); background: var(--accent-soft); color: var(--ink); font-weight: 600; }
-.provider-list { list-style: none; padding: 0; margin: 1.2rem 0; display: flex; flex-direction: column; gap: 0.6rem; max-width: 22rem; }
-.provider-btn { display: block; padding: 0.7rem 1.1rem; font-weight: 600; text-decoration: none; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); }
-.provider-btn:hover { border-color: var(--accent); }
+/* Sign-in and password pages: one narrow column, the form first. */
+.auth-card { max-width: 26rem; }
+.auth-lede { color: var(--ink-soft); margin: 0 0 var(--s5); }
+.auth-form .field-input { width: 100%; }
+.auth-form .form-actions .button-save { width: 100%; justify-content: center; }
+.auth-or { display: flex; align-items: center; gap: var(--s3); margin: var(--s5) 0 var(--s3); color: var(--muted); font-size: 0.85rem; }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.provider-list { list-style: none; padding: 0; margin: 0 0 var(--s5); display: flex; flex-direction: column; gap: var(--s2); }
+.content .provider-btn { display: block; padding: 0.7rem 1.1rem; border-radius: var(--radius); font-weight: 600; text-align: center; text-decoration: none; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); transition: border-color var(--fast) var(--ease); }
+.content .provider-btn:hover { border-color: var(--accent); }
+.auth-closed { margin: var(--s5) 0; padding: var(--s3) var(--s4); border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 var(--radius) var(--radius) 0; font-size: 0.92rem; }
+.auth-closed p { margin: 0 0 var(--s2); }
+.auth-closed p:last-child { margin-bottom: 0; }
+.auth-alt { margin-top: var(--s4); text-align: center; }
+.link-button { background: none; border: none; padding: 0; font: inherit; color: var(--muted); text-decoration: underline; text-underline-offset: 0.15em; cursor: pointer; }
+.link-button:hover { color: var(--ink); }
+/* Admin: accounts. */
+.admin-actions { margin: 0 0 var(--s4); }
+.admin-actions .button-save { display: inline-flex; align-items: center; gap: var(--s2); text-decoration: none; }
+.admin-form { max-width: 32rem; }
+.admin-table .inline-form + .inline-form { margin-top: var(--s1); }
+.issued { max-width: 36rem; padding: var(--s4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elevated); }
+.issued-pair { display: grid; grid-template-columns: max-content 1fr; gap: var(--s2) var(--s4); align-items: center; margin: var(--s4) 0; }
+.issued-pair dt { color: var(--muted); font-size: 0.9rem; }
+.issued-pair dd { margin: 0; display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.issued-password { font-size: 1.15rem; letter-spacing: 0.04em; user-select: all; }
 .settings-section { margin: 1.8rem 0; padding-top: 1.2rem; border-top: 1px solid var(--line); }
 .settings-section h2 { margin-top: 0; }
 .identity-list { list-style: none; padding: 0; margin: 0.8rem 0; display: flex; flex-direction: column; gap: 0.5rem; }

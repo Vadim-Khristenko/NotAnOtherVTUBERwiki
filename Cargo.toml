@@ -58,6 +58,9 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 jsonwebtoken = { version = "11.1", default-features = false, features = ["rust_crypto"] }
 base64 = "0.22"
 rand = "0.9"
+# Argon2id for local passwords. Default features cover salt generation and
+# PHC strings, which is exactly what the users.password_hash column stores.
+argon2 = "0.6"
 cookie = "0.18"
 ipnetwork = "0.21"
 
@@ -101,3 +104,11 @@ ammonia = "4.1.4"
 naw-core = { path = "crates/naw-core" }
 naw-markdown = { path = "crates/naw-markdown" }
 naw-web = { path = "crates/naw-web" }
+
+# Argon2 is meant to be slow, and unoptimized it is slow enough to make a local
+# sign-in take seconds. Only the hashing crates get optimized in dev builds.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3

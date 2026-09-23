@@ -6,7 +6,9 @@
 //! 2. unknown identity in link mode: attach to the session user;
 //! 3. unknown identity, auto-link on and the email is provider certified:
 //!    attach to the user with that email;
-//! 4. otherwise: create the user plus the identity row.
+//! 4. otherwise: create the user plus the identity row, unless registration
+//!    is closed, in which case nothing is written and the caller shows the
+//!    "no account yet" page.
 //!
 //! Tokens never reach this module: `Identity.raw` is a trimmed profile.
 
@@ -197,6 +199,18 @@ pub async fn finish_login(
     }
 
     // 4. Fresh account.
+    //
+    // Closed registration stops here, after the paths that sign in or link an
+    // existing account and before anything is written. The dev provider is
+    // exempt: it only runs on a laptop, and a closed laptop is useless.
+    let closed = state.config.auth.registration == naw_core::config::Registration::Closed;
+    if closed && identity.provider != super::types::ProviderId::Dev {
+        tracing::info!(
+            provider = identity.provider.as_str(),
+            "sign-in refused: registration is closed and the identity has no account"
+        );
+        return Err(AuthError::RegistrationClosed);
+    }
     //
     // An unverified provider email is not written to `users.email`: parking
     // an address nobody proved ownership of would block the real owner from

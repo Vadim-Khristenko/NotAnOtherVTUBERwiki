@@ -1,25 +1,64 @@
 {% extends "layout.html" %}
 {#
-  Provider buttons come from the registry, so a provider appears here exactly
-  when its credentials are configured. `next` is already guarded by
-  redirect::safe_next before it reaches this template.
+  The sign-in page.
+
+  `password_login`       the username and password form, for accounts an admin
+                         created (and the first admin, who has no other way in)
+  `providers`            one button per configured provider, from the registry
+  `registration_closed`  invite-only: providers sign in people who already have
+                         an account, and say so up front rather than after a
+                         round trip to the provider
+  `apply_url`            where to ask for an account, when the wiki has a page
+  `next`                 already guarded by redirect::safe_next; `next_encoded`
+                         is the same value ready for a query string
+  `error`                a finished message, never text from the request
 #}
 {% block body %}
-<h1>Sign in to {{ wiki_name }}</h1>
-{% if error %}<p class="notice notice-warn" role="alert">{{ error }}</p>{% endif %}
-{% if providers %}
-<p>Reading never needs an account. Signing in lets you edit, and keeps your name on your work.</p>
-<ul class="provider-list">
-  {% for provider in providers %}
-  <li><a class="provider-btn" href="/auth/{{ provider.slug }}?next={{ next }}" rel="nofollow">Continue with {{ provider.label }}</a></li>
-  {% endfor %}
-</ul>
-{% else %}
-<p class="notice">No sign-in providers are configured on this wiki yet.</p>
-{% endif %}
-{% if dev_login %}
-<p class="notice notice-warn">Development sign-in is enabled on this instance.
-  <a href="/auth/dev?next={{ next }}">Sign in as the dev user</a></p>
-{% endif %}
-<p><a href="/">Back to the wiki</a></p>
+<div class="auth-card">
+  <h1>{{ t("account.sign_in_to", wiki=wiki_name) }}</h1>
+  <p class="auth-lede">{{ t("account.lede") }}</p>
+
+  {% if error %}<p class="notice notice-warn" role="alert">{{ error }}</p>{% endif %}
+
+  {% if password_login %}
+  <form class="auth-form" method="post" action="/login/password">
+    <input type="hidden" name="next" value="{{ next }}" />
+    <label class="field">{{ t("account.username") }}
+      <input class="field-input" name="username" value="{{ form_username }}" required maxlength="64"
+             autocomplete="username" autocapitalize="none" spellcheck="false" autofocus />
+    </label>
+    <label class="field">{{ t("account.password") }}
+      <input class="field-input" name="password" type="password" required maxlength="256"
+             autocomplete="current-password" />
+    </label>
+    <div class="form-actions">
+      <button class="button-save" type="submit">{{ t("account.sign_in") }}</button>
+    </div>
+  </form>
+  {% endif %}
+
+  {% if providers %}
+  {% if password_login %}<p class="auth-or"><span>{{ t("account.or") }}</span></p>{% endif %}
+  <ul class="provider-list">
+    {% for provider in providers %}
+    <li><a class="provider-btn" href="/auth/{{ provider.slug }}?next={{ next_encoded }}" rel="nofollow">{{ t("account.continue_with", provider=provider.label) }}</a></li>
+    {% endfor %}
+  </ul>
+  {% elif not password_login %}
+  <p class="notice">{{ t("account.no_methods") }}</p>
+  {% endif %}
+
+  {% if registration_closed %}
+  <div class="auth-closed">
+    <p><strong>{{ t("account.closed_title") }}</strong></p>
+    <p>{{ t("account.closed_body") }}</p>
+    {% if apply_url %}<p><a href="{{ apply_url }}">{{ t("account.closed_apply") }}</a></p>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if dev_login %}
+  <p class="notice notice-warn">{{ t("account.dev_enabled") }}
+    <a href="/auth/dev?next={{ next_encoded }}">{{ t("account.dev_sign_in") }}</a></p>
+  {% endif %}
+</div>
 {% endblock %}

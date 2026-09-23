@@ -1,16 +1,27 @@
 //! NotAnotherWiki Engine HTTP layer: router, middleware, handlers.
 
+mod account;
 mod admin;
 mod audit;
 mod auth;
+pub mod bootstrap;
 mod errors;
 mod history;
 mod lang;
+mod net;
 mod observe;
 mod pages;
 mod perm;
 mod resolve;
 mod search;
+
+/// Account credentials for the command line: password hashing, temporary
+/// passwords and the username rule. Exposed on their own so the CLI can create
+/// the first account without the rest of the auth module becoming public.
+pub mod credentials {
+    pub use crate::auth::password::{hash, temporary};
+    pub use crate::auth::username::is_valid as username_is_valid;
+}
 
 use axum::extract::State;
 use axum::routing::{get, post};
@@ -31,7 +42,12 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
-        .route("/login", get(auth::routes::login_page))
+        .route("/login", get(account::login_page))
+        .route("/login/password", post(account::password_login))
+        .route(
+            "/account/password",
+            get(account::password_page).post(account::change_password),
+        )
         .route("/logout", post(auth::routes::logout))
         .route("/auth/dev", get(auth::routes::dev_login))
         // The dev route is declared first so it wins over the generic
@@ -43,6 +59,11 @@ pub fn router(state: AppState) -> Router {
         .route("/admin", get(admin::overview))
         .route("/admin/users", get(admin::users))
         .route("/admin/users/role", post(admin::set_role))
+        .route(
+            "/admin/users/new",
+            get(admin::new_user).post(admin::create_user),
+        )
+        .route("/admin/users/password", post(admin::reset_password))
         .route("/admin/pages", get(admin::pages_list))
         .route("/admin/pages/{action}", post(admin::page_action))
         .route("/admin/audit", get(admin::audit_log))

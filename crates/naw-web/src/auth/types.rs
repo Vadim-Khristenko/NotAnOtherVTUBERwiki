@@ -76,6 +76,9 @@ pub enum AuthError {
     StateExpired,
     /// The provider or the cache is unhappy. Generic page, log has detail.
     Upstream(String),
+    /// The sign-in was fine, but it would create an account and registration
+    /// is closed. Nothing was written.
+    RegistrationClosed,
 }
 
 impl IntoResponse for AuthError {
@@ -96,6 +99,10 @@ impl IntoResponse for AuthError {
                     "the identity provider is unavailable",
                 )
             }
+            AuthError::RegistrationClosed => (
+                StatusCode::FORBIDDEN,
+                "accounts on this wiki are created by its admins",
+            ),
         };
         if status == StatusCode::SEE_OTHER {
             return (

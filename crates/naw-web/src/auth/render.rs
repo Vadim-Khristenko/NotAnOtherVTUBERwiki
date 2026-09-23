@@ -1,43 +1,16 @@
-//! Rendering auth and system pages through the active skin.
+//! How a failed sign-in becomes a page.
 //!
-//! Before this module the auth routes emitted hardcoded HTML strings, which
-//! meant a wiki's own look stopped at the login page. Everything here goes
-//! through the skin's templates instead, with the reference skin filling in
-//! whatever a custom skin does not ship.
+//! Handlers here return a status with an `auth_failed` marker and no body; the
+//! error layer renders it in the reader's language through the active skin.
+//! The sign-in page itself lives in `crate::account`.
 //!
 //! The wording rule from the hardening slice holds: the page says something
 //! safe and generic, the log carries what actually failed.
 
-use axum::http::{StatusCode, header};
-use axum::response::{IntoResponse, Response};
+use axum::http::StatusCode;
+use axum::response::Response;
 
-use naw_core::error::AppError;
-use naw_core::state::AppState;
-
-use crate::pages::ENGINE_VERSION;
-use crate::resolve::Chrome;
-
-use super::providers;
 use super::types::AuthError;
-
-fn template_error(err: minijinja::Error) -> AppError {
-    tracing::error!(error = %err, "auth template error");
-    AppError::Internal
-}
-
-fn html(status: StatusCode, body: String) -> Response {
-    (
-        status,
-        [
-            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-            // Belt alongside the session layer: nothing here is ever cacheable,
-            // and several of these pages carry a signed-in user's name.
-            (header::CACHE_CONTROL, "no-store"),
-        ],
-        body,
-    )
-        .into_response()
-}
 
 /// Turns an `AuthError` into a response the error middleware renders as the
 /// `auth_failed` page, in the reader's language and the active skin.
@@ -62,46 +35,13 @@ pub fn auth_error(err: &AuthError) -> Response {
             tracing::error!(detail = %detail, "auth upstream failure");
             (StatusCode::BAD_GATEWAY, "upstream")
         }
+        // 403 and not 401: signing in again with the same provider changes
+        // nothing, only an admin creating the account does.
+        AuthError::RegistrationClosed => (StatusCode::FORBIDDEN, "closed"),
     };
     // No body: the reason shown to the reader comes from the language pack, and
     // an upstream detail is exactly the kind of text that must not reach the page.
     status.marked_as(Kind::AuthFailed, variant)
-}
-
-/// The `/login` page, with one button per configured provider.
-pub fn login(state: &AppState, chrome: &Chrome, next: &str, error: Option<&str>) -> Response {
-    let providers: Vec<_> = providers::enabled(&state.config.auth)
-        .iter()
-        .map(|provider| {
-            minijinja::context! {
-                slug => provider.id().as_str(),
-                label => provider.label(),
-            }
-        })
-        .collect();
-    let render = || -> Result<String, AppError> {
-        let skin = state.skin.current();
-        let template = skin
-            .env
-            .get_template("login.html")
-            .map_err(template_error)?;
-        template
-            .render(minijinja::context! {
-                lang => &chrome.lang,
-                wiki_name => &chrome.wiki_name,
-                title => "Sign in",
-                version => ENGINE_VERSION,
-                providers => providers,
-                dev_login => state.config.auth.dev_login,
-                next => next,
-                error => error,
-            })
-            .map_err(template_error)
-    };
-    match render() {
-        Ok(body) => html(StatusCode::OK, body),
-        Err(err) => err.into_response(),
-    }
 }
 
 #[cfg(test)]

@@ -29,8 +29,77 @@ pub struct Config {
     /// watcher off; the admin panel can still reload on demand.
     #[serde(default = "default_reload_interval_secs")]
     pub reload_interval_secs: u64,
+    /// Take the client address from `X-Real-IP` or `X-Forwarded-For` when
+    /// the request comes from loopback, which is where a reverse proxy on the
+    /// same host or a tunnel end connects from. Off by default: without a
+    /// proxy those headers are whatever the client typed.
+    #[serde(default)]
+    pub trust_proxy: bool,
+    /// The first owner, created or promoted when the server starts. Env only,
+    /// never read from config.toml, because a file in the working directory
+    /// is the wrong home for a password.
+    #[serde(skip)]
+    pub bootstrap_owner: Option<BootstrapOwner>,
     #[serde(default)]
     pub auth: AuthConfig,
+}
+
+/// An account that must exist with every right on the install.
+///
+/// Set with NAW_BOOTSTRAP_OWNER_USERNAME plus either
+/// NAW_BOOTSTRAP_OWNER_PASSWORD_FILE (a secrets file, preferred) or
+/// NAW_BOOTSTRAP_OWNER_PASSWORD. The password is only used when the account has
+/// none yet, so a restart never undoes a password its owner changed since.
+#[derive(Clone)]
+pub struct BootstrapOwner {
+    pub username: String,
+    pub password: String,
+}
+
+impl fmt::Debug for BootstrapOwner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BootstrapOwner")
+            .field("username", &self.username)
+            .field("password", &"[redacted]")
+            .finish()
+    }
+}
+
+impl BootstrapOwner {
+    /// Reads the three variables. Half a configuration is an error rather than
+    /// silently nothing: a password without a name, or a name without a
+    /// password, is somebody's typo on the way to locking themselves out.
+    fn from_env() -> Result<Option<Self>, AppError> {
+        let username = std::env::var("NAW_BOOTSTRAP_OWNER_USERNAME")
+            .ok()
+            .map(|name| name.trim().to_lowercase())
+            .filter(|name| !name.is_empty());
+        let from_file = match std::env::var("NAW_BOOTSTRAP_OWNER_PASSWORD_FILE") {
+            Ok(path) if !path.trim().is_empty() => Some(
+                std::fs::read_to_string(path.trim())
+                    .map(|raw| raw.trim_end_matches(['\r', '\n']).to_string())
+                    .map_err(|err| {
+                        AppError::Config(format!("NAW_BOOTSTRAP_OWNER_PASSWORD_FILE: {err}"))
+                    })?,
+            ),
+            _ => None,
+        };
+        let password = from_file.or_else(|| {
+            std::env::var("NAW_BOOTSTRAP_OWNER_PASSWORD")
+                .ok()
+                .filter(|pw| !pw.is_empty())
+        });
+        match (username, password) {
+            (Some(username), Some(password)) => Ok(Some(Self { username, password })),
+            (None, None) => Ok(None),
+            (Some(_), None) => Err(AppError::Config(
+                "NAW_BOOTSTRAP_OWNER_USERNAME is set without NAW_BOOTSTRAP_OWNER_PASSWORD_FILE or NAW_BOOTSTRAP_OWNER_PASSWORD".to_string(),
+            )),
+            (None, Some(_)) => Err(AppError::Config(
+                "a bootstrap owner password is set without NAW_BOOTSTRAP_OWNER_USERNAME".to_string(),
+            )),
+        }
+    }
 }
 
 impl Default for Config {
@@ -45,6 +114,8 @@ impl Default for Config {
             seed_dir: default_seed_dir(),
             locales_dir: default_locales_dir(),
             reload_interval_secs: default_reload_interval_secs(),
+            trust_proxy: false,
+            bootstrap_owner: None,
             auth: AuthConfig::default(),
         }
     }
@@ -112,6 +183,18 @@ pub struct AuthConfig {
     /// Usernames only an admin may grant (seed, admin, wiki, support).
     #[serde(default = "default_reserved_usernames")]
     pub reserved_usernames: Vec<String>,
+    /// Whether a sign-in may create an account. `closed` is a closed alpha:
+    /// providers still sign in people who already have an account, and new
+    /// accounts come from an admin.
+    #[serde(default)]
+    pub registration: Registration,
+    /// Where the "no account yet" page sends people, for example the page
+    /// that explains how to apply. Nothing is shown when unset.
+    pub apply_url: Option<String>,
+    /// Username and password sign-in. On by default: it is how accounts an
+    /// admin created get in, and how the first admin gets in at all.
+    #[serde(default = "default_true")]
+    pub password_login: bool,
     /// Round 1 through round 3 provider credentials, env supplied.
     pub github: Option<OAuth2Creds>,
     pub discord: Option<OAuth2Creds>,
@@ -139,6 +222,9 @@ impl Default for AuthConfig {
             dev_login: false,
             dev_mailbox: false,
             reserved_usernames: default_reserved_usernames(),
+            registration: Registration::default(),
+            apply_url: None,
+            password_login: true,
             github: None,
             discord: None,
             telegram: None,
@@ -147,6 +233,27 @@ impl Default for AuthConfig {
             twitch: None,
             steam_api_key: None,
             mail: default_mail(),
+        }
+    }
+}
+
+/// Whether signing in may create an account.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Registration {
+    /// Anyone who signs in with a provider gets an account.
+    #[default]
+    Open,
+    /// Only people who already have an account get in.
+    Closed,
+}
+
+impl Registration {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "open" => Some(Self::Open),
+            "closed" | "invite" | "invite-only" => Some(Self::Closed),
+            _ => None,
         }
     }
 }
@@ -224,6 +331,8 @@ impl fmt::Debug for Config {
             .field("seed_dir", &self.seed_dir)
             .field("locales_dir", &self.locales_dir)
             .field("reload_interval_secs", &self.reload_interval_secs)
+            .field("trust_proxy", &self.trust_proxy)
+            .field("bootstrap_owner", &self.bootstrap_owner)
             .field("auth", &self.auth)
             .finish()
     }
@@ -241,6 +350,9 @@ impl fmt::Debug for AuthConfig {
             .field("dev_login", &self.dev_login)
             .field("dev_mailbox", &self.dev_mailbox)
             .field("reserved_usernames", &self.reserved_usernames)
+            .field("registration", &self.registration)
+            .field("apply_url", &self.apply_url)
+            .field("password_login", &self.password_login)
             .field("github", &creds(&self.github))
             .field("discord", &creds(&self.discord))
             .field("telegram", &creds(&self.telegram))
@@ -307,7 +419,14 @@ impl Config {
         {
             cfg.reload_interval_secs = secs;
         }
-        apply_auth_env(&mut cfg.auth);
+        if let Some(flag) = std::env::var("NAW_TRUST_PROXY")
+            .ok()
+            .and_then(|raw| parse_bool(&raw))
+        {
+            cfg.trust_proxy = flag;
+        }
+        apply_auth_env(&mut cfg.auth)?;
+        cfg.bootstrap_owner = BootstrapOwner::from_env()?;
         cfg.check_dev_login()?;
         Ok(cfg)
     }
@@ -336,14 +455,32 @@ impl Config {
     }
 }
 
+fn parse_bool(raw: &str) -> Option<bool> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" | "enabled" => Some(true),
+        "0" | "false" | "no" | "off" | "disabled" => Some(false),
+        _ => None,
+    }
+}
+
 /// Applies the NAW_AUTH_* and provider env overrides, env wins over TOML.
-fn apply_auth_env(auth: &mut AuthConfig) {
-    fn parse_bool(raw: &str) -> Option<bool> {
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "1" | "true" | "yes" | "on" | "enabled" => Some(true),
-            "0" | "false" | "no" | "off" | "disabled" => Some(false),
-            _ => None,
-        }
+fn apply_auth_env(auth: &mut AuthConfig) -> Result<(), AppError> {
+    if let Ok(raw) = std::env::var("NAW_AUTH_REGISTRATION") {
+        // A typo here must not quietly leave registration open.
+        auth.registration = Registration::parse(&raw).ok_or_else(|| {
+            AppError::Config(format!(
+                "NAW_AUTH_REGISTRATION must be open or closed, got {raw:?}"
+            ))
+        })?;
+    }
+    if let Ok(value) = std::env::var("NAW_AUTH_APPLY_URL") {
+        auth.apply_url = Some(value).filter(|v| !v.trim().is_empty());
+    }
+    if let Some(flag) = std::env::var("NAW_AUTH_PASSWORD_LOGIN")
+        .ok()
+        .and_then(|raw| parse_bool(&raw))
+    {
+        auth.password_login = flag;
     }
     if let Some(flag) = std::env::var("NAW_AUTH_ENABLED")
         .ok()
@@ -424,6 +561,7 @@ fn apply_auth_env(auth: &mut AuthConfig) {
     if let Ok(value) = std::env::var("NAW_MAIL_FROM") {
         auth.mail.mail_from = Some(value);
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -438,6 +576,31 @@ mod tests {
         assert!(!dumped.contains("redis://"));
         assert!(dumped.contains("[redacted]"));
         assert_eq!(cfg.skin_dir, "skins/default");
+    }
+
+    #[test]
+    fn a_bootstrap_password_never_reaches_debug_output() {
+        let owner = BootstrapOwner {
+            username: "vai".to_string(),
+            password: "hunter2-but-longer".to_string(),
+        };
+        let cfg = Config {
+            bootstrap_owner: Some(owner),
+            ..Config::default()
+        };
+        let dumped = format!("{cfg:?}");
+        assert!(dumped.contains("vai"));
+        assert!(!dumped.contains("hunter2"), "{dumped}");
+    }
+
+    #[test]
+    fn registration_parses_strictly() {
+        assert_eq!(Registration::parse("closed"), Some(Registration::Closed));
+        assert_eq!(Registration::parse(" Invite "), Some(Registration::Closed));
+        assert_eq!(Registration::parse("OPEN"), Some(Registration::Open));
+        assert_eq!(Registration::parse("clsoed"), None, "a typo must not pass");
+        assert_eq!(AuthConfig::default().registration, Registration::Open);
+        assert!(AuthConfig::default().password_login);
     }
 
     #[test]
@@ -513,7 +676,7 @@ mod tests {
             std::env::set_var("NAW_AUTH_RESERVED_USERNAMES", "root, keeper");
         }
         let mut auth = AuthConfig::default();
-        apply_auth_env(&mut auth);
+        apply_auth_env(&mut auth).expect("env applies");
         unsafe {
             std::env::remove_var("NAW_AUTH_RESERVED_USERNAMES");
         }

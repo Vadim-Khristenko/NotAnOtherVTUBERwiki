@@ -12,6 +12,7 @@
 pub mod http;
 pub mod jwks;
 pub mod mailer;
+pub mod password;
 pub mod pkce;
 pub mod providers;
 pub mod redirect;
@@ -20,6 +21,7 @@ pub mod routes;
 pub mod session;
 pub mod state_store;
 pub mod store;
+pub mod throttle;
 pub mod types;
 pub mod username;
 

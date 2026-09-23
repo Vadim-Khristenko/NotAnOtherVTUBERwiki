@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 1 AS one FROM users WHERE lower(username) = $1\n         UNION ALL\n         SELECT 1 AS one FROM user_aliases WHERE lower(alias) = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "one",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "776d502a13b9dc57a9fd8828395fabd45da80f3d9b547b7c99e1d4e70610176d"
+}

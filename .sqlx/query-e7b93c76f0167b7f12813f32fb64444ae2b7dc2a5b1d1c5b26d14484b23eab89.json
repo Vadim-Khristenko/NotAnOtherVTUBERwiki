@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.username, u.global_role, m.role::text AS \"wiki_role?\"\n           FROM users u\n           LEFT JOIN wiki_memberships m ON m.user_id = u.id AND m.wiki_id = $2\n           WHERE u.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "global_role",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "global_role"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "wiki_role?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "e7b93c76f0167b7f12813f32fb64444ae2b7dc2a5b1d1c5b26d14484b23eab89"
+}

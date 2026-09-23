@@ -18,8 +18,6 @@ use std::net::SocketAddr;
 
 use naw_core::state::AppState;
 
-use crate::resolve::{self, Chrome};
-
 use super::redirect::safe_next;
 use super::state_store::{self, Flow, FlowState};
 use super::types::ProviderId;
@@ -30,7 +28,7 @@ fn is_loopback(addr: Option<&SocketAddr>) -> bool {
 }
 
 /// `Secure` on the session cookie tracks the scheme of the public base URL.
-fn secure_cookies(state: &AppState) -> bool {
+pub(crate) fn secure_cookies(state: &AppState) -> bool {
     state
         .config
         .auth
@@ -51,52 +49,6 @@ fn callback_uri(state: &AppState, provider: ProviderId) -> Option<String> {
         return None;
     }
     Some(format!("{base}/auth/{}/callback", provider.as_str()))
-}
-
-/// The brand for this request, or a neutral one when no wiki matches. Auth
-/// pages must still render when the Host is unknown, so a failure here degrades
-/// to the fallback name rather than to a 500.
-async fn chrome_or_fallback(state: &AppState, headers: &HeaderMap) -> Chrome {
-    match resolve::chrome(&state.db, headers).await {
-        Ok(Some(chrome)) => chrome,
-        Ok(None) => Chrome {
-            wiki_id: uuid::Uuid::nil(),
-            wiki_name: resolve::UNKNOWN_WIKI.to_string(),
-            lang: resolve::UNKNOWN_LANG.to_string(),
-        },
-        Err(err) => {
-            tracing::error!(error = %err, "wiki lookup failed on an auth route");
-            Chrome {
-                wiki_id: uuid::Uuid::nil(),
-                wiki_name: resolve::UNKNOWN_WIKI.to_string(),
-                lang: resolve::UNKNOWN_LANG.to_string(),
-            }
-        }
-    }
-}
-
-/// GET /login: the sign-in page. Buttons come from the registry, so a provider
-/// appears exactly when its credentials exist. Rendered by the active skin and
-/// never cached.
-pub async fn login_page(
-    State(state): State<AppState>,
-    Query(params): Query<BTreeMap<String, String>>,
-    headers: HeaderMap,
-) -> Response {
-    let chrome = chrome_or_fallback(&state, &headers).await;
-    if !state.config.auth.enabled {
-        return crate::errors::not_found();
-    }
-    let next = safe_next(params.get("next").map(String::as_str));
-    // `?err=` is set by our own redirects, so it selects a fixed string rather
-    // than being echoed back into the page.
-    let error = match params.get("err").map(String::as_str) {
-        Some("cancelled") => Some("The last sign-in was cancelled. Nothing was created."),
-        Some("expired") => Some("That sign-in link had expired. This one will work."),
-        Some(_) => Some("The last sign-in did not go through. Try again."),
-        None => None,
-    };
-    render::login(&state, &chrome, &next, error)
 }
 
 /// GET /auth/{provider}: mint state and PKCE, then 302 to the provider.
@@ -258,7 +210,7 @@ pub async fn callback(
 }
 
 /// 303 to `next` with the session cookie attached.
-fn sign_in_response(state: &AppState, session_value: &str, next: &str) -> Response {
+pub(crate) fn sign_in_response(state: &AppState, session_value: &str, next: &str) -> Response {
     let cookie = session::session_cookie(
         session_value,
         state.config.auth.session_ttl_hours,

@@ -2,6 +2,7 @@
 
 mod grant;
 mod seed;
+mod user;
 
 use std::process::ExitCode;
 
@@ -25,8 +26,9 @@ async fn main() -> ExitCode {
         Some("seed") => seed_command(std::env::args().skip(2).collect()).await,
         Some("grant") => grant_command(std::env::args().skip(2).collect()).await,
         Some("reindex") => reindex_command(std::env::args().skip(2).collect()).await,
+        Some("user") => user_command(std::env::args().skip(2).collect()).await,
         _ => {
-            eprintln!("usage: naw <serve|migrate|seed|grant|reindex>");
+            eprintln!("usage: naw <serve|migrate|seed|grant|user|reindex>");
             ExitCode::FAILURE
         }
     }
@@ -218,6 +220,35 @@ async fn grant_command(raw: Vec<String>) -> ExitCode {
     }
 }
 
+async fn user_command(raw: Vec<String>) -> ExitCode {
+    let command = match user::parse(&raw) {
+        Ok(command) => command,
+        Err(err) => {
+            eprintln!(
+                "{err}
+
+{}",
+                user::USAGE
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    let pool = match pool_or_exit().await {
+        Ok(pool) => pool,
+        Err(code) => return code,
+    };
+    match user::run(&pool, command).await {
+        Ok(message) => {
+            println!("{message}");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("user error: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 const REINDEX_USAGE: &str =
     "usage: naw reindex [--wiki SLUG]\n  with no --wiki, rebuilds the search index for every wiki";
 
@@ -295,6 +326,23 @@ async fn serve() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // Before the listener: a wiki that cannot guarantee its owner should not
+    // start serving as if everything were fine.
+    match naw_web::bootstrap::ensure_owner(&state).await {
+        Ok(Some((username, outcome))) => {
+            tracing::info!(%username, ?outcome, "bootstrap owner ensured");
+            if std::env::var("NAW_BOOTSTRAP_OWNER_PASSWORD").is_ok() {
+                tracing::warn!(
+                    "the bootstrap owner password is in the environment. Prefer NAW_BOOTSTRAP_OWNER_PASSWORD_FILE, and change the password after the first sign-in: a changed password is never overwritten"
+                );
+            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            eprintln!("bootstrap owner error: {err}");
+            return ExitCode::FAILURE;
+        }
+    }
     let addr = format!("{}:{}", state.config.http_bind, state.config.http_port);
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(listener) => listener,

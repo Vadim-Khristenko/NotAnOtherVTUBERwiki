@@ -66,35 +66,8 @@ pub async fn load_wikis(db: &sqlx::PgPool) -> Result<Vec<WikiRef>, AppError> {
         .collect())
 }
 
-/// The brand and locale every template needs, for one request.
-///
-/// Auth and system pages need exactly this and nothing else about the wiki, so
-/// they take the owned pair instead of borrowing a `WikiRef` across an await.
-pub struct Chrome {
-    /// Read by the settings and profile pages, which scope per wiki. Auth
-    /// pages only need the brand, so it has no reader yet.
-    #[allow(dead_code)]
-    pub wiki_id: Uuid,
-    pub wiki_name: String,
-    pub lang: String,
-}
-
 /// Fallback brand for a request that matches no wiki at all.
 pub const UNKNOWN_WIKI: &str = "NotAnotherWiki";
-pub const UNKNOWN_LANG: &str = "en";
-
-/// `load_wikis` plus `resolve_wiki`, which every handler needs before it can
-/// render anything. `None` means the caller should 404.
-pub async fn chrome(db: &sqlx::PgPool, headers: &HeaderMap) -> Result<Option<Chrome>, AppError> {
-    let wikis = load_wikis(db).await?;
-    Ok(
-        resolve_wiki(request_host(headers), &wikis).map(|wiki| Chrome {
-            wiki_id: wiki.id,
-            wiki_name: wiki.name.clone(),
-            lang: wiki.default_locale.clone(),
-        }),
-    )
-}
 
 /// One request's wiki plus its authority over that wiki.
 ///

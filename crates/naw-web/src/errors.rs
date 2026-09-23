@@ -206,6 +206,27 @@ impl Overrides {
     /// A variant with no messages of its own falls back to the kind's, so a
     /// half-translated pack shows the general "sign-in did not go through"
     /// rather than a raw key.
+    /// `for_variant` plus what depends on this install rather than on the
+    /// language pack. Shared by the error layer and the admin preview, so the
+    /// preview shows the page a reader would get.
+    pub fn for_page(
+        state: &naw_core::state::AppState,
+        ctx: &Ctx,
+        kind: Kind,
+        variant: &str,
+    ) -> Self {
+        let mut overrides = Self::for_variant(ctx, kind, variant);
+        // "No account yet" is only useful with a way to get one. Where the
+        // operator has an application page, that is the way out.
+        if kind == Kind::AuthFailed
+            && variant == "closed"
+            && let Some(url) = state.config.auth.apply_url.as_deref()
+        {
+            overrides.action = Some((url.to_string(), ctx.t("errors.auth_failed.closed.action")));
+        }
+        overrides
+    }
+
     pub fn for_variant(ctx: &Ctx, kind: Kind, variant: &str) -> Self {
         let lookup = |part: &str| {
             let key = format!("errors.{}.{variant}.{part}", kind.id());
@@ -424,7 +445,7 @@ pub async fn layer(State(state): State<AppState>, req: Request, next: Next) -> R
     match crate::resolve::context(&state, &headers, user.as_ref()).await {
         Ok(Some(ctx)) => {
             let overrides = variant
-                .map(|v| Overrides::for_variant(&ctx, kind, v))
+                .map(|v| Overrides::for_page(&state, &ctx, kind, v))
                 .unwrap_or_default();
             render(
                 &ctx,

@@ -2,6 +2,21 @@
 
 /// Accepts only same-site absolute paths: starts with a single `/`, no
 /// scheme, no authority, no backslashes. Everything else falls back to `/`.
+/// Percent-encodes a query parameter value. Keeps the RFC 3986 unreserved
+/// set and encodes every other byte, so a path with its own query string
+/// survives being carried inside another one.
+pub fn encode_component(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
 pub fn safe_next(raw: Option<&str>) -> String {
     match raw {
         Some(value) if is_safe_path(value) => value.to_string(),

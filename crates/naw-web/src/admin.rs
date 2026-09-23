@@ -212,6 +212,7 @@ pub async fn users(
     let rows = sqlx::query!(
         r#"
         SELECT u.id, u.username, u.global_role, u.created_at,
+               u.must_change_password,
                (u.email_verified_at IS NOT NULL) AS "email_verified!",
                m.role::text AS "wiki_role?",
                (SELECT count(*) FROM oauth_identities oi WHERE oi.user_id = u.id) AS "identities!"
@@ -241,6 +242,9 @@ pub async fn users(
         .into_iter()
         .map(|row| {
             let effective = row.wiki_role.as_deref().unwrap_or("registered");
+            let held = row.wiki_role.as_deref().and_then(WikiRole::parse);
+            let can_reset =
+                may_reset(&ctx, row.id, GlobalRole::parse(&row.global_role), held).is_ok();
             minijinja::context! {
                 id => row.id.to_string(),
                 username => row.username,
@@ -254,6 +258,8 @@ pub async fn users(
                 identities => row.identities,
                 created_at => row.created_at.format("%Y-%m-%d").to_string(),
                 is_me => Some(row.id) == ctx.actor.user_id,
+                temporary => row.must_change_password,
+                can_reset => can_reset,
             }
         })
         .collect();
@@ -280,6 +286,7 @@ pub async fn users(
             prev_page => page_no - 1,
             next_page => page_no + 1,
             grantable => grantable,
+            can_create => ctx.actor.can(Capability::UserRoleManage),
         },
     )
 }
@@ -398,6 +405,335 @@ pub async fn set_role(
     )
     .await?;
     Ok(pages::see_other("/admin/users"))
+}
+
+// ---------------------------------------------------------------------------
+// Accounts made by an admin
+// ---------------------------------------------------------------------------
+//
+// On an invite-only wiki this is where accounts come from. The password is
+// generated here, shown to the admin exactly once, and has to be replaced by
+// its owner on the first sign-in. It is never logged and never stored in plain
+// text; the page that shows it is no-store like the rest of the panel.
+
+/// Why this admin may not reset that account's password, if they may not.
+fn may_reset(
+    ctx: &Ctx,
+    target: uuid::Uuid,
+    target_global: GlobalRole,
+    target_role: Option<WikiRole>,
+) -> Result<(), &'static str> {
+    if !ctx.actor.can(Capability::UserRoleManage) {
+        return Err("resetting passwords needs admin rights");
+    }
+    // Your own password is changed on the account page, which asks for the
+    // current one. A reset here would skip that check.
+    if Some(target) == ctx.actor.user_id {
+        return Err("change your own password on the account page");
+    }
+    match target_global {
+        // The install owner is recovered from the command line, never from a
+        // web form somebody else might be sitting at.
+        GlobalRole::Root => return Err("root accounts are reset from the command line"),
+        GlobalRole::Staff if ctx.actor.global != GlobalRole::Root => {
+            return Err("only root may reset a staff account");
+        }
+        _ => {}
+    }
+    if let Some(held) = target_role
+        && !ctx.actor.may_grant(held)
+    {
+        return Err("that account holds a role at or above your own");
+    }
+    Ok(())
+}
+
+/// A plausible email: one @, something on both sides, no spaces, not absurdly
+/// long. Whether it exists is the mail server's business.
+fn email_is_plausible(email: &str) -> bool {
+    let Some((local, domain)) = email.split_once('@') else {
+        return false;
+    };
+    email.len() <= 254
+        && !local.is_empty()
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && !email.contains(char::is_whitespace)
+        && !domain.contains('@')
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct NewUserForm {
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    email: String,
+    /// Checkbox: the admin vouches for the address, so a provider sign-in that
+    /// confirms the same address links to this account.
+    #[serde(default)]
+    trust_email: Option<String>,
+    /// A `WikiRole` name, or empty for no membership.
+    #[serde(default)]
+    role: String,
+}
+
+fn render_new_user(
+    ctx: &Ctx,
+    status: StatusCode,
+    form: &NewUserForm,
+    error: Option<&str>,
+) -> Result<Response, AppError> {
+    let grantable: Vec<&str> = WikiRole::ALL
+        .iter()
+        .filter(|role| ctx.actor.may_grant(**role))
+        .map(|role| role.as_str())
+        .collect();
+    let mut response = render(
+        ctx,
+        "user_new",
+        &ctx.t("admin.user_new"),
+        minijinja::context! {
+            grantable => grantable,
+            form_username => form.username.clone(),
+            form_email => form.email.clone(),
+            form_trust => form.trust_email.is_some(),
+            form_role => form.role.clone(),
+            error => error.map(|key| ctx.t(&format!("admin.{key}"))),
+        },
+    )?;
+    *response.status_mut() = status;
+    Ok(response)
+}
+
+/// GET /admin/users/new
+#[instrument(skip(state, user))]
+pub async fn new_user(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let ctx = match gate(&state, &headers, user.as_ref()).await {
+        Ok(ctx) => ctx,
+        Err(response) => return Ok(response),
+    };
+    if !ctx.actor.can(Capability::UserRoleManage) {
+        return Ok((
+            StatusCode::FORBIDDEN,
+            "creating accounts needs admin rights",
+        )
+            .into_response());
+    }
+    render_new_user(&ctx, StatusCode::OK, &NewUserForm::default(), None)
+}
+
+/// Shows a freshly issued temporary password, once.
+fn render_issued(
+    ctx: &Ctx,
+    username: &str,
+    password: &str,
+    created: bool,
+) -> Result<Response, AppError> {
+    render(
+        ctx,
+        "password_issued",
+        &ctx.t(if created {
+            "admin.user_created"
+        } else {
+            "admin.password_reset_done"
+        }),
+        minijinja::context! {
+            issued_username => username,
+            issued_password => password,
+            created => created,
+        },
+    )
+}
+
+/// POST /admin/users/new
+#[instrument(skip(state, user, form))]
+pub async fn create_user(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    Form(form): Form<NewUserForm>,
+) -> Result<Response, AppError> {
+    let ctx = match gate(&state, &headers, user.as_ref()).await {
+        Ok(ctx) => ctx,
+        Err(response) => return Ok(response),
+    };
+    if !ctx.actor.can(Capability::UserRoleManage) {
+        return Ok((
+            StatusCode::FORBIDDEN,
+            "creating accounts needs admin rights",
+        )
+            .into_response());
+    }
+    let username = form.username.trim().to_lowercase();
+    let email = form.email.trim().to_lowercase();
+    let refuse = |status, key| render_new_user(&ctx, status, &form, Some(key));
+
+    // Reserved names are allowed here on purpose: they exist so that only an
+    // admin can hand them out, and this is an admin handing one out.
+    if !crate::auth::username::is_valid(&username) {
+        return refuse(StatusCode::UNPROCESSABLE_ENTITY, "user_bad_name");
+    }
+    if !email.is_empty() && !email_is_plausible(&email) {
+        return refuse(StatusCode::UNPROCESSABLE_ENTITY, "user_bad_email");
+    }
+    let role = match form.role.trim() {
+        "" => None,
+        name => match WikiRole::parse(name) {
+            Some(role) if ctx.actor.may_grant(role) => Some(role),
+            _ => return refuse(StatusCode::FORBIDDEN, "user_bad_role"),
+        },
+    };
+
+    let temporary = crate::auth::password::temporary();
+    let hash = crate::auth::password::hash(temporary.clone()).await?;
+    let user_id = uuid::Uuid::new_v4();
+    let email = (!email.is_empty()).then_some(email);
+    let verified_at = email
+        .as_ref()
+        .filter(|_| form.trust_email.is_some())
+        .map(|_| chrono::Utc::now());
+
+    let mut tx = state.db.begin().await?;
+    let taken = sqlx::query!(
+        "SELECT 1 AS one FROM users WHERE lower(username) = $1
+         UNION ALL
+         SELECT 1 AS one FROM user_aliases WHERE lower(alias) = $1",
+        username
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .is_some();
+    if taken {
+        return refuse(StatusCode::CONFLICT, "user_name_taken");
+    }
+    if let Some(email) = &email {
+        let used = sqlx::query!("SELECT 1 AS one FROM users WHERE lower(email) = $1", email)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+        if used {
+            return refuse(StatusCode::CONFLICT, "user_email_taken");
+        }
+    }
+    sqlx::query!(
+        "INSERT INTO users (id, username, email, email_verified_at, password_hash,
+                            must_change_password, created_by, global_role, locale)
+         VALUES ($1, $2, $3, $4, $5, true, $6, 'registered', $7)",
+        user_id,
+        username,
+        email,
+        verified_at,
+        hash,
+        ctx.actor.user_id,
+        ctx.wiki.default_locale
+    )
+    .execute(&mut *tx)
+    .await?;
+    if let Some(role) = role {
+        sqlx::query(
+            "INSERT INTO wiki_memberships (user_id, wiki_id, role)
+             VALUES ($1, $2, $3::user_wiki_role)",
+        )
+        .bind(user_id)
+        .bind(ctx.wiki.id)
+        .bind(role.as_str())
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    audit::record(
+        &state.db,
+        audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action: "admin.user_create",
+            entity_type: "user",
+            entity_id: Some(user_id),
+            meta: json!({
+                "username": username,
+                "role": role.map(WikiRole::as_str),
+                "email_trusted": verified_at.is_some(),
+            }),
+        },
+    )
+    .await?;
+    tracing::info!(%username, "account created by an admin");
+    render_issued(&ctx, &username, &temporary, true)
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ResetForm {
+    user_id: String,
+}
+
+/// POST /admin/users/password
+#[instrument(skip(state, user))]
+pub async fn reset_password(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    Form(form): Form<ResetForm>,
+) -> Result<Response, AppError> {
+    let ctx = match gate(&state, &headers, user.as_ref()).await {
+        Ok(ctx) => ctx,
+        Err(response) => return Ok(response),
+    };
+    let Some(target_id) = pages::parse_uuid(&form.user_id) else {
+        return Ok((StatusCode::UNPROCESSABLE_ENTITY, "user_id: expected an id").into_response());
+    };
+    let Some(target) = sqlx::query!(
+        r#"SELECT u.username, u.global_role, m.role::text AS "wiki_role?"
+           FROM users u
+           LEFT JOIN wiki_memberships m ON m.user_id = u.id AND m.wiki_id = $2
+           WHERE u.id = $1"#,
+        target_id,
+        ctx.wiki.id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    else {
+        return Ok(crate::errors::not_found());
+    };
+    let held = target.wiki_role.as_deref().and_then(WikiRole::parse);
+    if let Err(reason) = may_reset(
+        &ctx,
+        target_id,
+        GlobalRole::parse(&target.global_role),
+        held,
+    ) {
+        return Ok((StatusCode::FORBIDDEN, reason).into_response());
+    }
+
+    let temporary = crate::auth::password::temporary();
+    let hash = crate::auth::password::hash(temporary.clone()).await?;
+    sqlx::query!(
+        "UPDATE users SET password_hash = $2, must_change_password = true WHERE id = $1",
+        target_id,
+        hash
+    )
+    .execute(&state.db)
+    .await?;
+    // Whoever holds a session for this account now holds it without knowing the
+    // password. End them all: the new password is the only way back in.
+    let ended = crate::auth::session::delete_others(&state, target_id, None).await?;
+    audit::record(
+        &state.db,
+        audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action: "admin.password_reset",
+            entity_type: "user",
+            entity_id: Some(target_id),
+            meta: json!({ "username": target.username, "sessions_ended": ended }),
+        },
+    )
+    .await?;
+    render_issued(&ctx, &target.username, &temporary, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -1155,7 +1491,9 @@ pub async fn reload(
 /// The variants a kind has wording for, so the gallery can preview each one.
 fn variants_of(kind: crate::errors::Kind) -> &'static [&'static str] {
     match kind {
-        crate::errors::Kind::AuthFailed => &["bad_request", "cancelled", "expired", "upstream"],
+        crate::errors::Kind::AuthFailed => {
+            &["bad_request", "cancelled", "expired", "upstream", "closed"]
+        }
         _ => &[],
     }
 }
@@ -1227,7 +1565,7 @@ pub async fn error_preview(
         .variant
         .as_deref()
         .and_then(|v| variants_of(kind).iter().find(|known| **known == v).copied())
-        .map(|v| crate::errors::Overrides::for_variant(&ctx, kind, v))
+        .map(|v| crate::errors::Overrides::for_page(&state, &ctx, kind, v))
         .unwrap_or_default();
     Ok(crate::errors::render(
         &ctx,
@@ -1242,6 +1580,18 @@ pub async fn error_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn email_shape_checks_catch_the_obvious() {
+        for ok in ["a@b.co", "vadim+calpha@filian.wiki"] {
+            assert!(email_is_plausible(ok), "{ok}");
+        }
+        for bad in [
+            "", "no-at", "@b.co", "a@", "a@b", "a@.b", "a@b.", "a b@c.d", "a@b@c.d",
+        ] {
+            assert!(!email_is_plausible(bad), "{bad}");
+        }
+    }
 
     #[test]
     fn repeated_form_keys_are_all_collected_and_decoded() {
