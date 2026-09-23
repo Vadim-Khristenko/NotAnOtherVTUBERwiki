@@ -1,6 +1,7 @@
 //! Markdown to sanitized HTML, the pure core of render-on-write.
 
 mod scan;
+pub mod transclude;
 
 use std::collections::HashSet;
 
@@ -19,6 +20,8 @@ use scan::{Closers, Counts};
 ///   is marked for the web layer's emotes (see [`EMOTE_OPEN`]).
 /// - `>! Summary` with `> body` lines is a collapsible quote;
 ///   `:::details Title` and `:::pullquote` blocks end at `:::`.
+/// - `:::infobox Title` is a side card: `Key = value` lines are its rows (a row
+///   with no value is left out), anything else is Markdown in order.
 /// - The first lone `[[toc]]` becomes a table of contents; footnotes collect
 ///   at the end in reference order.
 /// - Fenced `mermaid`, `dot`, `graphviz`, `plantuml` and `math` keep their
@@ -183,8 +186,12 @@ struct CustomBlock {
 enum BlockKind {
     Details,
     Pullquote,
+    Infobox,
     CollapsibleQuote,
 }
+
+/// Rows in one infobox; past it the lines stay Markdown.
+const INFOBOX_ROWS_MAX: usize = 100;
 
 /// Custom blocks per document, nesting included. Each renders through the
 /// whole pipeline, so the count is bounded.
@@ -234,7 +241,10 @@ fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec
         } else if trimmed == ":::pullquote" || trimmed.starts_with(":::pullquote ") {
             Some((BlockKind::Pullquote, String::new()))
         } else {
-            None
+            trimmed
+                .strip_prefix(":::infobox")
+                .filter(|_| trimmed == ":::infobox" || trimmed.starts_with(":::infobox "))
+                .map(|rest| (BlockKind::Infobox, rest.trim().to_string()))
         };
         if let Some((kind, title)) = fence {
             let close = if closers_left {
@@ -374,6 +384,9 @@ fn restore_custom_blocks(
 }
 
 fn render_block(block: &CustomBlock, depth: usize, state: &mut BlockState) -> String {
+    if block.kind == BlockKind::Infobox {
+        return render_infobox(block, depth, state);
+    }
     let body = if block.body.trim().is_empty() {
         String::new()
     } else {
@@ -396,7 +409,93 @@ fn render_block(block: &CustomBlock, depth: usize, state: &mut BlockState) -> St
         BlockKind::CollapsibleQuote => {
             details("quote", format!("<blockquote>\n{body}\n</blockquote>"))
         }
+        BlockKind::Infobox => unreachable!("rendered by render_infobox"),
     }
+}
+
+/// `Key = value`: a short plain key, then the value. `None` for any other line.
+fn infobox_row(line: &str) -> Option<(&str, &str)> {
+    if line.starts_with([' ', '\t']) {
+        return None;
+    }
+    let (key, value) = line.split_once('=')?;
+    let key = key.trim();
+    let plain = !key.is_empty()
+        && key.chars().count() <= 60
+        && !key.starts_with(['#', '!', '>', '-', '*', '|', '+'])
+        && !key.contains(['[', ']', '(', ')', '`', '*', '_', '<']);
+    plain.then(|| (key, value.trim()))
+}
+
+/// A side card: runs of rows become a definition list, and any other lines
+/// render as Markdown where they stand.
+fn render_infobox(block: &CustomBlock, depth: usize, state: &mut BlockState) -> String {
+    enum Part<'a> {
+        Rows(Vec<(&'a str, &'a str)>),
+        Prose(Vec<&'a str>),
+    }
+    let mut parts: Vec<Part> = Vec::new();
+    let mut row_count = 0;
+    let mut in_fence = false;
+    for line in block.body.split('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+        }
+        let row = infobox_row(line).filter(|_| !in_fence && row_count < INFOBOX_ROWS_MAX);
+        match (row, parts.last_mut()) {
+            // An empty value leaves the row out, so optional fields vanish.
+            (Some((_, "")), _) => {}
+            (Some(row), Some(Part::Rows(rows))) => {
+                rows.push(row);
+                row_count += 1;
+            }
+            (Some(row), _) => {
+                parts.push(Part::Rows(vec![row]));
+                row_count += 1;
+            }
+            (None, Some(Part::Prose(lines))) => lines.push(line),
+            (None, _) => parts.push(Part::Prose(vec![line])),
+        }
+    }
+
+    let mut out = String::from("<aside class=\"infobox\">");
+    if !block.title.trim().is_empty() {
+        out.push_str("<p class=\"infobox-title\">");
+        out.push_str(&naw_core::html::escape(block.title.trim()));
+        out.push_str("</p>");
+    }
+    for part in parts {
+        match part {
+            Part::Prose(lines) => {
+                let text = lines.join("\n");
+                if !text.trim().is_empty() {
+                    out.push_str(&render_html_with_depth(&text, depth + 1, state));
+                }
+            }
+            Part::Rows(rows) => {
+                out.push_str("<dl class=\"infobox-rows\">");
+                for (key, value) in rows {
+                    let html = render_html_with_depth(value, depth + 1, state);
+                    let html = html.trim();
+                    // One paragraph is the usual value; its wrapper would add a margin.
+                    let inner = html
+                        .strip_prefix("<p>")
+                        .and_then(|rest| rest.strip_suffix("</p>"))
+                        .filter(|inner| !inner.contains("<p>"))
+                        .unwrap_or(html);
+                    out.push_str("<div><dt>");
+                    out.push_str(&naw_core::html::escape(key));
+                    out.push_str("</dt><dd>");
+                    out.push_str(inner);
+                    out.push_str("</dd></div>");
+                }
+                out.push_str("</dl>");
+            }
+        }
+    }
+    out.push_str("</aside>");
+    out
 }
 
 /// Rewrites `__italic__` to `*italic*` outside code, link destinations and
@@ -1444,7 +1543,7 @@ fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 15;
+pub const RENDERER_VERSION: i32 = 16;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -1578,6 +1677,30 @@ mod tests {
         let html = render_html("### Ours {id=\"x\" status=\"new\"}\n");
         assert!(html.contains("<h3 id=\"x\">Ours</h3>"));
         assert!(!html.contains("status"));
+    }
+
+    #[test]
+    fn an_infobox_has_a_title_rows_and_prose_in_order() {
+        let html = render_html(
+            ":::infobox Filian\n![Filian](/media/ab/c.png)\nDebut = 2021\nSite = [link](https://example.com)\nAgency =\n\nA **fox** VTuber.\n:::\n",
+        );
+        assert!(html.starts_with("<aside class=\"infobox\"><p class=\"infobox-title\">Filian</p>"));
+        assert!(html.contains("<img"));
+        assert!(html.contains("<div><dt>Debut</dt><dd>2021</dd></div>"));
+        assert!(html.contains("<dt>Site</dt><dd><a href=\"https://example.com\""));
+        // An empty value leaves its row out.
+        assert!(!html.contains("Agency"));
+        assert!(html.contains("<strong>fox</strong>"));
+        assert!(html.find("Debut") < html.find("fox"));
+    }
+
+    #[test]
+    fn infobox_titles_and_keys_are_text() {
+        let html = render_html(":::infobox <script>x</script>\nKey<b> = v\n:::\n");
+        assert!(!html.contains("<script>"));
+        assert!(!html.contains("<b>"));
+        // `<` in a key makes it prose, which the parser strips of HTML.
+        assert!(!html.contains("<dt>Key"));
     }
 
     #[test]
