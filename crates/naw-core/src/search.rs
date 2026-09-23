@@ -160,23 +160,39 @@ impl SearchBackend for Postgres {
             )
             SELECT p.slug,
                    p.title,
+                   -- The snippet comes from where the words are: the head
+                   -- when it matches, otherwise the best matching chunk.
                    ts_headline(
-                     $1::text::regconfig, left(r.body_md, 300000), parsed.tsq,
+                     $1::text::regconfig,
+                     CASE WHEN hit.start_char IS NOT NULL
+                               AND NOT (p.search_vector @@ parsed.tsq)
+                          THEN substr(r.body_md, hit.start_char + 1, hit.len_chars)
+                          ELSE left(r.body_md, 200000) END,
+                     parsed.tsq,
                      'MaxWords=34, MinWords=14, ShortWord=3, MaxFragments=2,
                       FragmentDelimiter= … , StartSel=<mark>, StopSel=</mark>'
                    ) AS "snippet!",
-                   ts_rank_cd(p.search_vector, parsed.tsq) * 8
+                   GREATEST(ts_rank_cd(p.search_vector, parsed.tsq), COALESCE(hit.rank, 0)) * 8
                      + similarity(p.title, $2) AS "score!"
             FROM pages p
             JOIN revisions r ON r.id = p.current_revision_id
             CROSS JOIN parsed
+            -- Only long articles have chunks, and the primary key finds them,
+            -- so a short page costs one empty index probe here.
+            LEFT JOIN LATERAL (
+              SELECT c.start_char, c.len_chars, ts_rank_cd(c.vector, parsed.tsq) AS rank
+              FROM page_search_chunks c
+              WHERE c.page_id = p.id AND c.vector @@ parsed.tsq
+              ORDER BY rank DESC
+              LIMIT 1
+            ) hit ON true
             WHERE p.wiki_id = $3
               AND p.namespace = 'main'
               AND p.deleted_at IS NULL
               -- One language at a time: a search on the Russian side of a wiki
               -- finds Russian articles, and links to them in Russian.
               AND COALESCE(p.locale, '') = $5
-              AND (p.search_vector @@ parsed.tsq OR p.title % $2)
+              AND (p.search_vector @@ parsed.tsq OR p.title % $2 OR hit.start_char IS NOT NULL)
             ORDER BY "score!" DESC, p.updated_at DESC
             LIMIT $4
             "#,
@@ -209,11 +225,11 @@ impl SearchBackend for Postgres {
 /// The weights are the ranking policy: a hit in the title outranks one in the
 /// summary, which outranks one in the body.
 ///
-/// Only the first 300 000 characters of the body are indexed, here, in
-/// `reindex` and in the search snippet. An article may be 5 MB, a tsvector
-/// may not pass 1 MB, and PostgreSQL refuses the whole save with "string is
-/// too long for tsvector". Word positions stop counting at 16 383 anyway, so
-/// the tail of a very long article would add little but new words.
+/// The whole body is indexed. An article may be 5 MB and a tsvector may not
+/// pass 1 MB (PostgreSQL refuses the whole save with "string is too long for
+/// tsvector"), so the page's own vector holds the title, the summary and the
+/// first piece of the body, and any further pieces go to
+/// `page_search_chunks`, one vector each. See `split_for_index`.
 pub async fn index_page(
     conn: &mut sqlx::PgConnection,
     page_id: Uuid,
@@ -223,6 +239,8 @@ pub async fn index_page(
     body_md: &str,
 ) -> Result<(), AppError> {
     let config = regconfig_for(locale);
+    let pieces = split_for_index(body_md, PIECE_CHARS);
+    let head = pieces.first().map_or("", |piece| piece.text);
     sqlx::query!(
         r#"
         -- Every use of $2 is annotated ::text. Writing it bare in the
@@ -233,74 +251,207 @@ pub async fn index_page(
           search_vector =
               setweight(to_tsvector($2::text::regconfig, $3), 'A')
            || setweight(to_tsvector($2::text::regconfig, coalesce($4, '')), 'B')
-           || setweight(to_tsvector($2::text::regconfig, left($5, 300000)), 'C')
+           || setweight(to_tsvector($2::text::regconfig, $5), 'C')
         WHERE id = $1
         "#,
         page_id,
         config,
         title,
         summary,
-        body_md
+        head
     )
     .execute(&mut *conn)
     .await?;
+    sqlx::query!("DELETE FROM page_search_chunks WHERE page_id = $1", page_id)
+        .execute(&mut *conn)
+        .await?;
+    if pieces.len() > 1 {
+        let rest = &pieces[1..];
+        let numbers: Vec<i32> = (1..=rest.len() as i32).collect();
+        let starts: Vec<i32> = rest.iter().map(|p| p.start_char as i32).collect();
+        let lens: Vec<i32> = rest.iter().map(|p| p.len_chars as i32).collect();
+        let texts: Vec<String> = rest.iter().map(|p| p.text.to_string()).collect();
+        // One statement for every piece: PostgreSQL builds the vectors, and
+        // the text crosses the wire once.
+        sqlx::query!(
+            r#"
+            INSERT INTO page_search_chunks (page_id, chunk_no, start_char, len_chars, vector)
+            SELECT $1, c.no, c.start_char, c.len_chars,
+                   setweight(to_tsvector($2::text::regconfig, c.body), 'C')
+            FROM unnest($3::int[], $4::int[], $5::int[], $6::text[])
+                 AS c(no, start_char, len_chars, body)
+            "#,
+            page_id,
+            config,
+            &numbers,
+            &starts,
+            &lens,
+            &texts
+        )
+        .execute(&mut *conn)
+        .await?;
+    }
     Ok(())
 }
 
-/// Rebuilds every live page's vector in one wiki, or across the install when
+/// Characters per indexed piece of a body. A tsvector costs at most about
+/// three bytes per character of text (short unique words in a two byte
+/// script), so 200 000 characters stays well under the 1 MB limit, and
+/// nearly every article is a single piece.
+pub const PIECE_CHARS: usize = 200_000;
+
+/// One piece of a body, as indexed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Piece<'a> {
+    pub text: &'a str,
+    /// Offset in characters from the start of the body.
+    pub start_char: usize,
+    pub len_chars: usize,
+}
+
+/// Cuts a body into pieces of at most `size` characters for indexing. A cut
+/// goes on the last line break in the final tenth of a piece, or else on the
+/// last whitespace there, so a word is never split in two and lost to search.
+/// Only a body with no whitespace at all is cut mid-word. Always at least one
+/// piece, empty for an empty body.
+pub fn split_for_index(body: &str, size: usize) -> Vec<Piece<'_>> {
+    let size = size.max(10);
+    let mut pieces = Vec::new();
+    let mut rest = body;
+    let mut start_char = 0;
+    loop {
+        // The byte offset of character `size`, or the whole remainder.
+        let Some((hard, _)) = rest.char_indices().nth(size) else {
+            let len_chars = rest.chars().count();
+            pieces.push(Piece {
+                text: rest,
+                start_char,
+                len_chars,
+            });
+            return pieces;
+        };
+        let window = rest[..hard]
+            .char_indices()
+            .rev()
+            .nth(size / 10)
+            .map_or(0, |(i, _)| i);
+        let tail = &rest[window..hard];
+        let cut = tail
+            .rfind('\n')
+            .or_else(|| tail.rfind(char::is_whitespace))
+            .map(|i| window + i)
+            .filter(|&i| i > 0)
+            .unwrap_or(hard);
+        let text = &rest[..cut];
+        let len_chars = text.chars().count();
+        pieces.push(Piece {
+            text,
+            start_char,
+            len_chars,
+        });
+        start_char += len_chars;
+        rest = &rest[cut..];
+    }
+}
+
+/// Rebuilds every live page's vectors in one wiki, or across the install when
 /// `wiki_id` is `None`. Returns how many pages were touched.
 ///
 /// Needed after a locale change, after a bulk import, and after any change to
-/// the weights in `index_page`.
+/// the weights or the cut points in `index_page`. Every page goes through
+/// `index_page` itself, so a reindex writes exactly what a save would: the
+/// same stemmer for the page's own language, the same pieces. Pages are read
+/// in batches, so a wiki of long articles never sits in memory whole, and each
+/// batch is one transaction.
 pub async fn reindex(db: &sqlx::PgPool, wiki_id: Option<Uuid>) -> Result<u64, AppError> {
-    // The configuration is chosen per row from the owning wiki's locale, in
-    // SQL, so one statement covers wikis in different languages. The CASE
-    // mirrors `regconfig_for` for the languages this project actually serves;
-    // anything else falls to 'simple' exactly as the Rust version does. The
-    // lookup against pg_ts_config is the safety net that keeps a bad name from
-    // raising an error mid-statement.
-    let result = sqlx::query!(
-        r#"
-        UPDATE pages p SET
-          search_lang = cfg.name,
-          search_vector =
-              setweight(to_tsvector(cfg.name::regconfig, p.title), 'A')
-           || setweight(to_tsvector(cfg.name::regconfig, coalesce(r.summary, '')), 'B')
-           || setweight(to_tsvector(cfg.name::regconfig, left(r.body_md, 300000)), 'C')
-        FROM revisions r, wikis w,
-             LATERAL (
-               SELECT COALESCE(
-                 (SELECT c.cfgname::text FROM pg_ts_config c
-                   WHERE c.cfgname::text = CASE split_part(lower(w.default_locale), '-', 1)
-                     WHEN 'en' THEN 'english'
-                     WHEN 'ru' THEN 'russian'
-                     WHEN 'de' THEN 'german'
-                     WHEN 'fr' THEN 'french'
-                     WHEN 'es' THEN 'spanish'
-                     WHEN 'it' THEN 'italian'
-                     WHEN 'pt' THEN 'portuguese'
-                     WHEN 'nl' THEN 'dutch'
-                     WHEN 'tr' THEN 'turkish'
-                     ELSE 'simple'
-                   END),
-                 'simple'
-               ) AS name
-             ) cfg
-        WHERE r.id = p.current_revision_id
-          AND w.id = p.wiki_id
-          AND p.deleted_at IS NULL
-          AND ($1::uuid IS NULL OR p.wiki_id = $1)
-        "#,
+    const BATCH: usize = 50;
+    let ids = sqlx::query_scalar!(
+        "SELECT id FROM pages
+         WHERE deleted_at IS NULL AND current_revision_id IS NOT NULL
+           AND ($1::uuid IS NULL OR wiki_id = $1)
+         ORDER BY id",
         wiki_id
     )
-    .execute(db)
+    .fetch_all(db)
     .await?;
-    Ok(result.rows_affected())
+    let mut done = 0;
+    for batch in ids.chunks(BATCH) {
+        let mut tx = db.begin().await?;
+        let pages = sqlx::query!(
+            r#"
+            SELECT p.id, COALESCE(NULLIF(p.locale, ''), w.default_locale) AS "locale!",
+                   p.title, r.summary, r.body_md
+            FROM pages p
+            JOIN revisions r ON r.id = p.current_revision_id
+            JOIN wikis w ON w.id = p.wiki_id
+            WHERE p.id = ANY($1)
+            "#,
+            batch
+        )
+        .fetch_all(&mut *tx)
+        .await?;
+        for page in pages {
+            index_page(
+                &mut tx,
+                page.id,
+                &page.locale,
+                &page.title,
+                page.summary.as_deref(),
+                &page.body_md,
+            )
+            .await?;
+            done += 1;
+        }
+        tx.commit().await?;
+    }
+    Ok(done)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_body_is_cut_into_pieces_that_cover_all_of_it() {
+        assert_eq!(split_for_index("", 100).len(), 1);
+        let short = split_for_index("Filian", 100);
+        assert_eq!(
+            short,
+            vec![Piece {
+                text: "Filian",
+                start_char: 0,
+                len_chars: 6
+            }]
+        );
+
+        let body = "Филиан светит снакерам. ".repeat(500) + "финал";
+        let pieces = split_for_index(&body, 1000);
+        assert!(pieces.len() > 1);
+        // Nothing lost, nothing doubled, and the offsets line up.
+        let joined: String = pieces.iter().map(|p| p.text).collect();
+        assert_eq!(joined, body);
+        let mut at = 0;
+        for piece in &pieces {
+            assert_eq!(piece.start_char, at);
+            assert_eq!(piece.len_chars, piece.text.chars().count());
+            assert!(piece.len_chars <= 1000);
+            at += piece.len_chars;
+            // Cut between words, never inside one.
+            let first = piece.text.chars().next().unwrap();
+            assert!(piece.start_char == 0 || first.is_whitespace());
+        }
+        assert!(pieces.last().unwrap().text.ends_with("финал"));
+    }
+
+    #[test]
+    fn a_body_without_spaces_is_still_cut() {
+        let body = "я".repeat(2500);
+        let pieces = split_for_index(&body, 1000);
+        assert_eq!(
+            pieces.iter().map(|p| p.len_chars).collect::<Vec<_>>(),
+            vec![1000, 1000, 500]
+        );
+    }
 
     #[test]
     fn a_locale_picks_its_stemmer_and_a_region_suffix_is_ignored() {

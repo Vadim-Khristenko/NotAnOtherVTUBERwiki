@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        -- Every use of $2 is annotated ::text. Writing it bare in the\n        -- assignment and as ::regconfig in the casts made PostgreSQL deduce two\n        -- different types for one parameter, which it refuses outright.\n        UPDATE pages SET\n          search_lang = $2::text,\n          search_vector =\n              setweight(to_tsvector($2::text::regconfig, $3), 'A')\n           || setweight(to_tsvector($2::text::regconfig, coalesce($4, '')), 'B')\n           || setweight(to_tsvector($2::text::regconfig, $5), 'C')\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "51b37e66d54982b5bd317e6e8856b016c7583f602ede7810b8586d052bec34ad"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM page_search_chunks WHERE page_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5c73e19ed31197bc77432a429e90b6cbabc9bb3d9208ea76fa311b0a047de7de"
+}
