@@ -1,7 +1,4 @@
-//! NotAnotherWiki Engine Markdown render pipeline.
-//!
-//! Reader path contract: render on write, serve from cache. This function is
-//! the pure core of that pipeline: Markdown in, sanitized HTML out.
+//! Markdown to sanitized HTML, the pure core of render-on-write.
 
 mod scan;
 
@@ -11,44 +8,29 @@ use scan::{Closers, Counts};
 
 /// Renders Markdown to sanitized HTML.
 ///
-/// Chat-native set (v4): CommonMark plus tables, footnotes, task lists,
-/// strikethrough (`~~`), superscript (`^`), subscript (`~`), math (`$`/`$$`),
-/// GFM alerts (`> [!NOTE]`), definition lists, `[[wikilinks]]`, plus the
-/// NotAnotherWiki sugar below. Raw HTML is disabled at the parser level
-/// (decision D12), and the result is sanitized with ammonia regardless, so
-/// every byte of output passed the whitelist.
+/// CommonMark plus tables, footnotes, task lists, strikethrough, super- and
+/// subscript, math, GFM alerts, definition lists and wikilinks. Raw HTML is
+/// dropped at the parser and everything is sanitized with ammonia after.
 ///
-/// Sugar, all server side in Rust so preview and save never disagree:
-/// - `__italic__` renders as `<em>`, same as `*italic*` (per project order;
-///   `**bold**` stays `<strong>`, underline uses `++` to avoid the
-///   CommonMark/Discord `__` collision).
-/// - `||spoiler||` becomes `<span class="spoiler">`, `==mark==` becomes
-///   `<mark>`, `==red|text==` becomes `<mark class="mark-red">` (eight
-///   fixed colors, unknown names stay literal), `++underline++` becomes
-///   `<u>`, `((keys))` becomes `<kbd>`, `:fire:` shortcodes become glyphs.
-/// - `> quote` is a blockquote, `>! Summary` plus `> body` lines is a
-///   collapsible quote (`<details class="quote">`).
-/// - `:::details Title ... :::` and `:::pullquote ... :::` blocks.
-/// - The first `[[toc]]` alone in a paragraph becomes a nav of the page
-///   headings with exact final anchors; later ones vanish. Footnote definitions collect at the end of the
-///   body no matter where their `[^n]:` lines stand.
-///   `<mark>`, `++underline++` becomes `<u>`, `((keys))` becomes `<kbd>`,
-///   and `:fire:` style shortcodes become Unicode pictographs from a fixed
-///   table (unknown codes stay literal).
-/// - `> quote` is a blockquote, `>! Summary` plus `> body` lines is a
-///   collapsible quote (`<details class="quote">`).
-/// - `:::details Title ... :::` and `:::pullquote ... :::` blocks.
-/// - Fenced `mermaid`/`dot`/`graphviz`/`plantuml`/`math` keep their code text
-///   and gain a class hook (`<pre class="mermaid">` etc) for the future
-///   worker that renders them to SVG. No execution happens in Rust.
+/// Engine sugar:
+/// - `__italic__` is `<em>`; underline is `++text++`.
+/// - `||spoiler||`, `==mark==`, `==red|mark==` (fixed colors), `((kbd))`.
+/// - `:shortcode:` is a Unicode emoji from a fixed table; any other valid name
+///   is marked for the web layer's emotes (see [`EMOTE_OPEN`]).
+/// - `>! Summary` with `> body` lines is a collapsible quote;
+///   `:::details Title` and `:::pullquote` blocks end at `:::`.
+/// - The first lone `[[toc]]` becomes a table of contents; footnotes collect
+///   at the end in reference order.
+/// - Fenced `mermaid`, `dot`, `graphviz`, `plantuml` and `math` keep their
+///   text and gain a class for the worker.
+/// - Only images under `/media/` render as images; others become links.
 pub fn render_html(markdown: &str) -> String {
     let mut state = BlockState::for_document(markdown);
     render_html_with_depth(markdown, 0, &mut state)
 }
 
-/// Recursion guard for nested custom blocks (`:::details` inside a
-/// collapsible quote and the like). Depth 8 is far past sane authoring and
-/// stops a malicious nesting chain from recursing on input size.
+/// Nesting depth is capped at 8 so a crafted chain of blocks cannot recurse
+/// on input size.
 fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) -> String {
     use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
@@ -68,25 +50,18 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
     options.insert(Options::ENABLE_DEFINITION_LIST);
     options.insert(Options::ENABLE_WIKILINKS);
 
-    // Block sugar first: `:::details`, `:::pullquote`, `>!` collapsible
-    // quotes become placeholders that survive the parser as plain paragraphs.
     let (without_blocks, blocks) = extract_custom_blocks(markdown, state);
-    // `__italic__` must reach pulldown-cmark as `*italic*`: the parser maps
-    // `__` to `<strong>` and there is no flag to change that.
+    // pulldown-cmark hardwires `__` to `<strong>`.
     let mapped = map_double_underscore_to_italic(&without_blocks);
 
-    // Raw HTML is dropped here (decision D12). pulldown-cmark has no option
-    // that refuses raw HTML, so the HTML events never reach the writer,
-    // except a bare line break: `<br>` cannot execute anything.
-    // ammonia is the second line of defence, not the first.
+    // pulldown-cmark cannot refuse raw HTML, so its events are dropped here,
+    // except a bare `<br>`. ammonia is the second line of defence.
     let parser = Parser::new_ext(&mapped, options).filter(|event| match event {
         Event::Html(html) | Event::InlineHtml(html) => is_allowed_raw_html(html),
         _ => true,
     });
-    // Images from anywhere but this wiki's own uploads become plain links. An
-    // outside image would tell its host who read the article and when, and it
-    // can change under the article after review. The stack pairs each image's
-    // end with the choice made at its start.
+    // An outside image would tell its host who read the article, and can change
+    // after review. The stack pairs each image end with its start.
     let mut image_is_link: Vec<bool> = Vec::new();
     let parser = parser.map(move |event| match event {
         Event::Start(Tag::Image {
@@ -125,43 +100,25 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
 
     let mut dirty = String::with_capacity(mapped.len());
     pulldown_cmark::html::push_html(&mut dirty, parser);
-    // Block placeholders back to HTML. Inner bodies render through the same
-    // pipeline (depth + 1), so nesting works and preview matches save.
     let dirty = restore_custom_blocks(&dirty, blocks, depth, state);
-    // Fenced diagrams keep text, gain a class hook for the worker.
     let dirty = postprocess_diagrams(&dirty);
-    // Inline sugar on HTML text (inner formatting already rendered, so
-    // `||**bold**||` keeps its `<strong>` inside the spoiler span). Code
-    // and math sections are skipped.
+    // Runs on HTML, so inner formatting survives inside the wrappers.
     let mut dirty = postprocess_inline_spans(&dirty);
-    // Tables: pulldown-cmark reports column alignment as an inline style,
-    // which the sanitizer would strip. `align` survives the whitelist.
+    // Alignment arrives as an inline style, which ammonia strips; `align` survives.
     dirty = preserve_table_alignment(&dirty);
-    // Task list checkboxes are `<input>` elements, which the sanitizer
-    // rightly drops. They become styled marks that keep their state as text.
+    // ammonia drops the checkbox `<input>`s.
     dirty = render_task_items(&dirty);
-    // Footnotes move into the `fn-` namespace before heading ids are
-    // assigned, so `# 1` and `[^1]` never share one anchor.
+    // Before heading ids, so `# 1` and `[^1]` never share an anchor.
     dirty = namespace_footnote_ids(&dirty);
-    // Every image waits until it is scrolled to, and decodes off the main
-    // thread: an article may hold a hundred of them.
     dirty = dirty.replace("<img src=", "<img loading=\"lazy\" decoding=\"async\" src=");
     let mut anchored = add_heading_ids(&dirty);
-    // Last writer wins nothing: every id in the document must be unique, no
-    // matter whether it came from a heading, a footnote or an author attr.
     anchored = dedupe_ids(&anchored);
-    // Navigation and notes settle last: the table of contents needs final
-    // anchors, footnotes belong at the bottom in reference order.
+    // The contents need final anchors.
     anchored = insert_toc(&anchored);
     anchored = link_footnote_references(&anchored);
     anchored = collect_footnotes(&anchored);
-    // `id` and `class` join the generic whitelist so heading anchors and
-    // author styling survive. Neither executes anything; the worst a class
-    // does is collide with site styles, which is the author's own choice.
-    // `tabindex="0"` on spoilers keeps them keyboard and touch operable with
-    // zero JavaScript on the reader path. `open` on `<details>` keeps
-    // collapsible quotes working; `<ol start>` is already allowed by
-    // ammonia's defaults.
+    // `id` and `class` keep anchors and author styling; `tabindex` keeps
+    // spoilers keyboard operable; `open` keeps collapsible quotes working.
     ammonia::Builder::default()
         .add_generic_attributes(["id", "class", "tabindex"])
         .add_tag_attributes("details", ["open"])
@@ -170,14 +127,12 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
         .to_string()
 }
 
-/// An image stored by this wiki: `/media/` and nothing that could leave the
-/// site, such as `//host` or a scheme.
+/// An image stored by this wiki: under `/media/`, with no way off the site.
 fn is_local_image(url: &str) -> bool {
     url.starts_with("/media/") && !url.contains("//") && !url.contains('\\')
 }
 
-/// The only raw HTML tag the parser lets through. Everything else stays
-/// dropped per decision D12.
+/// The only raw HTML the parser lets through.
 fn is_allowed_raw_html(html: &str) -> bool {
     matches!(
         html.trim().to_ascii_lowercase().as_str(),
@@ -185,9 +140,8 @@ fn is_allowed_raw_html(html: &str) -> bool {
     )
 }
 
-/// One extracted block: `:::details`, `:::pullquote`, or a `>!` collapsible
-/// quote. A placeholder paragraph stands in for it while Markdown runs, then
-/// renders back to fixed safe HTML.
+/// A `:::details`, `:::pullquote` or `>!` block, replaced by a placeholder
+/// paragraph while Markdown runs.
 struct CustomBlock {
     kind: BlockKind,
     title: String,
@@ -201,20 +155,16 @@ enum BlockKind {
     CollapsibleQuote,
 }
 
-/// Custom blocks one document may hold, nesting included. Every block renders
-/// through the whole pipeline, so a page of thousands of empty fences would
-/// cost thousands of renders. No real article comes near this.
+/// Custom blocks per document, nesting included. Each renders through the
+/// whole pipeline, so the count is bounded.
 const BLOCK_MAX: usize = 256;
 
-/// What every nesting level of one render shares about custom blocks.
+/// Shared by every nesting level of one render.
 struct BlockState {
-    /// Placeholder prefix, `NAWBLOCK` plus a hash of the whole document. A
-    /// document cannot contain a hash of itself, so an author can never type
-    /// a placeholder. A typed one would be swapped for the block as well, once
-    /// per copy, and copies nested in quotes multiply level by level.
+    /// `NAWBLOCK` plus a hash of the document, which the document cannot contain,
+    /// so an author can never type a placeholder.
     tag: String,
-    /// Blocks the document may still open. Past the budget a fence stays
-    /// literal text, the same as an unclosed one.
+    /// Blocks the document may still open; past it, fences stay text.
     left: usize,
 }
 
@@ -235,9 +185,8 @@ impl BlockState {
     }
 }
 
-/// Pulls `:::details` / `:::pullquote` fences and `>!` quote groups out of
-/// the Markdown so the parser never sees their markers. Unclosed fences are
-/// left literal so authors always see what they wrote.
+/// Pulls custom blocks out of the Markdown so the parser never sees their
+/// markers. Unclosed fences stay literal.
 fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec<CustomBlock>) {
     let lines: Vec<&str> = markdown.split('\n').collect();
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
@@ -263,9 +212,8 @@ fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec
                 None
             };
             let Some(j) = close else {
-                // No closer below this line means none below any later opener
-                // either. Without remembering that, a page of unclosed fences
-                // walks to its end once per fence.
+                // No closer below means none below any later opener either; remembering
+                // that keeps a page of unclosed fences linear.
                 closers_left = false;
                 out.push(lines[i].to_string());
                 i += 1;
@@ -325,17 +273,14 @@ fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec
     (out.join("\n"), blocks)
 }
 
-/// A fence line kept as text, its colon escaped. Past the block budget a
-/// block renders as the text it was written as, and a bare `:::` line would
-/// read as a `: definition`, turning the paragraph above it into a term: a
-/// block placeholder included, which then never renders.
+/// A fence kept as text with its colon escaped, so a bare `:::` does not
+/// read as a definition list marker.
 fn escape_fence(line: &str) -> String {
     let trimmed = line.trim_start();
     format!("{}\\{trimmed}", &line[..line.len() - trimmed.len()])
 }
 
-/// `>! Summary` opens a collapsible quote. Up to three leading spaces match
-/// CommonMark's blockquote rule; anything else is a normal paragraph.
+/// `>! Summary` with up to three leading spaces, as CommonMark quotes allow.
 fn parse_collapsible_opener(line: &str) -> Option<String> {
     let stripped = line.strip_prefix("   ").unwrap_or(line);
     let stripped = stripped.strip_prefix("  ").unwrap_or(stripped);
@@ -347,8 +292,7 @@ fn parse_collapsible_opener(line: &str) -> Option<String> {
     Some(summary.trim_end().to_string())
 }
 
-/// Strips one `>` quote prefix. Returns `None` for non-quote lines, which
-/// end a collapsible group.
+/// Strips one `>` prefix; `None` ends a collapsible group.
 fn strip_quote_prefix(line: &str) -> Option<&str> {
     let stripped = line.strip_prefix("   ").unwrap_or(line);
     let stripped = stripped.strip_prefix("  ").unwrap_or(stripped);
@@ -362,19 +306,15 @@ fn strip_quote_prefix(line: &str) -> Option<&str> {
     Some(rest.strip_prefix(' ').unwrap_or(rest))
 }
 
-/// Swaps block placeholders back for rendered HTML in one pass. Bodies render
-/// through the same pipeline (depth + 1); titles stay plain escaped text so a
-/// `<script>` in a summary never becomes markup. Only the HTML this level
-/// rendered is searched, never a body just put in, and each block is used
-/// once.
+/// Swaps placeholders for rendered blocks in one pass. Titles stay escaped
+/// text, and each block is used once.
 fn restore_custom_blocks(
     html: &str,
     blocks: Vec<CustomBlock>,
     depth: usize,
     state: &mut BlockState,
 ) -> String {
-    // The extractor emits the placeholder as its own paragraph, so only the
-    // paragraph form is replaced: one inside a code span never matches here.
+    // Only the paragraph form, so a placeholder in a code span never matches.
     let open = format!("<p>{}", state.tag);
     let mut slots: Vec<Option<CustomBlock>> = blocks.into_iter().map(Some).collect();
     let mut out = String::with_capacity(html.len());
@@ -441,11 +381,8 @@ fn render_block(block: &CustomBlock, depth: usize, state: &mut BlockState) -> St
     }
 }
 
-/// Maps `__italic__` to `*italic*` before parsing. pulldown-cmark hardwires
-/// `__` to `<strong>`; the project order says double underscore is italic
-/// and underline uses `++`, so this rewrite is the single place where that
-/// rule lives. Fenced code, inline code, link destinations and `$` math are
-/// left verbatim; `___triple___` is left to the parser (bold+italic).
+/// Rewrites `__italic__` to `*italic*` outside code, link destinations and
+/// math. `___triple___` is left to the parser.
 fn map_double_underscore_to_italic(markdown: &str) -> String {
     let mut out = String::with_capacity(markdown.len());
     let mut in_fence = false;
@@ -546,10 +483,7 @@ fn find_closing_double_underscore(chars: &[char], from: usize) -> Option<usize> 
     None
 }
 
-/// Fenced `mermaid`/`dot`/`graphviz`/`plantuml`/`math` blocks keep their text
-/// and gain a class hook. The Bun worker (Phase 3) renders them to SVG later;
-/// with no worker the reader still gets a readable code block. Degrade,
-/// never fail.
+/// Diagram and math fences keep their text and gain a class for the worker.
 fn postprocess_diagrams(html: &str) -> String {
     let mut out = html.to_string();
     for (lang, class) in [
@@ -568,11 +502,8 @@ fn postprocess_diagrams(html: &str) -> String {
     out
 }
 
-/// Inline chat sugar on rendered HTML: `||spoiler||`, `==mark==`,
-/// `++underline++`, `((kbd))` and `:emoji:` shortcodes. Runs on HTML (not
-/// Markdown) so inner `**bold**` is
-/// already `<strong>` and survives inside the wrapper. `<pre>`, `<code>`
-/// and math spans are skipped so code samples stay literal.
+/// Inline sugar on rendered HTML: spoilers, marks, underline, kbd and
+/// shortcodes. Code, `<pre>` and math are skipped.
 fn postprocess_inline_spans(html: &str) -> String {
     let mut current = html.to_string();
     for pass in [
@@ -612,15 +543,14 @@ enum Pass {
     Emoji,
 }
 
-/// Fixed highlight colors for `==color|text==`. A closed set keeps author
-/// input out of both class names and style attributes.
+/// Highlight colors for `==color|text==`, a closed set so author input never
+/// reaches a class name.
 const MARK_COLORS: &[&str] = &[
     "red", "orange", "yellow", "green", "blue", "violet", "pink", "gray",
 ];
 
-/// `==red|text==` becomes `<mark class="mark-red">`. Unknown color names
-/// fall through to the plain `==mark==` pass, so `==a|b==` still highlights
-/// instead of dying. HTML tags are skipped.
+/// `==red|text==` to `<mark class="mark-red">`; unknown colors fall through
+/// to plain `==mark==`.
 fn replace_mark_color(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let d = ['=', '='];
@@ -675,8 +605,7 @@ struct HtmlSegment<'a> {
     protected: bool,
 }
 
-/// Splits rendered HTML into protected (`<pre>`, `<code>`, math spans) and
-/// normal segments. Delimiter replacement only runs on normal ones.
+/// Splits HTML into protected (`<pre>`, `<code>`, math) and normal segments.
 fn split_protected_html(html: &str) -> Vec<HtmlSegment<'_>> {
     let mut segs = Vec::new();
     let mut i = 0;
@@ -710,8 +639,7 @@ fn split_protected_html(html: &str) -> Vec<HtmlSegment<'_>> {
             i += len;
             normal_start = i;
         } else {
-            // One character, not one byte: `&html[i..]` above must always land
-            // on a character boundary, and Cyrillic letters are two bytes.
+            // Step by character: `&html[i..]` must stay on a char boundary.
             i += rest.chars().next().map_or(1, char::len_utf8);
         }
     }
@@ -724,17 +652,13 @@ fn split_protected_html(html: &str) -> Vec<HtmlSegment<'_>> {
     segs
 }
 
-/// Replaces `||a||`-style pairs with an HTML wrapper. Flanking rules keep
-/// `C++`, `x==y` and `a||b` literal: the opener needs a non-alphanumeric
-/// (or start) before it and a non-space after it; the closer needs a
-/// non-space before it and a non-alphanumeric (or end) after it. First
-/// close wins, empty pairs are left alone.
+/// Replaces `||a||`-style pairs with `open_tag`/`close_tag`. Flanking rules
+/// keep `C++`, `x==y` and `a||b` literal; the first valid closer wins and
+/// empty pairs stay.
 fn replace_delimited(text: &str, delim: &str, open_tag: &str, close_tag: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let d: Vec<char> = delim.chars().collect();
-    // The inner text must hold something besides spaces and no delimiter.
-    // Both are span lookups: collecting the text first would walk it per
-    // opener, even for the ones that end up rejected.
+    // Span checks by running counts, so rejected openers cost no walk.
     let delims = Counts::new(chars.len(), |i| matches_delim(&chars, i, &d));
     let solid = Counts::new(chars.len(), |i| !chars[i].is_whitespace());
     let mut closers = Closers::default();
@@ -759,7 +683,7 @@ fn replace_delimited(text: &str, delim: &str, open_tag: &str, close_tag: &str) -
             }
             continue;
         }
-        // Skip over HTML tags so `class="a==b"` never matches.
+        // Skip tags so `class="a==b"` never matches.
         if chars[i] == '<' {
             while i < chars.len() && chars[i] != '>' {
                 out.push(chars[i]);
@@ -787,8 +711,7 @@ fn is_valid_opener(chars: &[char], at: usize, len: usize) -> bool {
     prev_ok && next_ok
 }
 
-/// The first valid closer on the line, and where the walk stopped: at the
-/// closer, at the line end, or at the text end.
+/// The first valid closer on the line, and where the walk stopped.
 fn find_valid_closer(chars: &[char], from: usize, d: &[char]) -> (Option<usize>, usize) {
     let mut i = from;
     while i + d.len() <= chars.len() {
@@ -814,9 +737,8 @@ fn find_valid_closer(chars: &[char], from: usize, d: &[char]) -> (Option<usize>,
     (None, i)
 }
 
-/// `((Ctrl+C))` becomes `<kbd>Ctrl+C</kbd>`. Same flanking idea as the
-/// symmetric delimiters, with `(` and `)` as the guard characters so smileys
-/// like `:((` stay literal. HTML tags are skipped.
+/// `((Ctrl+C))` to `<kbd>Ctrl+C</kbd>`, with parentheses as the flanking
+/// guard so smileys like `:((` stay literal.
 fn replace_kbd(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let pairs = Counts::new(chars.len(), |i| {
@@ -863,7 +785,7 @@ fn replace_kbd(text: &str) -> String {
     out
 }
 
-/// Same contract as [`find_valid_closer`], for `))`.
+/// As [`find_valid_closer`], for `))`.
 fn find_kbd_close(chars: &[char], from: usize) -> (Option<usize>, usize) {
     let mut i = from;
     while i + 1 < chars.len() {
@@ -891,11 +813,8 @@ fn find_kbd_close(chars: &[char], from: usize) -> (Option<usize>, usize) {
     (None, i)
 }
 
-/// `:fire:` style shortcodes become Unicode pictographs from a fixed table.
-/// Unknown codes, times like `12:30` and URLs stay literal: the opener needs
-/// a non-alphanumeric before it and an alphanumeric after it, the name is
-/// 2 to 32 chars from a small charset, and the closer must not be followed
-/// by an alphanumeric. HTML tags are skipped.
+/// `:fire:` shortcodes to Unicode emoji. Times like `12:30` and URLs stay
+/// literal by the flanking rules.
 fn replace_emoji(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
@@ -932,10 +851,7 @@ fn replace_emoji(text: &str) -> String {
                 i = j + 1;
                 continue;
             }
-            // Not a Unicode shortcode: maybe one of the wiki's emotes. The
-            // renderer does not know which exist, so it marks the spot and
-            // the web layer swaps in the picture when it serves the page.
-            // Unknown names keep reading as the text the author typed.
+            // Maybe one of the wiki's emotes; the web layer decides when it serves.
             if closed && next_ok && is_emote_name(&name) {
                 out.push_str(EMOTE_OPEN);
                 out.push(':');
@@ -955,15 +871,13 @@ fn replace_emoji(text: &str) -> String {
     out
 }
 
-/// How an emote reference leaves the renderer: `:name:` inside this span.
-/// Only this module writes it (raw HTML never reaches the output), so the
-/// web layer can trust any span of this exact shape to hold a valid name.
+/// Marks an emote reference, `:name:` inside this span. Only the renderer
+/// writes it, so the web layer can trust its contents.
 pub const EMOTE_OPEN: &str = "<span class=\"naw-emote\">";
 pub const EMOTE_CLOSE: &str = "</span>";
 
-/// A name that can be written as `:name:`: an ASCII letter or digit first,
-/// then letters, digits, `_`, `-` and `+`, up to 64 in all. Emotes with
-/// other names cannot be referenced and are not imported.
+/// Whether `name` can be written as `:name:`: an ASCII letter or digit, then
+/// letters, digits, `_`, `-` and `+`, at most 64.
 pub fn is_emote_name(name: &str) -> bool {
     name.len() <= 64
         && name
@@ -973,8 +887,7 @@ pub fn is_emote_name(name: &str) -> bool {
         && name.chars().all(is_shortcode_char)
 }
 
-/// Whether `:name:` already means a Unicode emoji. Such a name always renders
-/// as the emoji, so an emote by that name would never show.
+/// Whether `:name:` is a Unicode emoji, which always wins over an emote.
 pub fn is_unicode_shortcode(name: &str) -> bool {
     emoji_for(name).is_some()
 }
@@ -983,9 +896,7 @@ fn is_shortcode_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '+'
 }
 
-/// Fixed shortcode table, Discord and GitHub flavored. Deliberately small:
-/// every entry is plain Unicode text, so it works with JavaScript off and in
-/// every skin with no assets. Unknown codes render literally.
+/// Fixed shortcode table; plain Unicode, so no assets are needed.
 fn emoji_for(name: &str) -> Option<&'static str> {
     Some(match name {
         "heart" => "\u{2764}",
@@ -1077,9 +988,7 @@ fn emoji_for(name: &str) -> Option<&'static str> {
     })
 }
 
-/// pulldown-cmark marks aligned table cells with an inline `style`, which
-/// ammonia strips. Only the table writer emits this exact shape, so a plain
-/// rewrite to the whitelisted `align` attribute is safe.
+/// Rewrites the writer's inline alignment style to the `align` attribute.
 fn preserve_table_alignment(html: &str) -> String {
     let mut out = html.to_string();
     for align in ["left", "center", "right"] {
@@ -1091,9 +1000,7 @@ fn preserve_table_alignment(html: &str) -> String {
     out
 }
 
-/// Moves footnote anchors into the `fn-` namespace: `[^a]` becomes
-/// `#fn-a` on both the reference and the definition. Exact prefixes from
-/// the pulldown-cmark writer, so author text can never collide with them.
+/// Moves footnote anchors into the `fn-` namespace on both ends.
 fn namespace_footnote_ids(html: &str) -> String {
     html.replace(
         "<div class=\"footnote-definition\" id=\"",
@@ -1105,11 +1012,8 @@ fn namespace_footnote_ids(html: &str) -> String {
     )
 }
 
-/// Enforces document wide id uniqueness in document order. The first use of
-/// an id wins; later ones gain `-2`, `-3` suffixes. Renamed footnote
-/// definitions pull their reference links along, so jumps never land on the
-/// wrong element. Plain content links to a duplicated anchor keep pointing
-/// at the first one, which matches the heading rule authors already know.
+/// Makes every id unique in document order: the first keeps it, later ones
+/// gain `-2`, `-3`, and renamed footnotes pull their references along.
 fn dedupe_ids(html: &str) -> String {
     use std::collections::HashMap;
     let mut seen: HashMap<String, usize> = HashMap::new();
@@ -1146,8 +1050,6 @@ fn dedupe_ids(html: &str) -> String {
     if renames.is_empty() {
         return out;
     }
-    // One pass over the references, not one per renamed note. The first
-    // rename of an id is the one its references follow.
     let mut targets: HashMap<String, String> = HashMap::new();
     for (old, new) in renames {
         targets.entry(old).or_insert(new);
@@ -1172,10 +1074,8 @@ fn dedupe_ids(html: &str) -> String {
     linked.push_str(rest);
     linked
 }
-/// Replaces a lone `[[toc]]` paragraph with a nav of the page headings.
-/// Runs on final HTML so links match the assigned ids exactly, duplicates
-/// included. Accepts the raw `[[toc]]` form and the wikilink form the
-/// parser makes of it. Without headings the placeholder vanishes silently.
+/// Replaces the first lone `[[toc]]` with a nav of the headings, on final
+/// HTML so links match the assigned ids; later markers vanish.
 fn insert_toc(html: &str) -> String {
     let mut items: Vec<(u32, String, String)> = Vec::new();
     let mut rest = html;
@@ -1203,15 +1103,14 @@ fn insert_toc(html: &str) -> String {
             break;
         };
         let inner = &rest[content_start..content_start + content_end];
-        // Already HTML escaped by the renderer, so no second escaping here.
+        // Already escaped by the renderer.
         let text = strip_inline_tags(inner).trim().to_string();
         if !text.is_empty() {
             items.push((n, id, text));
         }
         rest = &rest[content_start + content_end + close.len()..];
     }
-    // A lone `#` heading is the page title, already on screen above the
-    // contents. Only when an author uses several does level one mean sections.
+    // A single `#` heading is the page title, not a section.
     if items.iter().filter(|(level, _, _)| *level == 1).count() == 1 {
         items.retain(|(level, _, _)| *level != 1);
     }
@@ -1227,9 +1126,7 @@ fn insert_toc(html: &str) -> String {
         nav.push_str("</ul></nav>");
         nav
     };
-    // The first marker gets the nav, later ones vanish. Every copy of a nav
-    // is the size of all headings, so a page of markers and headings would
-    // otherwise grow with the product of the two.
+    // Every nav copy is as large as all headings, so only the first is kept.
     const TOC: &str = "<p>[[toc]]</p>";
     let html = html.replace("<p><a href=\"toc\">toc</a></p>", TOC);
     match html.split_once(TOC) {
@@ -1238,7 +1135,7 @@ fn insert_toc(html: &str) -> String {
     }
 }
 
-/// Reads `attr="value"` from a tag fragment. First match wins.
+/// `attr="value"` from a tag fragment; the first match wins.
 fn attr_value(tag: &str, attr: &str) -> Option<String> {
     let key = format!("{attr}=\"");
     let pos = tag.find(&key)?;
@@ -1247,11 +1144,7 @@ fn attr_value(tag: &str, attr: &str) -> Option<String> {
     Some(tag[start..start + end].to_string())
 }
 
-/// Collects footnote definitions at the end of the body. pulldown-cmark
-/// emits each definition where its `[^n]:` line stands, so a note defined
-/// mid article would split the reading flow. Readers expect notes at the
-/// bottom in reference order, so they move into one closing block. Nesting
-/// aware: a definition holding details or divs keeps them.
+/// Moves footnote definitions into one block at the end, in reference order.
 fn collect_footnotes(html: &str) -> String {
     const OPEN: &str = "<div class=\"footnote-definition\"";
     let mut defs: Vec<&str> = Vec::new();
@@ -1281,8 +1174,6 @@ fn collect_footnotes(html: &str) -> String {
             {
                 depth += 1;
             }
-            // Step a whole character, so the slices above stay on boundaries
-            // when a note is written in anything but ASCII.
             i += rest[i..].chars().next().map_or(1, char::len_utf8);
         }
         match end {
@@ -1304,8 +1195,6 @@ fn collect_footnotes(html: &str) -> String {
     let anchored = anchored_references(html);
     out.push_str("<div class=\"footnotes\">");
     for def in defs {
-        // A note whose reference got an anchor links back to it, so a reader
-        // who jumped down can return to the sentence they left.
         let back = attr_value(def, "id")
             .and_then(|id| id.strip_prefix("fn-").map(|n| format!("fnref-{n}")))
             .filter(|back| anchored.contains(back.as_str()));
@@ -1323,8 +1212,7 @@ fn collect_footnotes(html: &str) -> String {
     out
 }
 
-/// Anchors of footnote references that got one, collected in one pass rather
-/// than searched for per note.
+/// Anchors of footnote references, collected in one pass.
 fn anchored_references(html: &str) -> HashSet<&str> {
     const OPEN: &str = "<sup class=\"footnote-reference\" id=\"";
     let mut found = HashSet::new();
@@ -1342,7 +1230,7 @@ fn anchored_references(html: &str) -> HashSet<&str> {
     found
 }
 
-/// Every `id="…"` value in the document, collected in one pass.
+/// Every `id` value in the document, collected in one pass.
 fn ids_in(html: &str) -> HashSet<&str> {
     let mut ids = HashSet::new();
     let mut rest = html;
@@ -1357,10 +1245,8 @@ fn ids_in(html: &str) -> HashSet<&str> {
     ids
 }
 
-/// Gives the first reference to each footnote an anchor (`fnref-1` for
-/// `fn-1`), the target of the note's way back. Later references to the same
-/// note stay plain: one note can only return to one place. An id already in
-/// use elsewhere wins, and that note simply goes without a way back.
+/// Anchors the first reference to each footnote (`fnref-1` for `fn-1`) so
+/// the note can link back; an id already in use wins.
 fn link_footnote_references(html: &str) -> String {
     const OPEN: &str = "<sup class=\"footnote-reference\"><a href=\"#fn-";
     let mut out = String::with_capacity(html.len() + 64);
@@ -1390,9 +1276,8 @@ fn link_footnote_references(html: &str) -> String {
     out
 }
 
-/// Turns pulldown-cmark's disabled checkboxes into marks the sanitizer
-/// keeps. The state stays in the text as `[x]` or `[ ]` for screen readers
-/// and copy paste, and skins draw the box from the `task-done` class.
+/// Turns disabled checkboxes into marks the sanitizer keeps; the state stays
+/// in the text as `[x]` or `[ ]`.
 fn render_task_items(html: &str) -> String {
     const DONE: &str = "<li><input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n";
     const TODO: &str = "<li><input disabled=\"\" type=\"checkbox\"/>\n";
@@ -1405,8 +1290,7 @@ fn render_task_items(html: &str) -> String {
         "<li class=\"task\"><span class=\"task-mark\">[ ]</span> ",
     )
 }
-/// Gives every `#`-heading a stable `id` so pages support `#fragment`
-/// links and a future table of contents. Duplicate titles get `-2`, `-3`.
+/// Gives every heading a stable `id`; duplicates get `-2`, `-3`.
 fn add_heading_ids(html: &str) -> String {
     use std::collections::HashMap;
     use std::fmt::Write;
@@ -1464,9 +1348,8 @@ fn add_heading_ids(html: &str) -> String {
     out
 }
 
-/// Splits a trailing `{key="value" ...}` block off heading HTML. Only `id`
-/// and `class` survive, anything else is dropped. A malformed block stays
-/// literal text so authors always see what they wrote.
+/// Splits a trailing `{id="..." class="..."}` off heading HTML. Other keys
+/// are dropped; a malformed block stays literal.
 fn split_heading_attrs(inner: &str) -> (&str, Option<&str>, Option<&str>) {
     let trimmed = inner.trim_end();
     if !trimmed.ends_with('}') {
@@ -1541,39 +1424,26 @@ fn slugify(text: &str) -> String {
     slug.trim_matches('-').to_string()
 }
 
-/// Version of the render pipeline. Part of the `render_cache` key: bump it
-/// whenever `render_body` output changes for identical input.
-///
-/// Skin and chrome changes no longer count. The cache holds the body fragment
-/// only, so a footer edit is not a new rendering, and the same article under
-/// two skins is one cache row instead of two.
+/// Render pipeline version, part of the `render_cache` key. Bump it whenever
+/// the output changes for the same input.
 pub const RENDERER_VERSION: i32 = 15;
 
-/// A rendered body fragment plus the key it is cached under.
+/// A rendered body fragment and its cache key.
 pub struct RenderedBody {
     pub content_hash: Vec<u8>,
     pub html: String,
-    /// How long the Markdown stage took. The footer shows it, and it is the
-    /// only part of the page worth measuring: the shell is a template render.
+    /// Time spent in the Markdown stage.
     pub render_ms: u64,
 }
 
-/// Body-only content hash, and the `render_cache` key.
-///
-/// The same value `revisions.content_hash` stores, which is the point: a
-/// revision and its cached rendering are addressed by one hash, so looking up
-/// the rendering for a revision needs no second column and cannot disagree.
+/// The body hash: `revisions.content_hash` and the `render_cache` key.
 pub fn content_hash(body_md: &str) -> Vec<u8> {
     use sha2::{Digest, Sha256};
     Sha256::digest(body_md.as_bytes()).to_vec()
 }
 
-/// Renders Markdown to a sanitized HTML fragment, timed, with its cache key.
-///
-/// This is the expensive half of serving a page and the only half worth
-/// caching. Assembling the document around it belongs to the web layer,
-/// because the surrounding chrome depends on who is asking and must never end
-/// up in a shared cache row.
+/// Renders a body fragment, timed, with its cache key. The chrome around it
+/// is per visitor and stays out of the cache.
 pub fn render_body(body_md: &str) -> RenderedBody {
     let started = std::time::Instant::now();
     let html = render_html(body_md);
@@ -1633,8 +1503,7 @@ mod tests {
 
     #[test]
     fn drops_raw_html_that_sanitizing_would_keep() {
-        // ammonia allows <div>, so only the parser level filter removes this.
-        // If this test fails, D12 is not actually implemented.
+        // ammonia allows <div>, so only the parser filter removes this.
         let html = render_html("<div>raw block</div>");
         assert!(!html.contains("<div"));
         assert!(!html.contains("raw block"));
@@ -1698,7 +1567,6 @@ mod tests {
         let rendered = render_body("# Hi");
         assert_eq!(rendered.html, render_html("# Hi"));
         assert!(rendered.html.contains("<h1 id=\"hi\">Hi</h1>"));
-        // A fragment, not a document: assembling one is the web layer's job.
         assert!(!rendered.html.contains("<html"));
         assert!(!rendered.html.contains("<title"));
         assert_eq!(rendered.content_hash, content_hash("# Hi"));
@@ -1706,15 +1574,11 @@ mod tests {
 
     #[test]
     fn the_cache_key_is_the_revision_hash_and_nothing_else() {
-        // The design claim of the split render, asserted. The cache holds the
-        // body fragment, so nothing outside the body may change the key: the
-        // same article under two skins, two titles or two locales is one cache
-        // row, and editing only the title does not throw the rendering away.
+        // Only the body may change the key.
         let a = content_hash("# Hi");
         assert_eq!(a, content_hash("# Hi"));
         assert_eq!(a, render_body("# Hi").content_hash);
         assert_ne!(a, content_hash("# Bye"));
-        // Whitespace is content: a trailing newline is a different revision.
         assert_ne!(a, content_hash("# Hi\n"));
     }
 
@@ -1727,8 +1591,6 @@ mod tests {
 
     #[test]
     fn strikethrough_sup_sub_render() {
-        // pulldown-cmark uses flanking rules: intra-word `H~2~O` stays
-        // literal, spaced delimiters render. Document the spaced form.
         let html = render_html("~~gone~~ H ~2~ O E=mc ^2^.\n");
         assert!(html.contains("<del>gone</del>"), "{html}");
         assert!(html.contains("<sub>2</sub>"), "{html}");
@@ -1976,8 +1838,7 @@ mod tests {
 
     #[test]
     fn a_typed_placeholder_is_only_text() {
-        // The old fixed placeholder, typed by an author: it once pulled in a
-        // copy of the block per paragraph.
+        // The old fixed placeholder, typed by an author.
         let md = format!(
             ":::details T\nbody\n:::\n\n{}",
             "NAWBLOCK0NAW\n\n".repeat(50)
@@ -1989,8 +1850,7 @@ mod tests {
 
     #[test]
     fn nested_placeholders_do_not_multiply() {
-        // Eight levels of `>!`, each also holding typed placeholders. Were any
-        // of them swapped for a block, the output would be exponential.
+        // Eight levels of `>!` with typed placeholders: any swap would be exponential.
         let mut md = String::from("core\n");
         for level in 0..8 {
             let quoted: String = md.lines().map(|line| format!("> {line}\n")).collect();
@@ -2023,8 +1883,6 @@ mod tests {
 
     #[test]
     fn failed_openers_do_not_hide_a_later_pair() {
-        // The first opener finds a closer whose span holds another delimiter,
-        // so it is rejected; the second opener reuses that search.
         let html = render_html("||a ||b||");
         assert!(
             html.contains("||a <span class=\"spoiler\" tabindex=\"0\">b</span>"),
@@ -2041,8 +1899,7 @@ mod tests {
 
     #[test]
     fn a_line_of_unclosed_openers_stays_fast() {
-        // No opener here has a closer on the line. The bound is loose on
-        // purpose: it separates linear from quadratic, it is no benchmark.
+        // Loose bound: it separates linear from quadratic.
         let line = " ||a ==a ++a ((a ==red|a".repeat(10_000);
         let started = std::time::Instant::now();
         let html = render_html(&line);
@@ -2063,9 +1920,8 @@ mod tests {
 
 #[cfg(test)]
 mod non_ascii {
-    //! The HTML post-processing walks strings by position. Every walk must step
-    //! by whole characters: a byte step lands inside a two-byte Cyrillic letter
-    //! and panics, which took down saving any Russian page with a heading.
+    //! Every position walk must step by whole characters, or a two-byte
+    //! Cyrillic letter panics the renderer.
     use super::render_html;
 
     #[test]

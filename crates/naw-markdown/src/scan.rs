@@ -1,13 +1,9 @@
 //! Bookkeeping that keeps the inline sugar passes linear.
 //!
-//! Each pass walks a line looking for an opener, then walks on for its closer.
-//! A line of openers with no closer (`||a ||a ||a …`) would repeat that second
-//! walk to the end of the line once per opener, quadratic in a line an author
-//! controls entirely. Everything here answers in constant time what a walk
-//! would have found.
+//! A line of openers without closers (`||a ||a ...`) would otherwise walk to
+//! the line end once per opener.
 
-/// Running totals over one text run, so "does this span hold any" is two
-/// lookups instead of a walk over the span.
+/// Running totals over one text run, so a span check is two lookups.
 pub(crate) struct Counts(Vec<u32>);
 
 impl Counts {
@@ -30,11 +26,9 @@ impl Counts {
 
 /// The last closer search of one pass.
 ///
-/// Searches only move forward, and every one starts on a position the
-/// previous walk stepped on: never inside a tag it skipped, never on the
-/// second character of a pair it jumped. So a search that starts between the
-/// previous start and where that walk stopped takes the same steps from there
-/// and reaches the same answer. It gets that answer without walking again.
+/// Searches only move forward and start on a position the previous walk
+/// stepped on, so one starting inside the previous walk's range reaches the
+/// same answer, which is returned without walking again.
 #[derive(Default)]
 pub(crate) struct Closers {
     last: Option<(usize, usize, Option<usize>)>,
