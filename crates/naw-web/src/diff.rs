@@ -122,11 +122,15 @@ pub fn diff_bodies(old: &str, new: &str) -> Diff {
                 }
                 ChangeTag::Delete => {
                     removed += 1;
-                    block.removed.push((change.old_index().map_or(0, |i| i + 1), text));
+                    block
+                        .removed
+                        .push((change.old_index().map_or(0, |i| i + 1), text));
                 }
                 ChangeTag::Insert => {
                     added += 1;
-                    block.added.push((change.new_index().map_or(0, |i| i + 1), text));
+                    block
+                        .added
+                        .push((change.new_index().map_or(0, |i| i + 1), text));
                 }
             }
         }
@@ -460,7 +464,10 @@ mod tests {
         assert_eq!(marked(old), vec!["many"]);
         assert_eq!(marked(new), vec!["some", " and snackers"]);
         assert_eq!(old.text(), "A long line with many words about Filian.");
-        assert_eq!(new.text(), "A long line with some words about Filian and snackers.");
+        assert_eq!(
+            new.text(),
+            "A long line with some words about Filian and snackers."
+        );
     }
 
     #[test]
@@ -504,7 +511,9 @@ mod tests {
     #[test]
     fn separate_runs_of_changes_are_numbered() {
         let old: String = (0..30).map(|i| format!("line {i}\n")).collect();
-        let new = old.replace("line 3\n", "LINE 3\n").replace("line 25\n", "LINE 25\n");
+        let new = old
+            .replace("line 3\n", "LINE 3\n")
+            .replace("line 25\n", "LINE 25\n");
         let diff = diff_bodies(&old, &new);
         assert_eq!(diff.hunks, 2);
         let hunks: Vec<usize> = diff

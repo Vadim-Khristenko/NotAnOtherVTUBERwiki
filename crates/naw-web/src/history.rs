@@ -575,4 +575,3 @@ pub async fn patrol(
     .await;
     Ok(pages::see_other(&ctx.link(&format!("/{slug}/history"))))
 }
-
