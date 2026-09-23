@@ -343,15 +343,7 @@ async fn render_page(
             }
         })
         .map_err(template_error)?;
-    Ok((
-        status,
-        [
-            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-            (header::CACHE_CONTROL, "no-store"),
-        ],
-        html,
-    )
-        .into_response())
+    Ok(crate::pages::private_page(status, html))
 }
 
 fn refusal_message(state: &AppState, ctx: &crate::resolve::Ctx, refusal: Refusal) -> String {
@@ -382,9 +374,7 @@ pub async fn page(
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let Some(ctx) = crate::resolve::context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     if !ctx.actor.can(Capability::PageEdit) {
         if !ctx.actor.is_signed_in() {
             return Ok(pages::see_other("/login?next=%2Fmedia"));
@@ -405,9 +395,7 @@ pub async fn upload(
         .get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.contains("application/json"));
-    let Some(ctx) = crate::resolve::context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     if !ctx.actor.can(Capability::PageEdit) {
         return Ok((StatusCode::FORBIDDEN, "uploading needs edit rights").into_response());
     }

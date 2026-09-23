@@ -46,18 +46,7 @@ pub struct PasswordForm {
     next: String,
 }
 
-/// A page never stored: it carries a secrets form or who is signed in.
-fn private_page(status: StatusCode, html: String) -> Response {
-    (
-        status,
-        [
-            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-            (header::CACHE_CONTROL, "no-store"),
-        ],
-        html,
-    )
-        .into_response()
-}
+use crate::pages::private_page;
 
 async fn context(
     state: &AppState,

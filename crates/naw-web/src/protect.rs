@@ -63,9 +63,7 @@ pub async fn set(
     if !pages::slug_is_valid(&slug) {
         return Ok(crate::errors::not_found());
     }
-    let Some(ctx) = crate::resolve::context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let Some(found) = pages::find_page(&state.db, ctx.wiki.id, &slug, &ctx.content_locale).await?
     else {
         return Ok(crate::errors::not_found());

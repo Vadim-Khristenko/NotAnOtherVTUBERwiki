@@ -90,10 +90,7 @@ pub async fn overview(
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     let stats = sqlx::query!(
         r#"
         SELECT
@@ -176,10 +173,7 @@ pub async fn users(
     headers: HeaderMap,
     Query(query): Query<ListQuery>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     let page_no = query.page.unwrap_or(1).max(1);
     let offset = (page_no - 1) * PER_PAGE;
     // Empty means everybody; otherwise a substring match.
@@ -275,10 +269,7 @@ pub async fn set_role(
     headers: HeaderMap,
     Form(form): Form<RoleForm>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::UserRoleManage) {
         return Ok((StatusCode::FORBIDDEN, "changing roles needs admin rights").into_response());
     }
@@ -484,10 +475,7 @@ pub async fn new_user(
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::UserRoleManage) {
         return Ok((
             StatusCode::FORBIDDEN,
@@ -529,10 +517,7 @@ pub async fn create_user(
     headers: HeaderMap,
     Form(form): Form<NewUserForm>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::UserRoleManage) {
         return Ok((
             StatusCode::FORBIDDEN,
@@ -649,10 +634,7 @@ pub async fn reset_password(
     headers: HeaderMap,
     Form(form): Form<ResetForm>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     let Some(target_id) = pages::parse_uuid(&form.user_id) else {
         return Ok((StatusCode::UNPROCESSABLE_ENTITY, "user_id: expected an id").into_response());
     };
@@ -717,10 +699,7 @@ pub async fn chrome_settings(
     headers: HeaderMap,
     Query(query): Query<SavedQuery>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::WikiSettings) {
         return Ok((StatusCode::FORBIDDEN, "wiki settings need admin rights").into_response());
     }
@@ -763,10 +742,7 @@ pub async fn save_chrome_settings(
     headers: HeaderMap,
     Form(form): Form<std::collections::HashMap<String, String>>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::WikiSettings) {
         return Ok((StatusCode::FORBIDDEN, "wiki settings need admin rights").into_response());
     }
@@ -868,10 +844,7 @@ pub async fn account_rules(
     headers: HeaderMap,
     Query(query): Query<SavedQuery>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if ctx.actor.global != GlobalRole::Root {
         return Ok((
             StatusCode::FORBIDDEN,
@@ -930,10 +903,7 @@ pub async fn save_account_rules(
     headers: HeaderMap,
     Form(form): Form<AccountRulesForm>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if ctx.actor.global != GlobalRole::Root {
         return Ok((
             StatusCode::FORBIDDEN,
@@ -978,10 +948,7 @@ pub async fn pages_list(
     headers: HeaderMap,
     Query(query): Query<ListQuery>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     let page_no = query.page.unwrap_or(1).max(1);
     let offset = (page_no - 1) * PER_PAGE;
     let filter = query
@@ -1103,10 +1070,7 @@ pub async fn page_action(
     headers: HeaderMap,
     Form(form): Form<PageActionForm>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     let Some(action) = PageAction::parse(&action) else {
         return Ok((StatusCode::NOT_FOUND, "no such action").into_response());
     };
@@ -1201,10 +1165,7 @@ pub async fn audit_log(
     headers: HeaderMap,
     Query(query): Query<ListQuery>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::AuditRead) {
         return Ok((StatusCode::FORBIDDEN, "not allowed").into_response());
     }
@@ -1291,10 +1252,7 @@ pub async fn wiki_settings(
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::WikiSettings) {
         return Ok((StatusCode::FORBIDDEN, "not allowed").into_response());
     }
@@ -1354,10 +1312,7 @@ pub async fn save_wiki_settings(
     headers: HeaderMap,
     Form(form): Form<WikiForm>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::WikiSettings) {
         return Ok((StatusCode::FORBIDDEN, "not allowed").into_response());
     }
@@ -1473,10 +1428,7 @@ pub async fn reindex(
     headers: HeaderMap,
     Form(form): Form<ReindexForm>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::WikiSettings) {
         return Ok((StatusCode::FORBIDDEN, "not allowed").into_response());
     }
@@ -1511,10 +1463,7 @@ pub async fn languages(
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::WikiSettings) {
         return Ok((StatusCode::FORBIDDEN, "not allowed").into_response());
     }
@@ -1579,10 +1528,7 @@ pub async fn save_languages(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::WikiSettings) {
         return Ok((StatusCode::FORBIDDEN, "not allowed").into_response());
     }
@@ -1682,10 +1628,7 @@ pub async fn reload(
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::WikiSettings) {
         return Ok((StatusCode::FORBIDDEN, "not allowed").into_response());
     }
@@ -1731,10 +1674,7 @@ pub async fn error_gallery(
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     let kinds: Vec<minijinja::Value> = crate::errors::Kind::ALL
         .into_iter()
         .map(|kind| {
@@ -1772,10 +1712,7 @@ pub async fn error_preview(
     Query(query): Query<PreviewQuery>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     let Some(kind) = crate::errors::Kind::parse(&kind) else {
         return Ok(crate::errors::not_found());
     };

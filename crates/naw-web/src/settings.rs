@@ -182,15 +182,7 @@ pub async fn page(
             }
         })
         .map_err(template_error)?;
-    Ok((
-        StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-            (header::CACHE_CONTROL, "no-store"),
-        ],
-        html,
-    )
-        .into_response())
+    Ok(crate::pages::private_page(StatusCode::OK, html))
 }
 
 #[derive(Deserialize)]

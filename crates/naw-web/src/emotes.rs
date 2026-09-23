@@ -574,9 +574,7 @@ pub async fn list(
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let Some(ctx) = crate::resolve::context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let emotes: Vec<minijinja::Value> = sqlx::query!(
         "SELECT e.name, e.storage_key, e.width, e.height, s.label
          FROM emotes e JOIN emote_sources s ON s.id = e.source_id
@@ -642,10 +640,7 @@ pub async fn admin_page(
     headers: HeaderMap,
     axum::extract::Query(query): axum::extract::Query<DoneQuery>,
 ) -> Result<Response, AppError> {
-    let ctx = match manage_gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(manage_gate(&state, &headers, user.as_ref()).await);
     let sources: Vec<minijinja::Value> = sqlx::query!(
         "SELECT id, kind, ref, label, status, error, emote_count, skipped, synced_at
          FROM emote_sources WHERE wiki_id = $1 ORDER BY created_at",
@@ -709,10 +704,7 @@ pub async fn add(
     headers: HeaderMap,
     Form(form): Form<AddForm>,
 ) -> Result<Response, AppError> {
-    let ctx = match manage_gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(manage_gate(&state, &headers, user.as_ref()).await);
     let Some(source) = parse_source(&form.source) else {
         return Ok(pages::see_other("/admin/emotes?done=unreadable"));
     };
@@ -755,10 +747,7 @@ pub async fn resync(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let ctx = match manage_gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(manage_gate(&state, &headers, user.as_ref()).await);
     let exists = sqlx::query_scalar!(
         "SELECT id FROM emote_sources WHERE id = $1 AND wiki_id = $2",
         id,
@@ -780,10 +769,7 @@ pub async fn remove(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let ctx = match manage_gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(manage_gate(&state, &headers, user.as_ref()).await);
     let removed = sqlx::query!(
         "DELETE FROM emote_sources WHERE id = $1 AND wiki_id = $2 RETURNING kind, ref, label",
         id,

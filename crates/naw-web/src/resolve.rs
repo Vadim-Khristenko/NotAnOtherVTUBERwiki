@@ -364,6 +364,17 @@ pub async fn context(
     }))
 }
 
+/// [`context`], with a missing wiki as the 404 response in `Err`.
+pub async fn required(
+    state: &naw_core::state::AppState,
+    headers: &HeaderMap,
+    user: Option<&crate::auth::session::CurrentUser>,
+) -> Result<Result<Ctx, axum::response::Response>, AppError> {
+    Ok(context(state, headers, user)
+        .await?
+        .ok_or_else(crate::errors::not_found))
+}
+
 /// `ru.wiki.example` for a wiki on `wiki.example`, when `ru` is an installed
 /// language. Never falls back to the default wiki.
 pub fn language_subdomain<'a>(

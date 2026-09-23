@@ -17,7 +17,6 @@ use crate::audit;
 use crate::auth::session::CurrentUser;
 use crate::pages::{self, ENGINE_VERSION, find_page};
 use crate::perm::Capability;
-use crate::resolve::context;
 
 /// Revisions per page of history.
 const PER_PAGE: i64 = 50;
@@ -73,9 +72,7 @@ pub async fn history(
     let Some(slug) = slug_or_404(&slug) else {
         return Ok(crate::errors::not_found());
     };
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
@@ -223,9 +220,7 @@ pub async fn revision(
     let Some(slug) = slug_or_404(&slug) else {
         return Ok(crate::errors::not_found());
     };
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
@@ -444,9 +439,7 @@ pub async fn diff(
     let Some(slug) = slug_or_404(&slug) else {
         return Ok(crate::errors::not_found());
     };
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
@@ -536,9 +529,7 @@ pub async fn revert(
     let Some(slug) = slug_or_404(&slug) else {
         return Ok(crate::errors::not_found());
     };
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
@@ -642,9 +633,7 @@ pub async fn patrol(
     let Some(slug) = slug_or_404(&slug) else {
         return Ok(crate::errors::not_found());
     };
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     if !ctx.actor.can(Capability::RevisionPatrol) {
         return Ok((StatusCode::FORBIDDEN, "patrolling needs moderator rights").into_response());
     }

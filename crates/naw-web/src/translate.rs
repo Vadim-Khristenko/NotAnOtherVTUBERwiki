@@ -260,10 +260,7 @@ pub async fn form(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let slug = slug.trim().to_lowercase();
-    let ctx = match gate(&state, &headers, user.as_ref(), &slug).await? {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref(), &slug).await?);
     let Some((from, source)) = source_page(&state, &ctx, &slug, query.from.as_deref()).await?
     else {
         return Ok(crate::errors::not_found());
@@ -318,10 +315,7 @@ pub async fn create(
     Form(form): Form<TranslateForm>,
 ) -> Result<Response, AppError> {
     let slug = slug.trim().to_lowercase();
-    let ctx = match gate(&state, &headers, user.as_ref(), &slug).await? {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref(), &slug).await?);
     let Some((from, source)) = source_page(&state, &ctx, &slug, query.from.as_deref()).await?
     else {
         return Ok(crate::errors::not_found());

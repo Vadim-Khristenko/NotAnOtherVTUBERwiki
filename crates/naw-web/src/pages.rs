@@ -18,7 +18,7 @@ use naw_core::state::AppState;
 use crate::audit;
 use crate::auth::session::CurrentUser;
 use crate::perm::Capability;
-use crate::resolve::{Ctx, context};
+use crate::resolve::Ctx;
 
 pub(crate) fn template_error(err: minijinja::Error) -> AppError {
     tracing::error!(error = %err, "template error");
@@ -38,6 +38,11 @@ pub(crate) const TEXT_FORM_MAX: usize = 3 * BODY_MAX + 256 * 1024;
 const SLUG_MAX: usize = 100;
 
 const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; charset=utf-8");
+
+/// A page never stored: it carries a form for secrets, or who is signed in.
+pub(crate) fn private_page(status: StatusCode, html: String) -> Response {
+    (status, [HTML, (header::CACHE_CONTROL, "no-store")], html).into_response()
+}
 
 /// The router fallback, so a miss goes through the middleware and comes out
 /// as a themed 404.
@@ -438,9 +443,7 @@ pub async fn home(
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let slug = ctx
         .wiki
         .settings
@@ -472,9 +475,7 @@ pub async fn page(
     if !slug_is_valid(&slug) {
         return Ok(crate::errors::not_found());
     }
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         // Offer the article in the languages it exists in, or to translate it.
@@ -685,9 +686,7 @@ pub async fn new_page(
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     if !ctx.actor.can(Capability::PageCreate) {
         return refuse(
             &ctx,
@@ -724,9 +723,7 @@ pub async fn create_page(
     headers: HeaderMap,
     Form(form): Form<NewForm>,
 ) -> Result<Response, AppError> {
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     if !ctx.actor.can(Capability::PageCreate) {
         return refuse(
             &ctx,
@@ -844,9 +841,7 @@ pub async fn edit_page(
     if !slug_is_valid(&slug) {
         return Ok(crate::errors::not_found());
     }
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
@@ -901,9 +896,7 @@ pub async fn save_page(
     if !slug_is_valid(&slug) {
         return Ok(crate::errors::not_found());
     }
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         return Ok(crate::errors::not_found());
@@ -1176,9 +1169,7 @@ pub async fn preview(
     Query(query): Query<PreviewQuery>,
     Form(form): Form<PreviewForm>,
 ) -> Result<Response, AppError> {
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     if !ctx.actor.can(Capability::PageEdit) && !ctx.actor.can(Capability::PageCreate) {
         return Ok((StatusCode::FORBIDDEN, "preview needs edit rights").into_response());
     }

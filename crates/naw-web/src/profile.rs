@@ -158,10 +158,7 @@ pub async fn show(
     Path(name): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let (ctx, person) = match resolve(&state, &headers, user.as_ref(), &name, "").await? {
-        Ok(found) => found,
-        Err(response) => return Ok(response),
-    };
+    let (ctx, person) = or_respond!(resolve(&state, &headers, user.as_ref(), &name, "").await?);
     let page = profile_page(&state, ctx.wiki.id, &person.username).await?;
     let body_html = match &page {
         Some(page) => Some(
@@ -251,10 +248,8 @@ pub async fn edit(
     Path(name): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let (ctx, person) = match resolve(&state, &headers, user.as_ref(), &name, "/edit").await? {
-        Ok(found) => found,
-        Err(response) => return Ok(response),
-    };
+    let (ctx, person) =
+        or_respond!(resolve(&state, &headers, user.as_ref(), &name, "/edit").await?);
     if !may_edit(&state, &ctx, &person).await? {
         return Ok(forbidden(&ctx, &person));
     }
@@ -332,10 +327,8 @@ pub async fn save(
     headers: HeaderMap,
     Form(form): Form<ProfileForm>,
 ) -> Result<Response, AppError> {
-    let (ctx, person) = match resolve(&state, &headers, user.as_ref(), &name, "/edit").await? {
-        Ok(found) => found,
-        Err(response) => return Ok(response),
-    };
+    let (ctx, person) =
+        or_respond!(resolve(&state, &headers, user.as_ref(), &name, "/edit").await?);
     if !may_edit(&state, &ctx, &person).await? {
         return Ok(forbidden(&ctx, &person));
     }

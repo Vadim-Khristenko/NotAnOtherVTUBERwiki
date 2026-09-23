@@ -1,5 +1,16 @@
 //! NotAnotherWiki Engine HTTP layer: router, middleware, handlers.
 
+/// The `Ok` value, or return the ready-made response in `Err` from the
+/// handler: `let ctx = or_respond!(admin::gate(...).await);`.
+macro_rules! or_respond {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(response) => return Ok(response),
+        }
+    };
+}
+
 mod account;
 mod admin;
 mod admin_user;

@@ -71,10 +71,7 @@ pub async fn show(
     headers: HeaderMap,
     Query(query): Query<DoneQuery>,
 ) -> Result<Response, AppError> {
-    let ctx = match gate(&state, &headers, user.as_ref()).await {
-        Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
-    };
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     let Some(t) = target(&state, &ctx, &name).await? else {
         return Ok(crate::errors::not_found());
     };
@@ -346,10 +343,7 @@ pub async fn set_capability(
     headers: HeaderMap,
     Form(form): Form<CapabilityForm>,
 ) -> Result<Response, AppError> {
-    let (ctx, t) = match resolve_managed(&state, &headers, user.as_ref(), &name).await? {
-        Ok(found) => found,
-        Err(response) => return Ok(response),
-    };
+    let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
     let Some(cap) = Capability::parse(&form.capability) else {
         return Ok((StatusCode::UNPROCESSABLE_ENTITY, "unknown capability").into_response());
     };
@@ -429,10 +423,7 @@ pub async fn add_sanction(
     headers: HeaderMap,
     Form(form): Form<SanctionForm>,
 ) -> Result<Response, AppError> {
-    let (ctx, t) = match resolve_managed(&state, &headers, user.as_ref(), &name).await? {
-        Ok(found) => found,
-        Err(response) => return Ok(response),
-    };
+    let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
     let (kind, wiki_id) = match form.kind.as_str() {
         "mute" => ("mute", Some(ctx.wiki.id)),
         "ban" => ("ban", Some(ctx.wiki.id)),
@@ -507,10 +498,7 @@ pub async fn lift_sanction(
     headers: HeaderMap,
     Form(form): Form<LiftForm>,
 ) -> Result<Response, AppError> {
-    let (ctx, t) = match resolve_managed(&state, &headers, user.as_ref(), &name).await? {
-        Ok(found) => found,
-        Err(response) => return Ok(response),
-    };
+    let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
     let Some(id) = pages::parse_uuid(&id) else {
         return Ok(crate::errors::not_found());
     };
@@ -569,10 +557,7 @@ pub async fn add_note(
     headers: HeaderMap,
     Form(form): Form<NoteForm>,
 ) -> Result<Response, AppError> {
-    let (ctx, t) = match resolve_managed(&state, &headers, user.as_ref(), &name).await? {
-        Ok(found) => found,
-        Err(response) => return Ok(response),
-    };
+    let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
     let body = form.body.trim();
     if body.is_empty() || body.chars().count() > NOTE_MAX {
         return Ok(back(&t, "note_empty"));
@@ -597,10 +582,7 @@ pub async fn verify_email(
     Path(name): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let (ctx, t) = match resolve_managed(&state, &headers, user.as_ref(), &name).await? {
-        Ok(found) => found,
-        Err(response) => return Ok(response),
-    };
+    let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
     let updated = sqlx::query!(
         "UPDATE users SET email_verified_at = now()
          WHERE id = $1 AND email IS NOT NULL AND email_verified_at IS NULL",
@@ -633,10 +615,7 @@ pub async fn end_sessions(
     Path(name): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let (ctx, t) = match resolve_managed(&state, &headers, user.as_ref(), &name).await? {
-        Ok(found) => found,
-        Err(response) => return Ok(response),
-    };
+    let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
     let ended = crate::auth::session::delete_others(&state, t.id, None).await?;
     audit::record(
         &state.db,
@@ -660,10 +639,7 @@ pub async fn remove_avatar(
     Path(name): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let (ctx, t) = match resolve_managed(&state, &headers, user.as_ref(), &name).await? {
-        Ok(found) => found,
-        Err(response) => return Ok(response),
-    };
+    let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
     let removed = sqlx::query_scalar!(
         r#"WITH old AS (SELECT avatar_key FROM users WHERE id = $1 FOR UPDATE)
            UPDATE users u SET avatar_key = NULL FROM old
@@ -705,10 +681,7 @@ pub async fn set_curator(
     headers: HeaderMap,
     Form(form): Form<CuratorForm>,
 ) -> Result<Response, AppError> {
-    let (ctx, t) = match resolve_managed(&state, &headers, user.as_ref(), &name).await? {
-        Ok(found) => found,
-        Err(response) => return Ok(response),
-    };
+    let (ctx, t) = or_respond!(resolve_managed(&state, &headers, user.as_ref(), &name).await?);
     if !ctx.actor.can(Capability::UserRoleManage) {
         return Ok(refuse("assigning curators needs admin rights"));
     }

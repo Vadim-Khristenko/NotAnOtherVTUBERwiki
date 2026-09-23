@@ -11,7 +11,6 @@ use naw_core::state::AppState;
 
 use crate::auth::session::CurrentUser;
 use crate::pages::{self, ENGINE_VERSION};
-use crate::resolve::context;
 
 /// Results per page.
 const LIMIT: i64 = 25;
@@ -32,9 +31,7 @@ pub async fn search_page(
     headers: HeaderMap,
     Query(query): Query<SearchQuery>,
 ) -> Result<Response, AppError> {
-    let Some(ctx) = context(&state, &headers, user.as_ref()).await? else {
-        return Ok(crate::errors::not_found());
-    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let normalized = normalize(&query.q);
     let hits = match normalized.as_deref() {
         Some(text) => {
