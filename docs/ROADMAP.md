@@ -21,7 +21,12 @@ If you want to know why the technology is what it is, read [STACK.md](STACK.md).
   Registration can be closed, so providers only sign in people who already have an
   account. Email verification is not built yet.
 - An admin panel: accounts with per-person rights, sanctions and notes, pages, the audit
-  log, wiki settings, languages, header and footer, error pages.
+  log, wiki settings, languages, header and footer, error pages, 7TV emote sources.
+- Images in articles, avatars, profiles, and curators who can protect pages and look
+  after other people's profiles. Article text may be up to 5 MB and each image up to
+  20 MB, counted apart, and search covers every word of even the longest article.
+- 7TV emotes, written `:name:`, kept on the wiki's own storage so a reader never loads
+  anything from 7TV.
 - Cloudflare is DNS only on every domain, deliberately: its proxy ranges are blocked in
   Russia, and a large part of this community reads from there.
 
@@ -141,11 +146,19 @@ The part that makes it a wiki rather than a blog.
 - `Template:` editing, with a preview of affected pages before publishing
 - Dependency graph, so a template edit invalidates exactly the pages that use it
 - Categories, redirects, and slug normalisation that handles Japanese and Cyrillic
-- Media upload behind a swappable storage backend
-- Profiles at `/user/{name}`: a page of one's own, in the same editor and history
+- [x] Media upload behind a swappable storage backend. Images are recognised by their
+      bytes (never SVG), stored by content hash, served with a CSP that allows nothing.
+      Only the wiki's own uploads render as images; an outside image becomes a link.
+      Uploaded one file at a time from the editor or `/media`, up to 20 MB each.
+- [x] Profiles at `/user/{name}`: a page of one's own, in the same editor and history,
+      with an avatar. Only the person, their curator, or a moderator and up may edit it.
+- [x] Page protection by role: curators and up protect a page at their own level or
+      below, and never loosen a protection set above them
 - [ ] Recent changes, patrolling, watchlists. Patrolling works; the other two do not exist yet
 - [ ] Audit log with a retention policy. The log is written and browsable; retention is not in
-- [x] Search behind a swappable backend, PostgreSQL full text first
+- [x] Search behind a swappable backend, PostgreSQL full text first. A long article is
+      indexed in 200 000 character pieces, so all of a 5 MB article is searchable and no
+      vector nears PostgreSQL's 1 MB limit
 
 **Done when:** an editor can create a template, use it on fifty pages, edit it once, and
 see all fifty update without a deploy and without a full cache flush.
@@ -239,6 +252,9 @@ Make editing pleasant, without ever putting it on the reader path.
 - Per page layout overrides
 - Core component library: infobox, navbox, hatnote, tabs
 - `Template:Infobox VTuber` and `Module:StreamArchive` as the first real components
+- [x] 7TV emotes: admins add 7TV users or emote sets, which are the allowlist; each
+      file is downloaded once into local storage under a 1 GB budget, and `:name:` in
+      an article shows it. `/emotes` lists them all.
 - Snacker of the Month widget, admin configurable
 - Timeline and relationship charts via mermaid
 
