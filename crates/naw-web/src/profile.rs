@@ -267,6 +267,7 @@ pub async fn edit(
             fixed_title: true,
             back_href: Some(&format!("/user/{}", person.username)),
             translation_of: None,
+            form_locale: None,
         },
     )
 }

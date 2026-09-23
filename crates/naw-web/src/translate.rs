@@ -304,6 +304,7 @@ pub async fn form(
             fixed_title: false,
             back_href: Some(&back),
             translation_of: None,
+            form_locale: None,
         },
     )
 }

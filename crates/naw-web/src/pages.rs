@@ -520,6 +520,9 @@ pub struct EditForm {
     /// On a translation: "this now matches the source as it is today".
     #[serde(default)]
     synced: Option<String>,
+    /// Moves this version to another language, when that slot is free.
+    #[serde(default)]
+    locale: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -529,6 +532,20 @@ pub struct NewForm {
     #[serde(default)]
     summary: String,
     body_md: String,
+    /// The article's language, from the editor's language field.
+    #[serde(default)]
+    locale: String,
+}
+
+/// The language a form asked for, when this wiki offers it; the language the
+/// reader is in otherwise.
+fn chosen_locale(ctx: &Ctx, raw: &str) -> String {
+    let raw = raw.trim().to_ascii_lowercase();
+    if !raw.is_empty() && ctx.offered_languages().contains(&raw) {
+        raw
+    } else {
+        ctx.content_locale.clone()
+    }
 }
 
 /// Validated form values, shared by create and save.
@@ -579,6 +596,9 @@ pub(crate) struct FormView<'a> {
     /// On a translation, the source language's name: the form then offers to
     /// mark the translation as matching the source's current revision.
     pub translation_of: Option<&'a str>,
+    /// Shows the language field, preset to this language. `None` where the
+    /// language is not the author's to pick (profiles, a translation's target).
+    pub form_locale: Option<&'a str>,
 }
 
 pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, AppError> {
@@ -605,6 +625,16 @@ pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, Ap
                 fixed_title => view.fixed_title,
                 back_href => view.back_href,
                 translation_of => view.translation_of,
+                form_locale => view.form_locale,
+                locale_options => view.form_locale.map(|_| {
+                    ctx.offered_languages()
+                        .into_iter()
+                        .map(|code| minijinja::context! {
+                            name => crate::translate::native_name(ctx, &code),
+                            code => code,
+                        })
+                        .collect::<Vec<_>>()
+                }),
             }
         })
         .map_err(template_error)?;
@@ -635,6 +665,7 @@ pub async fn new_page(
         &FormView {
             heading: &ctx.t("editor.new_page"),
             action: &ctx.link("/new"),
+            form_locale: Some(&ctx.content_locale),
             show_slug: true,
             slug: "",
             title_value: "",
@@ -678,16 +709,18 @@ pub async fn create_page(
         Ok(draft) => draft,
         Err(reason) => return Ok(bad_request(reason)),
     };
-    let locale = ctx.content_locale.clone();
+    let locale = chosen_locale(&ctx, &form.locale);
 
     // The unique index on (wiki_id, namespace, locale, slug) is the real
     // guard. This check exists to turn the race loser's error into a 409 with
     // an explanation instead of a 500, and it covers archived pages too: a
     // deleted slug stays taken so a restore lands back on its own address.
     let taken = sqlx::query!(
-        "SELECT deleted_at FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2",
+        "SELECT deleted_at FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2
+           AND COALESCE(locale, '') = $3",
         ctx.wiki.id,
-        slug
+        slug,
+        locale
     )
     .fetch_optional(&state.db)
     .await?;
@@ -764,7 +797,7 @@ pub async fn create_page(
         },
     )
     .await;
-    Ok(see_other(&ctx.link(&format!("/{slug}"))))
+    Ok(see_other(&ctx.link_for(&locale, &format!("/{slug}"))))
 }
 
 /// 303 to an internal path, falling back to the wiki root.
@@ -824,6 +857,7 @@ pub async fn edit_page(
             fixed_title: false,
             back_href: None,
             translation_of: source_name.as_deref(),
+            form_locale: Some(&ctx.content_locale),
         },
     )
 }
@@ -885,6 +919,71 @@ pub async fn save_page(
         );
     }
 
+    // Moving this version to another language, when the author picked one
+    // and that slot is free. Done before the no-change check, because a move
+    // with the text untouched is still a change worth making.
+    let target_locale = chosen_locale(&ctx, &form.locale);
+    let moved = target_locale != locale;
+    if moved {
+        let taken = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM pages
+               WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2
+                 AND COALESCE(locale, '') = $3"#,
+            ctx.wiki.id,
+            slug,
+            target_locale
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if taken > 0 {
+            return notice(
+                &ctx,
+                StatusCode::CONFLICT,
+                &ctx.t("error.taken_title"),
+                &ctx.t_with(
+                    "editor.locale_taken",
+                    &[(
+                        "language",
+                        &crate::translate::native_name(&ctx, &target_locale),
+                    )],
+                ),
+                &ctx.link_for(&target_locale, &format!("/{slug}")),
+                &ctx.t("error.taken_link"),
+            );
+        }
+        let mut tx = state.db.begin().await?;
+        sqlx::query!(
+            "UPDATE pages SET locale = $2, updated_at = now() WHERE id = $1",
+            found.id,
+            target_locale
+        )
+        .execute(&mut *tx)
+        .await?;
+        naw_core::search::index_page(
+            &mut tx,
+            found.id,
+            &target_locale,
+            &found.title,
+            found.summary.as_deref(),
+            &found.body_md,
+        )
+        .await?;
+        tx.commit().await?;
+        audit::record_or_log(
+            &state.db,
+            audit::Entry {
+                wiki_id: Some(ctx.wiki.id),
+                user_id: ctx.actor.user_id,
+                action: "page.move_locale",
+                entity_type: "page",
+                entity_id: Some(found.id),
+                meta: json!({ "slug": slug, "from": locale, "to": target_locale }),
+            },
+        )
+        .await;
+    }
+    let locale = target_locale;
+
     // A translator who checked this translation against its source today
     // says so; the staleness notice then counts from the source as it is now.
     // Done before the no-change check: confirming needs no edit to the text.
@@ -912,7 +1011,7 @@ pub async fn save_page(
         && draft.title == found.title
         && draft.summary.as_deref().unwrap_or("") == found.summary.as_deref().unwrap_or("")
     {
-        return Ok(see_other(&ctx.link(&format!("/{slug}"))));
+        return Ok(see_other(&ctx.link_for(&locale, &format!("/{slug}"))));
     }
 
     let revision_id = Uuid::new_v4();
@@ -966,7 +1065,7 @@ pub async fn save_page(
         },
     )
     .await;
-    Ok(see_other(&ctx.link(&format!("/{slug}"))))
+    Ok(see_other(&ctx.link_for(&locale, &format!("/{slug}"))))
 }
 
 /// Parses a UUID that arrived in a form field. An empty or malformed value is

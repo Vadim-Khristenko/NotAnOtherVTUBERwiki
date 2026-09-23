@@ -15,4 +15,6 @@ locked_note = "This page is locked. You can edit it because you are a moderator.
 cheatsheet = "Markdown cheatsheet"
 live_preview = "Live preview"
 live_preview_hint = "Start typing to see the real render."
-
+locale = "Language of this article"
+locale_note = "Each language is its own version with its own history. Changing it on an existing page moves this version, if that language has none yet."
+locale_taken = "This article already exists in {language}. Edit that version instead, or move it away first."

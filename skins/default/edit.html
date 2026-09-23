@@ -31,6 +31,14 @@
 <input class="field-input" name="title" value="{{ title_value }}" maxlength="200" required />
 </label>
 {% endif %}
+{% if form_locale and locale_options and locale_options | length > 1 %}
+<label class="field">{{ t("editor.locale") }}
+<select class="field-input" name="locale">
+  {% for option in locale_options %}<option value="{{ option.code }}" lang="{{ option.code }}" {% if option.code == form_locale %}selected{% endif %}>{{ option.name }}</option>{% endfor %}
+</select>
+<span class="field-note">{{ t("editor.locale_note") }}</span>
+</label>
+{% endif %}
 <label class="field">{{ t("editor.summary") }}
 <input class="field-input" name="summary" value="{{ summary_value }}" maxlength="200" />
 </label>
