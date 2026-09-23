@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT s.expires_at, u.id AS user_id, u.username,\n               u.email AS email_opt,\n               (u.email_verified_at IS NOT NULL) AS email_verified,\n               u.global_role, u.locale, u.must_change_password\n        FROM sessions s\n        JOIN users u ON u.id = s.user_id\n        WHERE s.id = $1\n        ",
+  "query": "\n        SELECT s.expires_at, u.id AS user_id, u.username,\n               u.email AS email_opt,\n               (u.email_verified_at IS NOT NULL) AS email_verified,\n               u.global_role, u.locale, u.must_change_password, u.display_name\n        FROM sessions s\n        JOIN users u ON u.id = s.user_id\n        WHERE s.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -85,6 +85,17 @@
             "name": "must_change_password"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
       }
     ],
     "parameters": {
@@ -100,8 +111,9 @@
       null,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "9af8f833c6df04ba501b18693e5e52c624768c6be0f4e97a526d3f3135a4f5e2"
+  "hash": "cb4bafad181ca10707e81c62db1fd90afc94f4a74fa596b85aa6f94bdda15f2d"
 }

@@ -205,6 +205,8 @@ pub struct Actor {
     /// `None` for an anonymous visitor.
     pub user_id: Option<Uuid>,
     pub username: Option<String>,
+    /// What the chrome shows for this person, when they set one.
+    pub display_name: Option<String>,
     pub email_verified: bool,
     pub global: GlobalRole,
     /// The membership row, if there is one. A signed-in visitor with no
@@ -221,6 +223,7 @@ impl Actor {
         Self {
             user_id: None,
             username: None,
+            display_name: None,
             email_verified: false,
             global: GlobalRole::Registered,
             membership: None,
@@ -344,6 +347,7 @@ pub async fn resolve(
     Ok(Actor {
         user_id: Some(user.id),
         username: Some(user.username.clone()),
+        display_name: user.display_name.clone(),
         email_verified: user.email_verified,
         global: GlobalRole::parse(&user.global_role),
         membership,
@@ -360,6 +364,7 @@ mod tests {
         Actor {
             user_id: Some(Uuid::nil()),
             username: Some("tester".into()),
+            display_name: None,
             email_verified: true,
             global,
             membership,

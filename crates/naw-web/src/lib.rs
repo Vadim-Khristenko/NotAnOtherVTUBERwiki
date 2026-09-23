@@ -5,6 +5,7 @@ mod admin;
 mod audit;
 mod auth;
 pub mod bootstrap;
+mod display_name;
 mod errors;
 mod history;
 mod lang;
@@ -60,6 +61,7 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(settings::page))
         .route("/settings/language", post(settings::set_language))
         .route("/settings/username", post(settings::change_username))
+        .route("/settings/display-name", post(settings::set_display_name))
         .route(
             "/settings/sessions/end-others",
             post(settings::end_other_sessions),

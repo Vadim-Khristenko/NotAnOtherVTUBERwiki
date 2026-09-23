@@ -27,6 +27,9 @@ pub const SESSION_COOKIE: &str = "naw_session";
 pub struct CurrentUser {
     pub id: Uuid,
     pub username: String,
+    /// What people read instead of the username, when set. Already cleaned by
+    /// `display_name::clean`; templates still render it inside `<bdi>`.
+    pub display_name: Option<String>,
     pub email: Option<String>,
     pub email_verified: bool,
     pub global_role: String,
@@ -93,7 +96,7 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
         SELECT s.expires_at, u.id AS user_id, u.username,
                u.email AS email_opt,
                (u.email_verified_at IS NOT NULL) AS email_verified,
-               u.global_role, u.locale, u.must_change_password
+               u.global_role, u.locale, u.must_change_password, u.display_name
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.id = $1
@@ -113,6 +116,7 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
     Some(CurrentUser {
         id: row.user_id,
         username: row.username,
+        display_name: row.display_name,
         email: row.email_opt,
         email_verified: row.email_verified.unwrap_or(false),
         global_role: row.global_role,

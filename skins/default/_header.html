@@ -119,7 +119,7 @@
       <div class="nav-account">
         <a class="nav-link nav-user" href="/settings" title="{{ t('settings.title') }}">
           <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>
-          <span>{{ username }}</span>
+          <span><bdi>{{ display_name }}</bdi></span>
         </a>
         {# Signing out changes state, so it is a POST, not a link. #}
         <form class="inline-form" method="post" action="/logout">

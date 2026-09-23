@@ -11,10 +11,10 @@
 #}
 {% block body %}
 <div class="settings-head">
-  <div class="settings-avatar" aria-hidden="true">{{ username[:1] | upper }}</div>
+  <div class="settings-avatar" aria-hidden="true">{{ (my_display_name or username)[:1] | upper }}</div>
   <div>
-    <h1>{{ username }}</h1>
-    <p class="muted-cell">{{ t("settings.joined", date=joined) }}</p>
+    <h1><bdi>{{ my_display_name or username }}</bdi></h1>
+    <p class="muted-cell">{% if my_display_name %}@{{ username }} · {% endif %}{{ t("settings.joined", date=joined) }}</p>
   </div>
   <a class="button-save settings-profile" href="/user/{{ username }}">
     <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>{{ t("settings.open_profile") }}
@@ -24,9 +24,21 @@
 {% if saved %}<p class="notice notice-ok" role="status">{{ t("settings.saved_" ~ saved) }}</p>{% endif %}
 
 <div class="settings-grid">
+  <section class="settings-card" aria-labelledby="s-display-h" id="s-display">
+    <h2 id="s-display-h"><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>{{ t("settings.display_name") }}</h2>
+    {% if error and error.startswith("display_name_") %}<p class="notice notice-warn" role="alert">{{ t("settings." ~ error, max=display_name_max) }}</p>{% endif %}
+    <p class="field-note">{{ t("settings.display_name_note") }}</p>
+    <form method="post" action="/settings/display-name" class="settings-stack">
+      <label class="visually-hidden" for="s-display-name">{{ t("settings.display_name") }}</label>
+      <input class="field-input" id="s-display-name" name="display_name" dir="auto"
+             value="{{ my_display_name or '' }}" maxlength="200" placeholder="{{ username }}" autocomplete="nickname" />
+      <button class="button-preview" type="submit">{{ t("settings.save") }}</button>
+    </form>
+  </section>
+
   <section class="settings-card" aria-labelledby="s-username" id="s-username">
     <h2 id="s-username-h"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("settings.username") }}</h2>
-    {% if error %}<p class="notice notice-warn" role="alert">{{ t("settings." ~ error, days=rename_cooldown) }}</p>{% endif %}
+    {% if error and error.startswith("rename_") %}<p class="notice notice-warn" role="alert">{{ t("settings." ~ error, days=rename_cooldown) }}</p>{% endif %}
     {% if not rename_enabled %}
     <p><code>{{ username }}</code></p>
     <p class="field-note">{{ t("settings.rename_disabled") }}</p>

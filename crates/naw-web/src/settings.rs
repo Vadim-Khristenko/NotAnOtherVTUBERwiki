@@ -170,12 +170,14 @@ pub async fn page(
                 has_password => account.has_password,
                 password_changed => account.password_changed_at.map(|t| t.format("%Y-%m-%d").to_string()),
                 chosen_locale => chosen,
+                my_display_name => user.display_name.clone(),
+                display_name_max => crate::display_name::MAX_LEN,
                 identities => identity_rows,
                 linkable => linkable,
                 sessions => session_rows,
-                saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username")),
+                saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username" | "display_name")),
                 // Only known keys, so a crafted link cannot pick the wording.
-                error => query.error.as_deref().filter(|e| e.starts_with("rename_") && e.len() < 32 && e.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')),
+                error => query.error.as_deref().filter(|e| (e.starts_with("rename_") || e.starts_with("display_name_")) && e.len() < 32 && e.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')),
                 rename_enabled => policy.rename_enabled,
                 rename_cooldown => policy.rename_cooldown_days,
                 alias_days => policy.alias_days,
@@ -258,6 +260,52 @@ pub async fn end_other_sessions(
     )
     .await;
     Ok(Redirect::to("/settings?saved=sessions").into_response())
+}
+
+#[derive(Deserialize)]
+pub struct DisplayNameForm {
+    #[serde(default)]
+    display_name: String,
+}
+
+/// POST /settings/display-name
+pub async fn set_display_name(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    Form(form): Form<DisplayNameForm>,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    let cleaned = match crate::display_name::clean(&form.display_name) {
+        Ok(cleaned) => cleaned,
+        Err(problem) => {
+            return Ok(
+                Redirect::to(&format!("/settings?error={}#s-display", problem.key()))
+                    .into_response(),
+            );
+        }
+    };
+    sqlx::query!(
+        "UPDATE users SET display_name = $2 WHERE id = $1",
+        user.id,
+        cleaned
+    )
+    .execute(&state.db)
+    .await?;
+    crate::audit::record_or_log(
+        &state.db,
+        crate::audit::Entry {
+            wiki_id: None,
+            user_id: Some(user.id),
+            action: "user.display_name",
+            entity_type: "user",
+            entity_id: Some(user.id),
+            meta: serde_json::json!({ "from": user.display_name, "to": cleaned }),
+        },
+    )
+    .await;
+    Ok(Redirect::to("/settings?saved=display_name").into_response())
 }
 
 #[derive(Deserialize)]

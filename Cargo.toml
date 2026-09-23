@@ -61,6 +61,9 @@ rand = "0.9"
 # Argon2id for local passwords. Default features cover salt generation and
 # PHC strings, which is exactly what the users.password_hash column stores.
 argon2 = "0.6"
+# Grapheme clusters, for display names: length and the zalgo cap are counted
+# in what a reader sees as one character, not in code points.
+unicode-segmentation = "1.13"
 cookie = "0.18"
 ipnetwork = "0.21"
 

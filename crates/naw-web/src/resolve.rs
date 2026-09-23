@@ -256,6 +256,8 @@ impl Ctx {
             language_options => language_options,
             signed_in => self.actor.is_signed_in(),
             username => self.actor.username.clone(),
+            // The name to show; the username when no display name is set.
+            display_name => self.actor.display_name.clone().or_else(|| self.actor.username.clone()),
             can_create => self.actor.can(Capability::PageCreate),
             can_edit => self.actor.can(Capability::PageEdit),
             can_moderate => self.actor.can(Capability::PageDelete),
