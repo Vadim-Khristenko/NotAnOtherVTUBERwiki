@@ -1,0 +1,77 @@
+{% extends "layout.html" %}
+{#
+  Signing in through another device, with no script on either side.
+
+  `mode`          start | waiting (device A); enter | confirm | token (device B)
+  `code`          the pairing code; `approve_link` the link for device B
+  `token`         the one-time token, shown once on device B
+  `device`, `device_ip`, `minutes`  who is asking, on the confirm step
+  `approver`      the account that approved, once it has
+  `next`          where device A goes after signing in
+  `error`         a finished message
+#}
+{% block body %}
+<div class="auth-card relay">
+  <h1>{{ t("relay.title") }}</h1>
+  {% if error %}<p class="notice notice-warn" role="alert">{{ error }}</p>{% endif %}
+
+  {% if mode == "start" %}
+  <p>{{ t("relay.start_lede") }}</p>
+  <ol class="relay-steps">
+    <li>{{ t("relay.step_1") }}</li>
+    <li>{{ t("relay.step_2") }}</li>
+    <li>{{ t("relay.step_3") }}</li>
+  </ol>
+  <form method="post" action="/login/relay/start">
+    <input type="hidden" name="next" value="{{ next }}" />
+    <button class="button-save" type="submit">{{ t("relay.start") }}</button>
+  </form>
+  <p class="field-note"><a href="/login">{{ t("relay.back") }}</a></p>
+
+  {% elif mode == "waiting" %}
+  <p>{{ t("relay.waiting_lede") }}</p>
+  <p class="relay-code" aria-label="{{ t('relay.code') }}">{{ code }}</p>
+  <p>{{ t("relay.open_on_other") }}<br />
+    <strong class="relay-url">{{ approve_link }}</strong></p>
+  <p class="field-note">{{ t("relay.or_type_code") }} <strong class="relay-url">{{ approve_base }}</strong></p>
+  {% if approver %}<p class="notice notice-ok" role="status">{{ t("relay.approved_by", name=approver) }}</p>{% endif %}
+  <form method="post" action="/login/relay/finish" class="settings-stack">
+    <label class="field">{{ t("relay.token") }}
+      <input class="field-input relay-input" name="token" required maxlength="20" autocomplete="one-time-code"
+             autocapitalize="none" spellcheck="false" placeholder="xxxx-xxxx" />
+    </label>
+    <button class="button-save" type="submit">{{ t("relay.finish") }}</button>
+  </form>
+  <p class="field-note">{{ t("relay.expires") }}</p>
+
+  {% elif mode == "enter" %}
+  <p>{{ t("relay.enter_lede") }}</p>
+  <form method="get" action="/login/relay/approve" class="settings-stack">
+    <label class="field">{{ t("relay.code") }}
+      <input class="field-input relay-input" name="code" required maxlength="20" autocapitalize="none"
+             spellcheck="false" placeholder="xxxx-xxxx" />
+    </label>
+    <button class="button-save" type="submit">{{ t("relay.continue") }}</button>
+  </form>
+
+  {% elif mode == "confirm" %}
+  <p>{{ t("relay.confirm_lede", name=username) }}</p>
+  <dl class="relay-device">
+    <dt>{{ t("relay.device") }}</dt><dd>{{ device }}</dd>
+    <dt>{{ t("relay.address") }}</dt><dd>{{ device_ip }}</dd>
+    <dt>{{ t("relay.started") }}</dt><dd>{{ t("relay.minutes_ago", n=minutes) }}</dd>
+  </dl>
+  <p class="notice notice-warn">{{ t("relay.confirm_warning") }}</p>
+  <form method="post" action="/login/relay/approve">
+    <input type="hidden" name="code" value="{{ code }}" />
+    <button class="button-save" type="submit">{{ t("relay.confirm") }}</button>
+    <a class="button-preview" href="/">{{ t("relay.cancel") }}</a>
+  </form>
+
+  {% elif mode == "token" %}
+  <p>{{ t("relay.token_lede") }}</p>
+  <p class="relay-code">{{ token }}</p>
+  <p class="notice notice-warn">{{ t("relay.token_warning") }}</p>
+  {% endif %}
+</div>
+{% endblock %}

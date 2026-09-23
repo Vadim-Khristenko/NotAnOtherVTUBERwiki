@@ -48,6 +48,9 @@
   <p class="notice">{{ t("account.no_methods") }}</p>
   {% endif %}
 
+  <p class="auth-relay"><a href="/login/relay?next={{ next_encoded }}">{{ t("relay.link") }}</a>
+    <span class="field-note">{{ t("relay.link_note") }}</span></p>
+
   {% if registration_closed %}
   <div class="auth-closed">
     <p><strong>{{ t("account.closed_title") }}</strong></p>

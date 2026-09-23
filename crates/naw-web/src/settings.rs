@@ -24,7 +24,7 @@ fn sign_in_first() -> Response {
 }
 
 /// A short "browser on platform" label for a user agent.
-fn device_label(user_agent: Option<&str>) -> String {
+pub(crate) fn device_label(user_agent: Option<&str>) -> String {
     let ua = user_agent.unwrap_or_default();
     let browser = [
         ("Edg/", "Edge"),

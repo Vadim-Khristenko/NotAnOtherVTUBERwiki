@@ -35,6 +35,7 @@ mod perm;
 mod policy;
 mod profile;
 mod protect;
+mod relay;
 mod resolve;
 mod search;
 mod settings;
@@ -76,6 +77,13 @@ fn routes(state: AppState) -> Router {
         .route("/ready", get(ready))
         .route("/login", get(account::login_page))
         .route("/login/password", post(account::password_login))
+        .route("/login/relay", get(relay::page))
+        .route("/login/relay/start", post(relay::start))
+        .route(
+            "/login/relay/approve",
+            get(relay::approve_page).post(relay::approve),
+        )
+        .route("/login/relay/finish", post(relay::finish))
         .route(
             "/settings/password",
             get(account::password_page).post(account::change_password),
