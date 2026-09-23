@@ -121,7 +121,8 @@ pub async fn staleness(
 /// Where "translate into the reader's language" goes, when the article is
 /// not in it yet and the reader may create pages.
 pub fn translate_offer(ctx: &Ctx, slug: &str, all: &[Version]) -> Option<(String, String)> {
-    if ctx.lang == ctx.content_locale
+    if pages::split_path(slug).0 != "main"
+        || ctx.lang == ctx.content_locale
         || all.iter().any(|v| v.locale == ctx.lang)
         || !ctx.actor.can(Capability::PageCreate)
     {
@@ -221,7 +222,8 @@ async fn gate(
     let Some(ctx) = crate::resolve::context(state, headers, user).await? else {
         return Ok(Err(crate::errors::not_found()));
     };
-    if !pages::slug_is_valid(slug) {
+    // Articles only: a template is one text shared by every language.
+    if !pages::slug_is_valid(slug) || pages::split_path(slug).0 != "main" {
         return Ok(Err(crate::errors::not_found()));
     }
     if !ctx.actor.can(Capability::PageCreate) {
@@ -391,7 +393,7 @@ pub async fn create(
     )
     .await?;
     tx.commit().await?;
-    pages::warm_cache(&state, ctx.wiki.id, &draft.body_md).await;
+    pages::after_save(&state, &ctx, page_id, &slug, &draft.body_md).await;
     crate::audit::record_or_log(
         &state.db,
         crate::audit::Entry {

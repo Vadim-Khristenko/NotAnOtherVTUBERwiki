@@ -7,6 +7,14 @@
 <nav class="crumbs"><a href="{{ base }}/{{ slug }}">{{ t("nav.read") }}</a> ·
   <a href="{{ base }}/{{ slug }}/history">{{ t("nav.history") }}</a></nav>
 {% endif %}
+{% if show_slug and starters is defined and starters %}
+{# Starter templates: a page type with its card and sections already laid out. #}
+<nav class="starter-picker" aria-label="{{ t('template.start_from') }}">
+  <span class="muted-cell">{{ t("template.start_from") }}</span>
+  <a href="{{ base }}/new"{% if not (starters | selectattr("current") | list) %} aria-current="page"{% endif %}>{{ t("template.blank") }}</a>
+  {% for s in starters %}<a href="{{ s.href }}"{% if s.current %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-template" /></svg>{{ s.label }}</a>{% endfor %}
+</nav>
+{% endif %}
 {% if locked is defined and locked %}
 <p class="notice notice-warn" role="status">
   {{ t("editor.locked_note") }}
@@ -21,8 +29,12 @@
 <input type="hidden" name="base_revision" value="{{ base_revision }}" />
 {% if show_slug %}
 <label class="field">{{ t("editor.slug") }}
-<input class="field-input" name="slug" value="{{ slug }}" maxlength="100" required />
+<input class="field-input" name="slug" value="{{ slug }}" maxlength="109" required />
+<span class="field-note">{{ t("template.slug_note") }}</span>
 </label>
+{% elif slug %}
+{# So the preview renders a template the way its own page shows it. #}
+<input type="hidden" name="slug" value="{{ slug }}" />
 {% endif %}
 {% if fixed_title %}
 <input type="hidden" name="title" value="{{ title_value }}" />
@@ -331,6 +343,8 @@
     var body = new URLSearchParams();
     body.set("title", "Preview");
     body.set("body_md", area.value);
+    var slugField = area.form && area.form.elements.namedItem("slug");
+    if (slugField && slugField.value) body.set("slug", slugField.value);
     fetch("/preview?fragment=1", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },

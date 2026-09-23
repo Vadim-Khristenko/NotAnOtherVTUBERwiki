@@ -57,10 +57,29 @@
   <span>{{ t("translate.stale", source=stale.source_name) }}
   <a href="{{ stale.diff_href }}">{{ t("translate.stale_diff") }}</a> · <a href="{{ stale.source_href }}">{{ t("translate.stale_source") }}</a></span></p>
 {% endif %}
+{# An article carries its heading in the text; a template page gets one. #}
+{% if template is defined and template %}<h1 class="template-heading">{{ t("template.heading", name=title) }}</h1>{% endif %}
 {% if content_lang is defined and content_lang != lang %}
 <div lang="{{ content_lang }}">{{ body | safe }}</div>
 {% else %}
 {{ body | safe }}
+{% endif %}
+{% if template is defined and template %}
+{# A template's own page: how to call it and which pages it would change. #}
+<section class="template-info" aria-labelledby="template-info-title">
+  <h2 id="template-info-title"><svg class="icon" aria-hidden="true"><use href="#i-template" /></svg>{{ t("template.info_title") }}</h2>
+  <p>{{ t("template.how_to_call") }} <code class="template-call">{{ template.call }}</code></p>
+  <p class="field-note">{{ t("template.params_note") }}</p>
+  <h3>{{ tn("template.used_on", template.uses_total) }}</h3>
+  {% if template.uses %}
+  <ul class="template-uses">
+    {% for u in template.uses %}<li><a href="{{ u.href }}">{{ u.title }}</a></li>{% endfor %}
+  </ul>
+  {% if template.uses_total > template.uses_shown %}<p class="muted-cell">{{ t("template.uses_more", shown=template.uses_shown) }}</p>{% endif %}
+  {% else %}
+  <p class="muted-cell">{{ t("template.unused") }}</p>
+  {% endif %}
+</section>
 {% endif %}
 {% if slug is defined %}
 {% if other_languages %}

@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM pages\n               WHERE wiki_id = $1 AND namespace = ($4::text)::page_namespace AND slug = $2\n                 AND COALESCE(locale, '') = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6c43b8ca53958eddfabe95a47a487dc039b65743095db4e9e588e1b12e75ad56"
+}

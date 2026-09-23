@@ -39,8 +39,34 @@ pub async fn run(pool: &PgPool, seed_dir: &str, opts: &SeedOptions) -> Result<()
     )
     .execute(pool)
     .await?;
-    let mut entries: Vec<_> = std::fs::read_dir(&flavor_dir)
-        .map_err(|err| AppError::Config(format!("seed dir {flavor_dir}: {err}")))?
+    seed_files(pool, wiki_id, opts, &flavor_dir, "main").await?;
+    // Templates live in their own folder: a colon cannot be in a file name.
+    let template_dir = format!("{flavor_dir}/template");
+    if std::path::Path::new(&template_dir).is_dir() {
+        seed_files(pool, wiki_id, opts, &template_dir, "template").await?;
+    }
+    // Seeded pages must be searchable.
+    let indexed = naw_core::search::reindex(pool, Some(wiki_id)).await?;
+    tracing::info!(
+        slug = %opts.slug,
+        flavor = %opts.flavor,
+        indexed,
+        "seed: wiki pages ready"
+    );
+    Ok(())
+}
+
+/// One page per `.md` file in `dir`, in `namespace`. A template names its
+/// title in a `<!-- title: ... -->` line, since a heading would render.
+async fn seed_files(
+    pool: &PgPool,
+    wiki_id: Uuid,
+    opts: &SeedOptions,
+    dir: &str,
+    namespace: &str,
+) -> Result<(), AppError> {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .map_err(|err| AppError::Config(format!("seed dir {dir}: {err}")))?
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
             entry
@@ -71,18 +97,36 @@ pub async fn run(pool: &PgPool, seed_dir: &str, opts: &SeedOptions) -> Result<()
                 "seed file has an unfilled placeholder"
             );
         }
-        let title = first_heading(&body_md).unwrap_or_else(|| slug.clone());
-        ensure_page(pool, wiki_id, &opts.locale, &slug, &title, &body_md).await?;
+        let title = comment_title(&body_md)
+            .or_else(|| first_heading(&body_md))
+            .unwrap_or_else(|| slug.clone());
+        let page = Page {
+            namespace,
+            slug: &slug,
+            title: &title,
+            body_md: &body_md,
+        };
+        ensure_page(pool, wiki_id, &opts.locale, &page).await?;
     }
-    // Seeded pages must be searchable.
-    let indexed = naw_core::search::reindex(pool, Some(wiki_id)).await?;
-    tracing::info!(
-        slug = %opts.slug,
-        flavor = %opts.flavor,
-        indexed,
-        "seed: wiki pages ready"
-    );
     Ok(())
+}
+
+/// `<!-- title: Name -->` in the first lines of a file.
+fn comment_title(body_md: &str) -> Option<String> {
+    body_md
+        .lines()
+        .take(3)
+        .find_map(|line| line.trim().strip_prefix("<!-- title:")?.strip_suffix("-->"))
+        .map(|title| title.trim().to_string())
+        .filter(|title| !title.is_empty())
+}
+
+/// One page to seed.
+struct Page<'a> {
+    namespace: &'a str,
+    slug: &'a str,
+    title: &'a str,
+    body_md: &'a str,
 }
 
 fn apply_placeholders(text: &str, opts: &SeedOptions) -> String {
@@ -142,41 +186,41 @@ async fn ensure_page(
     pool: &PgPool,
     wiki_id: Uuid,
     locale: &str,
-    slug: &str,
-    title: &str,
-    body_md: &str,
+    page: &Page<'_>,
 ) -> Result<(), AppError> {
     if sqlx::query!(
-        "SELECT id FROM pages WHERE wiki_id = $1 AND slug = $2",
+        "SELECT id FROM pages WHERE wiki_id = $1 AND namespace = ($3::text)::page_namespace AND slug = $2",
         wiki_id,
-        slug
+        page.slug,
+        page.namespace
     )
     .fetch_optional(pool)
     .await?
     .is_none()
     {
-        seed_content(pool, wiki_id, locale, slug, title, body_md).await?;
+        seed_content(pool, wiki_id, locale, page).await?;
     }
-    ensure_cache(pool, wiki_id, body_md).await
+    ensure_cache(pool, wiki_id, page.body_md).await
 }
 
 async fn seed_content(
     pool: &PgPool,
     wiki_id: Uuid,
     locale: &str,
-    slug: &str,
-    title: &str,
-    body_md: &str,
+    page: &Page<'_>,
 ) -> Result<(), AppError> {
     let page_id = Uuid::new_v4();
     let revision_id = Uuid::new_v4();
+    let body_md = page.body_md;
     sqlx::query!(
-        "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale) VALUES ($1, $2, 'main', $3, $4, $5)",
+        "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale)
+         VALUES ($1, $2, ($6::text)::page_namespace, $3, $4, $5)",
         page_id,
         wiki_id,
-        slug,
-        title,
-        locale
+        page.slug,
+        page.title,
+        locale,
+        page.namespace
     )
     .execute(pool)
     .await?;

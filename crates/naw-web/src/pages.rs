@@ -1,8 +1,9 @@
 //! Serving and editing pages.
 //!
-//! `render_cache` holds the body fragment only, keyed by the revision's
-//! content hash. The document around it is assembled per request, since the
-//! chrome depends on who is signed in and must never reach a shared cache row.
+//! `render_cache` holds the body fragment only, keyed by the hash of the text
+//! after its templates are expanded. The document around it is assembled per
+//! request, since the chrome depends on who is signed in and must never reach
+//! a shared cache row.
 
 use axum::body::Body;
 use axum::extract::{Extension, Form, Path, Query, State};
@@ -190,14 +191,32 @@ fn urlencode(value: &str) -> String {
     out
 }
 
-/// Lowercase ASCII letters, digits and dashes.
-pub(crate) fn slug_is_valid(slug: &str) -> bool {
+/// The prefix of a template's path: `/template:infobox-vtuber`.
+pub(crate) const TEMPLATE_PREFIX: &str = "template:";
+
+/// A page path as its namespace, spelled as the database spells it, and the
+/// bare slug. An article has no prefix.
+pub(crate) fn split_path(path: &str) -> (&'static str, &str) {
+    match path.strip_prefix(TEMPLATE_PREFIX) {
+        Some(slug) => ("template", slug),
+        None => ("main", path),
+    }
+}
+
+/// A page path: lowercase ASCII letters, digits and dashes, after an optional
+/// `template:` prefix.
+pub(crate) fn slug_is_valid(path: &str) -> bool {
+    let (_, slug) = split_path(path);
     !slug.is_empty()
         && slug.len() <= SLUG_MAX
         && slug
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
+
+/// The lowest role that edits a template. One bad edit to a template breaks
+/// every page that uses it, so they start at curator even when unprotected.
+pub(crate) const TEMPLATE_EDIT_FLOOR: crate::perm::WikiRole = crate::perm::WikiRole::Curator;
 
 pub(crate) fn bad_request(message: &str) -> Response {
     (StatusCode::UNPROCESSABLE_ENTITY, message.to_string()).into_response()
@@ -260,13 +279,19 @@ pub(crate) fn render_shell(ctx: &Ctx, shell: &Shell<'_>) -> Result<String, AppEr
         .map_err(template_error)
 }
 
-/// The rendered body of one revision, from cache when possible, with emotes
-/// expanded. Concurrent misses render twice and one insert wins.
+/// The rendered body of one revision, from cache when possible, with its
+/// templates and emotes expanded. The key is the hash of the expanded text,
+/// so a template edit reaches every page that uses it. Concurrent misses
+/// render twice and one insert wins.
 pub(crate) async fn cached_body(
     state: &AppState,
-    wiki_id: Uuid,
+    ctx: &Ctx,
+    path: &str,
     body_md: &str,
 ) -> Result<(String, Option<u64>), AppError> {
+    let wiki_id = ctx.wiki.id;
+    let expanded = crate::templates::expand(state, ctx, path, body_md).await?;
+    let body_md = expanded.text.as_str();
     let key = naw_markdown::content_hash(body_md);
     if let Some(row) = sqlx::query!(
         "SELECT html FROM render_cache WHERE wiki_id = $1 AND content_hash = $2 AND renderer_version = $3",
@@ -295,9 +320,25 @@ pub(crate) async fn cached_body(
     Ok((html, Some(rendered.render_ms)))
 }
 
-/// Caches a just-saved body so the author's redirect is a cache hit.
-pub(crate) async fn warm_cache(state: &AppState, wiki_id: Uuid, body_md: &str) {
-    let rendered = naw_markdown::render_body(body_md);
+/// After a save: records the templates the page uses, and caches the body so
+/// the author's redirect is a cache hit.
+pub(crate) async fn after_save(
+    state: &AppState,
+    ctx: &Ctx,
+    page_id: Uuid,
+    path: &str,
+    body_md: &str,
+) {
+    let wiki_id = ctx.wiki.id;
+    let expanded = match crate::templates::expand(state, ctx, path, body_md).await {
+        Ok(expanded) => expanded,
+        Err(err) => {
+            tracing::warn!(error = ?err, "could not expand templates after a save");
+            return;
+        }
+    };
+    crate::templates::record_uses(state, wiki_id, page_id, &expanded.used).await;
+    let rendered = naw_markdown::render_body(&expanded.text);
     let result = sqlx::query!(
         "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html)
          VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
@@ -362,13 +403,15 @@ pub(crate) struct FoundPage {
     pub translation_source_revision_id: Option<Uuid>,
 }
 
-/// Loads a live page and its current revision; archived pages read as absent.
+/// Loads a live page by its path and its current revision; archived pages
+/// read as absent.
 pub(crate) async fn find_page(
     db: &sqlx::PgPool,
     wiki_id: Uuid,
-    slug: &str,
+    path: &str,
     locale: &str,
 ) -> Result<Option<FoundPage>, AppError> {
+    let (namespace, slug) = split_path(path);
     let row = sqlx::query!(
         r#"
         SELECT p.id, p.title, p.is_locked, p.edit_level, p.updated_at,
@@ -377,22 +420,24 @@ pub(crate) async fn find_page(
         FROM pages p
         JOIN revisions r ON r.id = p.current_revision_id
         WHERE p.wiki_id = $1
-          AND p.namespace = 'main'
+          AND p.namespace = ($4::text)::page_namespace
           AND p.slug = $2
           AND COALESCE(p.locale, '') = COALESCE($3, '')
           AND p.deleted_at IS NULL
         "#,
         wiki_id,
         slug,
-        locale
+        locale,
+        namespace
     )
     .fetch_optional(db)
     .await?;
+    let floor = (namespace == "template").then_some(TEMPLATE_EDIT_FLOOR);
     Ok(row.map(|row| FoundPage {
         id: row.id,
         title: row.title,
         locked: row.is_locked,
-        protection: protection_of(row.is_locked, row.edit_level.as_deref()),
+        protection: protection_of(row.is_locked, row.edit_level.as_deref()).max(floor),
         revision_id: row.revision_id,
         body_md: row.body_md,
         summary: row.summary,
@@ -491,7 +536,20 @@ pub async fn page(
     {
         return Ok(response);
     }
-    let (body_html, render_ms) = cached_body(&state, ctx.wiki.id, &found.body_md).await?;
+    let (body_html, render_ms) = cached_body(&state, &ctx, &slug, &found.body_md).await?;
+    // A template's page says how to use it and where it is used.
+    let template = match split_path(&slug) {
+        ("template", bare) => {
+            let (total, pages) = crate::templates::uses(&state, &ctx, bare).await?;
+            Some(minijinja::context! {
+                call => format!("{{{{{}}}}}", found.title.trim_start_matches("Template:").trim()),
+                uses_total => total,
+                uses => pages.into_iter().map(|u| minijinja::context! { title => u.title, href => u.href }).collect::<Vec<_>>(),
+                uses_shown => crate::templates::USES_SHOWN,
+            })
+        }
+        _ => None,
+    };
     let versions = crate::translate::versions(&state, &ctx, &slug).await?;
     let stale = crate::translate::staleness(
         &state,
@@ -521,6 +579,7 @@ pub async fn page(
             template: "page.html",
             extra: minijinja::context! {
                 slug => slug.clone(),
+                template => template,
                 locked => found.locked,
                 updated_at => found.updated_at.format("%Y-%m-%d %H:%M UTC").to_string(),
                 can_edit_this => ctx.actor.can_edit_page(found.protection),
@@ -636,6 +695,15 @@ pub(crate) struct FormView<'a> {
 }
 
 pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, AppError> {
+    render_form_with(ctx, view, minijinja::context! {})
+}
+
+/// `render_form` with more values for the template.
+fn render_form_with(
+    ctx: &Ctx,
+    view: &FormView<'_>,
+    extra: minijinja::Value,
+) -> Result<Response, AppError> {
     let template = ctx
         .skin
         .env
@@ -644,6 +712,7 @@ pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, Ap
     let html = template
         .render(minijinja::context! {
             ..ctx.chrome_context(),
+            ..extra,
             ..minijinja::context! {
                 title => view.heading,
                 version => ENGINE_VERSION,
@@ -679,12 +748,23 @@ pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, Ap
     Ok(([HTML], html).into_response())
 }
 
-/// Blank creation form; needs `PageCreate`.
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct NewQuery {
+    /// A path to prefill, from a link to a page that does not exist yet.
+    #[serde(default)]
+    slug: Option<String>,
+    /// A starter template to begin the text from.
+    #[serde(default)]
+    from: Option<String>,
+}
+
+/// The creation form, blank or begun from a starter template; needs `PageCreate`.
 #[instrument(skip(state, user))]
 pub async fn new_page(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
+    Query(query): Query<NewQuery>,
 ) -> Result<Response, AppError> {
     let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     if !ctx.actor.can(Capability::PageCreate) {
@@ -695,23 +775,56 @@ pub async fn new_page(
             &ctx.t("error.no_create"),
         );
     }
-    render_form(
+    let slug = query
+        .slug
+        .as_deref()
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| slug_is_valid(s))
+        .unwrap_or_default();
+    let starters = crate::templates::starters(&state, &ctx).await?;
+    let from = query
+        .from
+        .as_deref()
+        .and_then(|name| starters.iter().find(|(slug, _)| slug == name));
+    let body = match from {
+        Some((starter, _)) => {
+            let path = format!("{TEMPLATE_PREFIX}{starter}");
+            find_page(&state.db, ctx.wiki.id, &path, &ctx.content_locale)
+                .await?
+                .map(|page| crate::templates::starter_body(&page.body_md))
+                .unwrap_or_default()
+        }
+        None => String::new(),
+    };
+    let starter_links: Vec<minijinja::Value> = starters
+        .iter()
+        .map(|(starter, label)| {
+            minijinja::context! {
+                label => label,
+                href => ctx.link(&format!("/new?from={starter}")),
+                current => from.is_some_and(|(s, _)| s == starter),
+            }
+        })
+        .collect();
+    let view = FormView {
+        heading: &ctx.t("editor.new_page"),
+        action: &ctx.link("/new"),
+        form_locale: Some(&ctx.content_locale),
+        show_slug: true,
+        slug: &slug,
+        title_value: "",
+        summary_value: "",
+        body_md: &body,
+        base_revision: "",
+        locked: false,
+        fixed_title: false,
+        back_href: None,
+        translation_of: None,
+    };
+    render_form_with(
         &ctx,
-        &FormView {
-            heading: &ctx.t("editor.new_page"),
-            action: &ctx.link("/new"),
-            form_locale: Some(&ctx.content_locale),
-            show_slug: true,
-            slug: "",
-            title_value: "",
-            summary_value: "",
-            body_md: "",
-            base_revision: "",
-            locked: false,
-            fixed_title: false,
-            back_href: None,
-            translation_of: None,
-        },
+        &view,
+        minijinja::context! { starters => starter_links },
     )
 }
 
@@ -738,6 +851,15 @@ pub async fn create_page(
             "slug: lowercase letters, digits and dashes, up to 100 characters",
         ));
     }
+    let (namespace, bare) = split_path(&slug);
+    if namespace == "template" && !ctx.actor.can_edit_page(Some(TEMPLATE_EDIT_FLOOR)) {
+        return refuse(
+            &ctx,
+            &ctx.link("/new"),
+            Capability::PageCreate,
+            &ctx.t("template.no_create"),
+        );
+    }
     let mut draft = match validate(&form.title, &form.summary, &form.body_md) {
         Ok(draft) => draft,
         Err(reason) => return Ok(bad_request(reason)),
@@ -748,11 +870,13 @@ pub async fn create_page(
     // The unique index is the real guard; this answers the common case, and an
     // archived slug stays taken so a restore lands on its own address.
     let taken = sqlx::query!(
-        "SELECT deleted_at FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2
+        "SELECT deleted_at FROM pages
+         WHERE wiki_id = $1 AND namespace = ($4::text)::page_namespace AND slug = $2
            AND COALESCE(locale, '') = $3",
         ctx.wiki.id,
-        slug,
-        locale
+        bare,
+        locale,
+        namespace
     )
     .fetch_optional(&state.db)
     .await?;
@@ -765,12 +889,13 @@ pub async fn create_page(
     let mut tx = state.db.begin().await?;
     match sqlx::query!(
         "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale)
-         VALUES ($1, $2, 'main', $3, $4, $5)",
+         VALUES ($1, $2, ($6::text)::page_namespace, $3, $4, $5)",
         page_id,
         ctx.wiki.id,
-        slug,
+        bare,
         draft.title,
-        locale
+        locale,
+        namespace
     )
     .execute(&mut *tx)
     .await
@@ -808,7 +933,7 @@ pub async fn create_page(
     .await?;
     tx.commit().await?;
 
-    warm_cache(&state, ctx.wiki.id, &draft.body_md).await;
+    after_save(&state, &ctx, page_id, &slug, &draft.body_md).await;
     audit::record_or_log(
         &state.db,
         audit::Entry {
@@ -932,13 +1057,15 @@ pub async fn save_page(
     let target_locale = chosen_locale(&ctx, &form.locale);
     let moved = target_locale != locale;
     if moved {
+        let (namespace, bare) = split_path(&slug);
         let taken = sqlx::query_scalar!(
             r#"SELECT count(*) AS "n!" FROM pages
-               WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2
+               WHERE wiki_id = $1 AND namespace = ($4::text)::page_namespace AND slug = $2
                  AND COALESCE(locale, '') = $3"#,
             ctx.wiki.id,
-            slug,
-            target_locale
+            bare,
+            target_locale,
+            namespace
         )
         .fetch_one(&state.db)
         .await?;
@@ -994,16 +1121,18 @@ pub async fn save_page(
     if form.synced.is_some()
         && let Some(source_locale) = found.translation_source_locale.as_deref()
     {
+        let (namespace, bare) = split_path(&slug);
         sqlx::query!(
             "UPDATE pages SET translation_source_revision_id = (
                  SELECT current_revision_id FROM pages
-                 WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2
+                 WHERE wiki_id = $1 AND namespace = ($5::text)::page_namespace AND slug = $2
                    AND COALESCE(locale, '') = $3 AND deleted_at IS NULL)
              WHERE id = $4",
             ctx.wiki.id,
-            slug,
+            bare,
             source_locale,
-            found.id
+            found.id,
+            namespace
         )
         .execute(&state.db)
         .await?;
@@ -1057,7 +1186,7 @@ pub async fn save_page(
     .await?;
     tx.commit().await?;
 
-    warm_cache(&state, ctx.wiki.id, &draft.body_md).await;
+    after_save(&state, &ctx, found.id, &slug, &draft.body_md).await;
     audit::record_or_log(
         &state.db,
         audit::Entry {
@@ -1152,6 +1281,9 @@ pub struct PreviewForm {
     title: String,
     #[serde(default)]
     body_md: String,
+    /// The page's path, when the editor knows it.
+    #[serde(default)]
+    slug: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1181,14 +1313,21 @@ pub async fn preview(
     if form.body_md.len() > BODY_MAX {
         return Ok((StatusCode::PAYLOAD_TOO_LARGE, "body: up to 5 MB of text").into_response());
     }
+    // A template previews as its own page shows it.
+    let path = if slug_is_valid(form.slug.trim()) {
+        form.slug.trim()
+    } else {
+        ""
+    };
+    let expanded = crate::templates::expand(&state, &ctx, path, &form.body_md).await?;
     if query.fragment.unwrap_or(0) == 1 {
-        let body_html = naw_markdown::render_html(&form.body_md);
+        let body_html = naw_markdown::render_html(&expanded.text);
         let body_html = crate::emotes::expand(&state, ctx.wiki.id, body_html).await?;
         return Ok(([HTML], body_html).into_response());
     }
     let title = form.title.trim();
     let title = if title.is_empty() { "Preview" } else { title };
-    let rendered = naw_markdown::render_body(&form.body_md);
+    let rendered = naw_markdown::render_body(&expanded.text);
     let body_html = crate::emotes::expand(&state, ctx.wiki.id, rendered.html).await?;
     let html = render_shell(
         &ctx,

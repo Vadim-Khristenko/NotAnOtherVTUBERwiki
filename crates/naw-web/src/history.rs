@@ -258,7 +258,8 @@ pub async fn revision(
         return Ok(crate::errors::not_found());
     };
 
-    let rendered = naw_markdown::render_body(&stored.body_md);
+    let expanded = crate::templates::expand(&state, &ctx, &slug, &stored.body_md).await?;
+    let rendered = naw_markdown::render_body(&expanded.text);
     let body_html = crate::emotes::expand(&state, ctx.wiki.id, rendered.html).await?;
     let html = pages::render_shell(
         &ctx,
@@ -498,6 +499,7 @@ pub async fn revert(
     )
     .await?;
     tx.commit().await?;
+    pages::after_save(&state, &ctx, found.id, &slug, &target.body_md).await;
 
     audit::record_or_log(
         &state.db,

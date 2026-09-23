@@ -161,11 +161,7 @@ pub async fn show(
     let (ctx, person) = or_respond!(resolve(&state, &headers, user.as_ref(), &name, "").await?);
     let page = profile_page(&state, ctx.wiki.id, &person.username).await?;
     let body_html = match &page {
-        Some(page) => Some(
-            pages::cached_body(&state, ctx.wiki.id, &page.body_md)
-                .await?
-                .0,
-        ),
+        Some(page) => Some(pages::cached_body(&state, &ctx, "", &page.body_md).await?.0),
         None => None,
     };
 
@@ -406,7 +402,7 @@ pub async fn save(
         return conflict(&ctx, &person);
     }
     tx.commit().await?;
-    pages::warm_cache(&state, ctx.wiki.id, &draft.body_md).await;
+    pages::after_save(&state, &ctx, page_id, "", &draft.body_md).await;
     crate::audit::record_or_log(
         &state.db,
         crate::audit::Entry {

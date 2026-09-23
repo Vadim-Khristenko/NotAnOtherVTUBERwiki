@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale)\n         VALUES ($1, $2, ($6::text)::page_namespace, $3, $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "af72d42a63ef66cea3e5ea7b86604cdffbf4180f7a5fc54ee75c16a11411cde3"
+}

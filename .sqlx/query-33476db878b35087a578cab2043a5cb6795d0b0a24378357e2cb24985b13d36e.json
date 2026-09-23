@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT ON (p.slug) p.slug AS \"slug!\", left(r.body_md, 300) AS \"head!\"\n           FROM pages p JOIN revisions r ON r.id = p.current_revision_id\n           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.deleted_at IS NULL\n             AND r.body_md LIKE '<!-- starter:%'\n           ORDER BY p.slug, (COALESCE(p.locale, '') = $2) DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "head!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "33476db878b35087a578cab2043a5cb6795d0b0a24378357e2cb24985b13d36e"
+}

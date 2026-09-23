@@ -572,6 +572,32 @@ figure.pullquote blockquote { display: inline-block; font-size: 1.25rem; font-we
 pre.mermaid, pre.diagram { border: 1px dashed var(--border-strong); }
 pre.math { border-left: 3px solid var(--accent); }
 span.math { font-family: var(--font-mono); background: var(--surface-sunken); padding: 0.1rem 0.35rem; border-radius: 0.3rem; }
+/* Infobox: the card a template like Infobox VTuber builds. It floats beside
+ * the opening paragraphs on a wide screen and sits above them on a phone. */
+.content aside.infobox { float: right; clear: right; width: min(20rem, 42%); margin: 0 0 var(--s4) var(--s5); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elevated); font-size: 0.9rem; line-height: 1.45; }
+.content aside.infobox > :first-child { margin-top: 0; }
+.content aside.infobox > :last-child { margin-bottom: 0; }
+.content .infobox-title { margin: 0 0 var(--s3); font-size: 1.1rem; font-weight: 700; text-align: center; color: var(--ink); text-wrap: balance; }
+.content aside.infobox img { display: block; width: 100%; height: auto; margin: 0 auto var(--s2); }
+.content aside.infobox p { margin: var(--s2) 0; }
+.content aside.infobox h2, .content aside.infobox h3 { margin: var(--s3) calc(var(--s3) * -1) var(--s2); padding: var(--s1) var(--s3); font-size: 0.9rem; text-align: center; background: var(--accent-soft); border-block: 1px solid var(--line); }
+.content dl.infobox-rows { display: grid; grid-template-columns: minmax(5.5rem, 38%) 1fr; margin: 0; }
+.content dl.infobox-rows > div { display: contents; }
+.content dl.infobox-rows dt, .content dl.infobox-rows dd { margin: 0; padding: var(--s1) 0; border-top: 1px solid var(--line); }
+.content dl.infobox-rows > div:first-child > * { border-top: none; }
+.content dl.infobox-rows dt { padding-right: var(--s2); font-weight: 700; color: var(--ink); }
+.content dl.infobox-rows dd { color: var(--ink-soft); overflow-wrap: anywhere; }
+@media (max-width: 40rem) {
+  .content aside.infobox { float: none; width: auto; margin: 0 0 var(--s4); }
+}
+.template-info { clear: both; margin-top: var(--s6); padding: var(--s4); border: 1px dashed var(--border-strong); border-radius: var(--radius); background: var(--bg-elevated); }
+.template-info h2 { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s2); font-size: 1.05rem; }
+.template-info h3 { margin: var(--s4) 0 var(--s1); font-size: 0.95rem; }
+.template-call { user-select: all; }
+.template-uses { columns: 2 14rem; margin: 0; padding-left: var(--s5); }
+.starter-picker { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: 0 0 var(--s4); }
+.starter-picker a { display: inline-flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s3); border: 1px solid var(--line); border-radius: 999px; font-size: 0.9rem; text-decoration: none; color: var(--ink-soft); }
+.starter-picker a[aria-current] { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
 .content dl { margin: 1rem 0; }
 .content dt { font-weight: 700; }
 .content dd { margin: 0 0 0.6rem 1.2rem; color: var(--ink-soft); }

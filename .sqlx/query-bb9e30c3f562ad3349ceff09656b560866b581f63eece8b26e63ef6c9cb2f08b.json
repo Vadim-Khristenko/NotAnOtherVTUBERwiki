@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pages SET translation_source_revision_id = (\n                 SELECT current_revision_id FROM pages\n                 WHERE wiki_id = $1 AND namespace = ($5::text)::page_namespace AND slug = $2\n                   AND COALESCE(locale, '') = $3 AND deleted_at IS NULL)\n             WHERE id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bb9e30c3f562ad3349ceff09656b560866b581f63eece8b26e63ef6c9cb2f08b"
+}

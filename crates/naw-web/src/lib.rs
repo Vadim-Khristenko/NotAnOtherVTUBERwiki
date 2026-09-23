@@ -40,6 +40,7 @@ mod relay;
 mod resolve;
 mod search;
 mod settings;
+mod templates;
 mod translate;
 
 /// Credentials for the command line: password hashing, temporary passwords

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT count(*) AS \"n!\" FROM pages\n               WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2\n                 AND COALESCE(locale, '') = $3",
+  "query": "SELECT count(*) AS \"n!\" FROM template_uses u JOIN pages p ON p.id = u.page_id\n           WHERE u.wiki_id = $1 AND u.template_slug = $2 AND p.deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -13,7 +13,6 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Text",
         "Text"
       ]
     },
@@ -21,5 +20,5 @@
       null
     ]
   },
-  "hash": "c931ad70b3bf32847ff6b23ce772267d9f7fe917c9d2f57d2173c97b946e92db"
+  "hash": "ee37e4075c3afc4df1d9d71402f4bda6869878c976452bed4bd06490b9d5d338"
 }

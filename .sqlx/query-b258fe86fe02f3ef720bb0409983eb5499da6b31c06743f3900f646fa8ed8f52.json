@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT deleted_at FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2\n           AND COALESCE(locale, '') = $3",
+  "query": "SELECT deleted_at FROM pages\n         WHERE wiki_id = $1 AND namespace = ($4::text)::page_namespace AND slug = $2\n           AND COALESCE(locale, '') = $3",
   "describe": {
     "columns": [
       {
@@ -19,6 +19,7 @@
       "Left": [
         "Uuid",
         "Text",
+        "Text",
         "Text"
       ]
     },
@@ -26,5 +27,5 @@
       true
     ]
   },
-  "hash": "743c22d2634c06dc8d935a03e4d1d3c606962886fde2379e562955ee4c1d2f62"
+  "hash": "b258fe86fe02f3ef720bb0409983eb5499da6b31c06743f3900f646fa8ed8f52"
 }
