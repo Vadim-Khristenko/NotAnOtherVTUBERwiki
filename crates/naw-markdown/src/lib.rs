@@ -343,40 +343,27 @@ fn restore_custom_blocks(
 }
 
 fn render_block(block: &CustomBlock, depth: usize, state: &mut BlockState) -> String {
-    let rendered_body = if block.body.trim().is_empty() {
+    let body = if block.body.trim().is_empty() {
         String::new()
     } else {
         render_html_with_depth(&block.body, depth + 1, state)
     };
-    match block.kind {
-        BlockKind::Details => {
-            if rendered_body.is_empty() {
-                format!(
-                    "<details class=\"details\"><summary>{}</summary></details>",
-                    naw_core::html::escape(&block.title)
-                )
-            } else {
-                format!(
-                    "<details class=\"details\"><summary>{}</summary>\n{rendered_body}\n</details>",
-                    naw_core::html::escape(&block.title)
-                )
-            }
+    let details = |class: &str, inner: String| {
+        let summary = naw_core::html::escape(&block.title);
+        if inner.is_empty() {
+            format!("<details class=\"{class}\"><summary>{summary}</summary></details>")
+        } else {
+            format!("<details class=\"{class}\"><summary>{summary}</summary>\n{inner}\n</details>")
         }
-        BlockKind::Pullquote => format!(
-            "<figure class=\"pullquote\"><blockquote>\n{rendered_body}\n</blockquote></figure>"
-        ),
+    };
+    match block.kind {
+        BlockKind::Details => details("details", body),
+        BlockKind::Pullquote => {
+            format!("<figure class=\"pullquote\"><blockquote>\n{body}\n</blockquote></figure>")
+        }
+        BlockKind::CollapsibleQuote if body.is_empty() => details("quote", body),
         BlockKind::CollapsibleQuote => {
-            if rendered_body.is_empty() {
-                format!(
-                    "<details class=\"quote\"><summary>{}</summary></details>",
-                    naw_core::html::escape(&block.title)
-                )
-            } else {
-                format!(
-                    "<details class=\"quote\"><summary>{}</summary>\n<blockquote>\n{rendered_body}\n</blockquote>\n</details>",
-                    naw_core::html::escape(&block.title)
-                )
-            }
+            details("quote", format!("<blockquote>\n{body}\n</blockquote>"))
         }
     }
 }
