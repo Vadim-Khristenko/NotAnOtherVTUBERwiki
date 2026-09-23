@@ -603,7 +603,9 @@ fn split_protected_html(html: &str) -> Vec<HtmlSegment<'_>> {
             i += len;
             normal_start = i;
         } else {
-            i += 1;
+            // One character, not one byte: `&html[i..]` above must always land
+            // on a character boundary, and Cyrillic letters are two bytes.
+            i += rest.chars().next().map_or(1, char::len_utf8);
         }
     }
     if normal_start < html.len() {
@@ -1091,7 +1093,9 @@ fn collect_footnotes(html: &str) -> String {
             {
                 depth += 1;
             }
-            i += 1;
+            // Step a whole character, so the slices above stay on boundaries
+            // when a note is written in anything but ASCII.
+            i += rest[i..].chars().next().map_or(1, char::len_utf8);
         }
         match end {
             Some(stop) => {
@@ -1701,5 +1705,54 @@ mod tests {
         let html = render_html(">! Title\n> body\n");
         assert!(html.contains("<details"), "{html}");
         assert!(html.contains("<summary>"), "{html}");
+    }
+}
+
+#[cfg(test)]
+mod non_ascii {
+    //! The HTML post-processing walks strings by position. Every walk must step
+    //! by whole characters: a byte step lands inside a two-byte Cyrillic letter
+    //! and panics, which took down saving any Russian page with a heading.
+    use super::render_html;
+
+    #[test]
+    fn cyrillic_around_headings_and_emphasis() {
+        let html = render_html(
+            "## Обо мне
+
+Тестирую **альфу**.",
+        );
+        assert!(html.contains("Обо мне"), "{html}");
+        assert!(html.contains("<strong>альфу</strong>"), "{html}");
+    }
+
+    #[test]
+    fn non_ascii_next_to_protected_spans() {
+        let html = render_html("Код: `пример` и дальше ==метка== и $x$ тоже.");
+        assert!(html.contains("<code>пример</code>"), "{html}");
+        assert!(html.contains("<mark>метка</mark>"), "{html}");
+    }
+
+    #[test]
+    fn non_ascii_footnotes() {
+        let html = render_html(
+            "Текст[^1].
+
+[^1]: Примечание на русском, 日本語 тоже.
+",
+        );
+        assert!(html.contains("Примечание на русском"), "{html}");
+        assert!(html.contains("footnote-backref"), "{html}");
+    }
+
+    #[test]
+    fn emoji_and_rtl_survive() {
+        let html = render_html(
+            "# 🍓 Заголовок
+
+مرحبا **بالعالم** 👋",
+        );
+        assert!(html.contains("بالعالم"), "{html}");
+        assert!(html.contains("🍓"), "{html}");
     }
 }
