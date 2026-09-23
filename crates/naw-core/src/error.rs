@@ -7,7 +7,9 @@ use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
-    #[error("configuration error")]
+    /// The message names what is wrong so an operator can fix it, and must
+    /// never quote a secret. HTTP responses still say only "internal error".
+    #[error("configuration error: {0}")]
     Config(String),
     #[error("database error")]
     Database(#[from] sqlx::Error),
