@@ -19,14 +19,18 @@ If you want to know why the technology is what it is, read [STACK.md](STACK.md).
   languages (`/ru/about`).
 - Sign-in with a username and password, and through GitHub, Discord and Telegram OIDC.
   Registration can be closed, so providers only sign in people who already have an
-  account. Email verification is not built yet.
+  account. A browser without JavaScript (or in iPhone Lockdown Mode) can sign in through
+  another device with a one-time code. Email verification is not built yet.
 - An admin panel: accounts with per-person rights, sanctions and notes, pages, the audit
   log, wiki settings, languages, header and footer, error pages, 7TV emote sources.
 - Images in articles, avatars, profiles, and curators who can protect pages and look
   after other people's profiles. Article text may be up to 5 MB and each image up to
   20 MB, counted apart, and search covers every word of even the longest article.
 - 7TV emotes, written `:name:`, kept on the wiki's own storage so a reader never loads
-  anything from 7TV.
+  anything from 7TV, with a searchable list and a picker in the editor.
+- Images can come from a link: the wiki downloads and keeps them, and outside images in
+  an article are copied on save. Outside fetches never reach a private address and fall
+  back to a proxy when a route is throttled.
 - Cloudflare is DNS only on every domain, deliberately: its proxy ranges are blocked in
   Russia, and a large part of this community reads from there.
 
@@ -109,6 +113,8 @@ The skeleton everything else hangs on.
 - [x] Shared error type and shared application state
 - [x] Configuration from file and environment, secrets never logged
 - [x] Migrations, and the SQLx offline workflow wired into CI
+- [x] Sign-in without JavaScript, through another device and a one-time code
+- [x] Session tokens stored as digests, `__Host-` cookies, and cross-origin POSTs refused
 - [ ] Authentication, mostly landed. Sessions, the identity store, sign-in with
       GitHub, Discord and Telegram OIDC, and password login with Argon2id all
       work, with throttling and admin-issued temporary passwords. Registration
