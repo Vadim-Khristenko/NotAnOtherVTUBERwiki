@@ -93,10 +93,11 @@ uuid = { version = "1", features = ["v4", "serde"] }
 
 # --- reader engine
 minijinja = "2.24.0"
-# Revision diffs. `text` is what provides TextDiff and is the whole of what we
-# use; the default set also pulls the unicode word and grapheme segmenters,
-# which are a second dependency tree and the history view diffs by line.
-similar = { version = "3.2.0", default-features = false, features = ["text"] }
+# Revision diffs. `text` provides the line diff; `std` makes the diff deadline
+# real (without it the deadline type is `()` and the limit does nothing). The
+# default set also pulls the unicode word and grapheme segmenters, which are a
+# second dependency tree and the history view diffs by line.
+similar = { version = "3.2.0", default-features = false, features = ["std", "text"] }
 sha2 = "0.10"
 hex = "0.4"
 object_store = { version = "0.14.1", features = ["fs"] }

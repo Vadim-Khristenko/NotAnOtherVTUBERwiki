@@ -310,6 +310,18 @@ fn forbidden(ctx: &Ctx, person: &Person) -> Response {
     .unwrap_or_else(|err| err.into_response())
 }
 
+/// Somebody saved this profile between the form loading and this save.
+fn conflict(ctx: &Ctx, person: &Person) -> Result<Response, AppError> {
+    pages::notice(
+        ctx,
+        StatusCode::CONFLICT,
+        &ctx.t("error.conflict_title"),
+        &ctx.t("profile.conflict"),
+        &format!("/user/{}/edit", person.username),
+        &ctx.t("profile.back"),
+    )
+}
+
 #[derive(serde::Deserialize)]
 pub struct ProfileForm {
     #[serde(default)]
@@ -351,14 +363,7 @@ pub async fn save(
         if let Some(base) = pages::parse_uuid(&form.base_revision)
             && base != page.revision_id
         {
-            return pages::notice(
-                &ctx,
-                StatusCode::CONFLICT,
-                &ctx.t("error.conflict_title"),
-                &ctx.t("profile.conflict"),
-                &format!("/user/{}/edit", person.username),
-                &ctx.t("profile.back"),
-            );
+            return conflict(&ctx, &person);
         }
         if page.body_md == draft.body_md {
             return Ok(pages::see_other(&format!("/user/{}", person.username)));
@@ -373,7 +378,9 @@ pub async fn save(
             let id = Uuid::new_v4();
             // Profiles have no language of their own: one per person per wiki,
             // written in whatever the person writes in.
-            sqlx::query!(
+            // Two first saves racing: the unique index takes one, the
+            // other is a conflict like any other.
+            match sqlx::query!(
                 "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale)
                  VALUES ($1, $2, 'user', $3, $3, NULL)",
                 id,
@@ -381,7 +388,11 @@ pub async fn save(
                 person.username
             )
             .execute(&mut *tx)
-            .await?;
+            .await
+            {
+                Err(err) if pages::is_unique_violation(&err) => return conflict(&ctx, &person),
+                result => result?,
+            };
             id
         }
     };
@@ -397,13 +408,20 @@ pub async fn save(
     )
     .execute(&mut *tx)
     .await?;
-    sqlx::query!(
-        "UPDATE pages SET current_revision_id = $1, updated_at = now() WHERE id = $2",
+    // Compare and swap on the revision this request loaded, none for a page
+    // it just created, so a save racing this one is refused, not erased.
+    let swapped = sqlx::query!(
+        "UPDATE pages SET current_revision_id = $1, updated_at = now()
+         WHERE id = $2 AND current_revision_id IS NOT DISTINCT FROM $3",
         revision_id,
-        page_id
+        page_id,
+        existing.as_ref().map(|page| page.revision_id)
     )
     .execute(&mut *tx)
     .await?;
+    if swapped.rows_affected() == 0 {
+        return conflict(&ctx, &person);
+    }
     tx.commit().await?;
     pages::warm_cache(&state, ctx.wiki.id, &draft.body_md).await;
     crate::audit::record_or_log(

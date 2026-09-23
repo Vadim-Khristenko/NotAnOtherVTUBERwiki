@@ -50,7 +50,7 @@
       {{ nav_item("/admin/wiki", "wiki", "settings", t("admin.settings")) }}
       {% if is_root %}{{ nav_item("/admin/accounts", "accounts", "users", t("admin.accounts_rules")) }}{% endif %}
     </nav>
-    <script>
+    <script nonce="{{ csp_nonce() }}">
       /* On narrow screens the list is a scrolling row; keep the current section in view. */
       (function () {
         var cur = document.querySelector(".admin-nav [aria-current]");
@@ -734,7 +734,7 @@
   <div class="form-actions">
     <a class="button-save" href="/admin/users">{{ t("admin.issued_done") }}</a>
   </div>
-  <script>
+  <script nonce="{{ csp_nonce() }}">
   (function () {
     var button = document.querySelector(".js-copy");
     if (!button || !navigator.clipboard) return;

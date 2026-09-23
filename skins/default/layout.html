@@ -706,7 +706,7 @@ html[data-theme="dark"] .diff-del { background: rgba(255, 138, 158, 0.12); }
 </style>
 {% include "_theme.html" %}
 {% block head_extra %}{% endblock %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function () {
   try {
     var params = new URLSearchParams(location.search);

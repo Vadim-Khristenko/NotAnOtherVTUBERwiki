@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pages SET current_revision_id = $1, updated_at = now()\n         WHERE id = $2 AND current_revision_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0b5e8f5e83f6fa86c52fa8f805b1cee28ccb6ccda32657eaf68a909db8951b32"
+}

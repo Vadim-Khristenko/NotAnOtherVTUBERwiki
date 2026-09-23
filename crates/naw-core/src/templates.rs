@@ -71,6 +71,9 @@ pub fn build(
 ) -> Result<Environment<'static>, AppError> {
     let mut env = Environment::new();
     crate::i18n::install(&mut env, catalog);
+    // A function, not a context value: every template gets it, error pages
+    // and skin overrides included, with no handler having to pass it along.
+    env.add_function("csp_nonce", crate::csp::current);
     for name in TEMPLATES {
         let path = format!("{dir}/{name}");
         let source = match std::fs::read_to_string(&path) {

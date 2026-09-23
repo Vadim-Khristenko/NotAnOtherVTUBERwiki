@@ -10,7 +10,7 @@
 <link rel="manifest" href="/site.webmanifest" />
 <meta name="theme-color" content="#0b0713" media="(prefers-color-scheme: dark)" />
 <meta name="theme-color" content="#fdeef6" media="(prefers-color-scheme: light)" />
-<script>
+<script nonce="{{ csp_nonce() }}">
 /* Dark unless the reader picked light. Runs in <head>, before first paint,
  * so there is no white flash on the way to plum. */
 (function () {

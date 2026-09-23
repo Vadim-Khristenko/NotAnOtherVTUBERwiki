@@ -71,3 +71,8 @@ Rules that keep every skin fast: no external requests (fonts, scripts,
 images), no JavaScript on reader pages, honor `prefers-reduced-motion`,
 and keep contrast readable in both themes. The engine never inlines
 unsafe styles, and neither should a skin.
+
+Every inline script needs the response nonce, `<script nonce="{{ csp_nonce() }}">`.
+The engine sends a Content-Security-Policy that blocks any script without
+it, and inline event handlers (`onclick="…"`) never run at all. A skin test
+fails on a `<script>` tag that lacks the nonce.
