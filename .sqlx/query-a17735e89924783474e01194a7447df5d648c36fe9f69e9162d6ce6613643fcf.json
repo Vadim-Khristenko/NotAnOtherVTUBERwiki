@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            -- $1 is bound as text and cast, never bound as regconfig. sqlx has\n            -- no mapping for regconfig, and binding it directly is the error\n            -- \"no built-in mapping for type regconfig of param #1\".\n            WITH parsed AS (\n              SELECT websearch_to_tsquery($1::text::regconfig, $2) AS tsq\n            )\n            SELECT p.slug,\n                   p.title,\n                   ts_headline(\n                     $1::text::regconfig, left(r.body_md, 300000), parsed.tsq,\n                     'MaxWords=34, MinWords=14, ShortWord=3, MaxFragments=2,\n                      FragmentDelimiter= … , StartSel=<mark>, StopSel=</mark>'\n                   ) AS \"snippet!\",\n                   ts_rank_cd(p.search_vector, parsed.tsq) * 8\n                     + similarity(p.title, $2) AS \"score!\"\n            FROM pages p\n            JOIN revisions r ON r.id = p.current_revision_id\n            CROSS JOIN parsed\n            WHERE p.wiki_id = $3\n              AND p.namespace = 'main'\n              AND p.deleted_at IS NULL\n              -- One language at a time: a search on the Russian side of a wiki\n              -- finds Russian articles, and links to them in Russian.\n              AND COALESCE(p.locale, '') = $5\n              AND (p.search_vector @@ parsed.tsq OR p.title % $2)\n            ORDER BY \"score!\" DESC, p.updated_at DESC\n            LIMIT $4\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "snippet!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "score!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Uuid",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "a17735e89924783474e01194a7447df5d648c36fe9f69e9162d6ce6613643fcf"
+}

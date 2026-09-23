@@ -262,6 +262,8 @@ pub struct Actor {
     pub username: Option<String>,
     /// What the chrome shows for this person, when they set one.
     pub display_name: Option<String>,
+    /// Where their avatar is served from, when they uploaded one.
+    pub avatar_url: Option<String>,
     pub email_verified: bool,
     pub global: GlobalRole,
     /// The membership row, if there is one. A signed-in visitor with no
@@ -283,6 +285,7 @@ impl Actor {
             user_id: None,
             username: None,
             display_name: None,
+            avatar_url: None,
             email_verified: false,
             global: GlobalRole::Registered,
             membership: None,
@@ -466,6 +469,7 @@ pub async fn resolve(
         user_id: Some(user.id),
         username: Some(user.username.clone()),
         display_name: user.display_name.clone(),
+        avatar_url: user.avatar_url.clone(),
         email_verified: user.email_verified,
         global: GlobalRole::parse(&user.global_role),
         membership,
@@ -528,6 +532,7 @@ mod tests {
             user_id: Some(Uuid::nil()),
             username: Some("tester".into()),
             display_name: None,
+            avatar_url: None,
             email_verified: true,
             global,
             membership,

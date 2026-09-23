@@ -85,7 +85,7 @@ pub async fn show(
     };
 
     let account = sqlx::query!(
-        r#"SELECT u.display_name, u.email, u.email_verified_at, u.created_at,
+        r#"SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at,
                   u.must_change_password, (u.password_hash IS NOT NULL) AS "has_password!",
                   c.username AS "created_by?"
            FROM users u LEFT JOIN users c ON c.id = u.created_by
@@ -137,6 +137,7 @@ pub async fn show(
         user_id: Some(t.id),
         username: Some(t.username.clone()),
         display_name: None,
+        avatar_url: None,
         email_verified: account.email_verified_at.is_some(),
         global: t.global,
         membership: t.role,
@@ -268,6 +269,7 @@ pub async fn show(
             u_id => t.id.to_string(),
             u_name => t.username.clone(),
             u_display => account.display_name,
+            u_avatar => account.avatar_key.as_deref().map(crate::media::url_for_key),
             u_email => account.email,
             u_email_verified => account.email_verified_at.is_some(),
             u_global => t.global.as_str(),
@@ -657,6 +659,45 @@ pub async fn end_sessions(
     )
     .await?;
     Ok(back(&t, "sessions_ended"))
+}
+
+/// POST /admin/user/{name}/avatar/remove. For a picture that should not be
+/// on the wiki. The account can upload another one, which is what the notes
+/// and sanctions are for.
+pub async fn remove_avatar(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    Path(name): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let (ctx, t) = match resolve_managed(&state, &headers, user.as_ref(), &name).await? {
+        Ok(found) => found,
+        Err(response) => return Ok(response),
+    };
+    let removed = sqlx::query_scalar!(
+        r#"WITH old AS (SELECT avatar_key FROM users WHERE id = $1 FOR UPDATE)
+           UPDATE users u SET avatar_key = NULL FROM old
+           WHERE u.id = $1 AND old.avatar_key IS NOT NULL
+           RETURNING old.avatar_key AS "key!""#,
+        t.id
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    if let Some(key) = removed {
+        audit::record(
+            &state.db,
+            audit::Entry {
+                wiki_id: Some(ctx.wiki.id),
+                user_id: ctx.actor.user_id,
+                action: "admin.user.avatar_removed",
+                entity_type: "user",
+                entity_id: Some(t.id),
+                meta: json!({ "key": key }),
+            },
+        )
+        .await?;
+    }
+    Ok(back(&t, "avatar_removed"))
 }
 
 #[derive(serde::Deserialize)]

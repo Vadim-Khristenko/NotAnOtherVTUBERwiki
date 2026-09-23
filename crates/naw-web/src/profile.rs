@@ -30,6 +30,7 @@ struct Person {
     id: Uuid,
     username: String,
     display_name: Option<String>,
+    avatar_key: Option<String>,
     global_role: String,
     created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -44,7 +45,7 @@ enum Lookup {
 async fn lookup(state: &AppState, name: &str) -> Result<Lookup, AppError> {
     let name = name.trim().to_lowercase();
     if let Some(row) = sqlx::query!(
-        "SELECT id, username, display_name, global_role, created_at
+        "SELECT id, username, display_name, avatar_key, global_role, created_at
          FROM users WHERE lower(username) = $1",
         name
     )
@@ -55,6 +56,7 @@ async fn lookup(state: &AppState, name: &str) -> Result<Lookup, AppError> {
             id: row.id,
             username: row.username,
             display_name: row.display_name,
+            avatar_key: row.avatar_key,
             global_role: row.global_role,
             created_at: row.created_at,
         }));
@@ -227,6 +229,7 @@ pub async fn show(
         person_username => person.username.clone(),
         person_name => shown_name.clone(),
         person_has_display_name => person.display_name.is_some(),
+        person_avatar => person.avatar_key.as_deref().map(crate::media::url_for_key),
         person_role => role_here,
         person_global => crate::perm::GlobalRole::parse(&person.global_role).as_str(),
         person_joined => person.created_at.format("%Y-%m-%d").to_string(),

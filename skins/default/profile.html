@@ -12,7 +12,7 @@
 #}
 {% block body %}
 <header class="profile-head">
-  <div class="settings-avatar profile-avatar" aria-hidden="true">{{ person_name[:1] | upper }}</div>
+  <div class="settings-avatar profile-avatar" aria-hidden="true">{% if person_avatar %}<img src="{{ person_avatar }}" alt="" width="56" height="56" />{% else %}{{ person_name[:1] | upper }}{% endif %}</div>
   <div class="profile-id">
     <h1><bdi>{{ person_name }}</bdi></h1>
     <p class="profile-handle">@{{ person_username }}

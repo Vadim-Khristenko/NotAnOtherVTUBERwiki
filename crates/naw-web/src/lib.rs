@@ -12,6 +12,7 @@ mod errors;
 mod history;
 mod lang;
 mod locale_path;
+mod media;
 mod net;
 mod observe;
 mod pages;
@@ -83,6 +84,13 @@ fn routes(state: AppState) -> Router {
         .route("/settings/username", post(settings::change_username))
         .route("/settings/display-name", post(settings::set_display_name))
         .route(
+            "/settings/avatar",
+            post(settings::set_avatar).layer(axum::extract::DefaultBodyLimit::max(
+                state.config.avatar_max_bytes + 64 * 1024,
+            )),
+        )
+        .route("/settings/avatar/remove", post(settings::remove_avatar))
+        .route(
             "/settings/sessions/end-others",
             post(settings::end_other_sessions),
         )
@@ -121,6 +129,10 @@ fn routes(state: AppState) -> Router {
             post(admin_user::verify_email),
         )
         .route(
+            "/admin/user/{name}/avatar/remove",
+            post(admin_user::remove_avatar),
+        )
+        .route(
             "/admin/user/{name}/end-sessions",
             post(admin_user::end_sessions),
         )
@@ -148,12 +160,28 @@ fn routes(state: AppState) -> Router {
         .route("/admin/errors", get(admin::error_gallery))
         .route("/admin/errors/{kind}", get(admin::error_preview))
         .route("/search", get(search::search_page))
+        .route("/media", get(media::page))
+        .route(
+            "/media/upload",
+            post(media::upload).layer(axum::extract::DefaultBodyLimit::max(
+                state.config.upload_max_bytes + 64 * 1024,
+            )),
+        )
+        .route("/media/{prefix}/{file}", get(media::serve))
         .route("/user/{name}", get(profile::show))
-        .route("/user/{name}/edit", get(profile::edit).post(profile::save))
+        .route(
+            "/user/{name}/edit",
+            get(profile::edit).post(profile::save).layer(text_form()),
+        )
         .route("/lang", post(pages::set_language))
         .route("/", get(pages::home))
-        .route("/new", get(pages::new_page).post(pages::create_page))
-        .route("/preview", post(pages::preview))
+        .route(
+            "/new",
+            get(pages::new_page)
+                .post(pages::create_page)
+                .layer(text_form()),
+        )
+        .route("/preview", post(pages::preview).layer(text_form()))
         .route("/favicon.ico", get(pages::favicon_ico))
         .route("/favicon-96x96.png", get(pages::favicon_png))
         .route("/apple-touch-icon.png", get(pages::apple_touch_icon))
@@ -167,11 +195,18 @@ fn routes(state: AppState) -> Router {
             get(pages::manifest_icon_512),
         )
         .route("/{slug}", get(pages::page))
-        .route("/{slug}/edit", get(pages::edit_page).post(pages::save_page))
+        .route(
+            "/{slug}/edit",
+            get(pages::edit_page)
+                .post(pages::save_page)
+                .layer(text_form()),
+        )
         .route("/{slug}/history", get(history::history))
         .route(
             "/{slug}/translate",
-            get(translate::form).post(translate::create),
+            get(translate::form)
+                .post(translate::create)
+                .layer(text_form()),
         )
         .route("/{slug}/diff", get(history::diff))
         .route("/{slug}/rev/{revision}", get(history::revision))
@@ -204,7 +239,17 @@ fn routes(state: AppState) -> Router {
                     state.clone(),
                     lang::layer,
                 ))
-                .layer(tower_http::limit::RequestBodyLimitLayer::new(1024 * 1024))
+                // Sized for the largest single request: one uploaded image, or
+                // one article form. Everything else is held far lower by its
+                // extractor, since forms stop at axum's 2 MB default.
+                .layer(tower_http::limit::RequestBodyLimitLayer::new(
+                    state
+                        .config
+                        .upload_max_bytes
+                        .max(state.config.avatar_max_bytes)
+                        .max(pages::TEXT_FORM_MAX)
+                        + 256 * 1024,
+                ))
                 .layer(
                     tower_http::set_header::SetResponseHeaderLayer::if_not_present(
                         axum::http::header::X_CONTENT_TYPE_OPTIONS,
@@ -214,6 +259,13 @@ fn routes(state: AppState) -> Router {
                 .layer(tower_http::trace::TraceLayer::new_for_http()),
         )
         .with_state(state)
+}
+
+/// The body limit for the routes that carry an article: the editor, a new
+/// page, a translation, a profile and the preview. Everywhere else a form
+/// keeps axum's 2 MB default.
+fn text_form() -> axum::extract::DefaultBodyLimit {
+    axum::extract::DefaultBodyLimit::max(pages::TEXT_FORM_MAX)
 }
 
 /// Liveness: the process is up. No database, no cache.

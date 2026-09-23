@@ -7,11 +7,13 @@
   `linkable`       configured providers not linked yet: slug, label
   `sessions`       devices signed in: device, ip, since, current
   `saved`          which change just landed ("language", "sessions", "username")
-  `error`          why a rename was refused, a `settings.rename_*` key
+  `error`          why a change was refused, a `settings.rename_*`,
+                   `settings.display_name_*` or `settings.avatar_*` key
+  `avatar_url`     the current avatar, from the chrome, or none
 #}
 {% block body %}
 <div class="settings-head">
-  <div class="settings-avatar" aria-hidden="true">{{ (my_display_name or username)[:1] | upper }}</div>
+  <div class="settings-avatar" aria-hidden="true">{% if avatar_url %}<img src="{{ avatar_url }}" alt="" width="56" height="56" />{% else %}{{ (my_display_name or username)[:1] | upper }}{% endif %}</div>
   <div>
     <h1><bdi>{{ my_display_name or username }}</bdi></h1>
     <p class="muted-cell">{% if my_display_name %}@{{ username }} · {% endif %}{{ t("settings.joined", date=joined) }}</p>
@@ -34,6 +36,23 @@
              value="{{ my_display_name or '' }}" maxlength="200" placeholder="{{ username }}" autocomplete="nickname" />
       <button class="button-preview" type="submit">{{ t("settings.save") }}</button>
     </form>
+  </section>
+
+  <section class="settings-card" aria-labelledby="s-avatar-h" id="s-avatar">
+    <h2 id="s-avatar-h"><svg class="icon" aria-hidden="true"><use href="#i-photo" /></svg>{{ t("settings.avatar") }}</h2>
+    {% if error and error.startswith("avatar_") %}<p class="notice notice-warn" role="alert">{{ t("settings." ~ error, max=avatar_max_mb) }}</p>{% endif %}
+    <p class="field-note">{{ t("settings.avatar_note", max=avatar_max_mb) }}</p>
+    <form method="post" action="/settings/avatar" enctype="multipart/form-data" class="settings-stack">
+      <label class="visually-hidden" for="s-avatar-file">{{ t("settings.avatar") }}</label>
+      <input class="field-input" id="s-avatar-file" name="avatar" type="file" required
+             accept="image/png,image/jpeg,image/gif,image/webp,image/avif" />
+      <button class="button-preview" type="submit">{{ t("settings.avatar_save") }}</button>
+    </form>
+    {% if avatar_url %}
+    <form method="post" action="/settings/avatar/remove">
+      <button class="button-preview" type="submit">{{ t("settings.avatar_remove") }}</button>
+    </form>
+    {% endif %}
   </section>
 
   <section class="settings-card" aria-labelledby="s-username" id="s-username">

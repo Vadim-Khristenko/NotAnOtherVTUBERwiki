@@ -128,7 +128,7 @@
       {% if signed_in is defined and signed_in %}
       <div class="nav-account">
         <a class="nav-link nav-user" href="/settings" title="{{ display_name }} · {{ t('settings.title') }}">
-          <b class="nav-avatar" aria-hidden="true">{{ display_name[:1] | upper }}</b>
+          <b class="nav-avatar" aria-hidden="true">{% if avatar_url %}<img src="{{ avatar_url }}" alt="" width="28" height="28" />{% else %}{{ display_name[:1] | upper }}{% endif %}</b>
           <span><bdi>{{ display_name }}</bdi></span>
         </a>
         {# Signing out changes state, so it is a POST, not a link. #}

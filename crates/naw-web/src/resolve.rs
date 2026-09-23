@@ -99,6 +99,9 @@ pub struct Ctx {
     /// The routed path, without a language prefix: what a language switch
     /// keeps when it moves the reader to another language.
     pub path: String,
+    /// The largest image one upload may be, so the editor can say so before
+    /// sending a file that would be refused.
+    pub upload_max_bytes: usize,
 }
 
 /// Where the article language of a request came from.
@@ -372,6 +375,7 @@ impl Ctx {
             username => self.actor.username.clone(),
             // The name to show; the username when no display name is set.
             display_name => self.actor.display_name.clone().or_else(|| self.actor.username.clone()),
+            avatar_url => self.actor.avatar_url.clone(),
             can_create => self.actor.can(Capability::PageCreate),
             can_edit => self.actor.can(Capability::PageEdit),
             can_moderate => self.actor.can(Capability::PageDelete),
@@ -439,6 +443,7 @@ pub async fn context(
         content_locale,
         locale_via,
         path,
+        upload_max_bytes: state.config.upload_max_bytes,
     }))
 }
 

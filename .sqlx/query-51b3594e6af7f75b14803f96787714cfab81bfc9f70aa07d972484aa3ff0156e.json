@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.display_name, u.email, u.email_verified_at, u.created_at,\n                  u.must_change_password, (u.password_hash IS NOT NULL) AS \"has_password!\",\n                  c.username AS \"created_by?\"\n           FROM users u LEFT JOIN users c ON c.id = u.created_by\n           WHERE u.id = $1",
+  "query": "SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at,\n                  u.must_change_password, (u.password_hash IS NOT NULL) AS \"has_password!\",\n                  c.username AS \"created_by?\"\n           FROM users u LEFT JOIN users c ON c.id = u.created_by\n           WHERE u.id = $1",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,17 @@
       },
       {
         "ordinal": 1,
+        "name": "avatar_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "avatar_key"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
         "name": "email",
         "type_info": "Text",
         "origin": {
@@ -26,7 +37,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "email_verified_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "must_change_password",
         "type_info": "Bool",
         "origin": {
@@ -59,13 +70,13 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "has_password!",
         "type_info": "Bool",
         "origin": "Expression"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "created_by?",
         "type_info": "Text",
         "origin": {
@@ -85,11 +96,12 @@
       true,
       true,
       true,
+      true,
       false,
       false,
       null,
       true
     ]
   },
-  "hash": "d6c79f4ed13094b39c2933769bb06fa3c6fbae01bc852a231ae17cb99d07a51d"
+  "hash": "51b3594e6af7f75b14803f96787714cfab81bfc9f70aa07d972484aa3ff0156e"
 }

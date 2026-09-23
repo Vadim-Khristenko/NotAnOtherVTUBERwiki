@@ -30,6 +30,8 @@ pub struct CurrentUser {
     /// What people read instead of the username, when set. Already cleaned by
     /// `display_name::clean`; templates still render it inside `<bdi>`.
     pub display_name: Option<String>,
+    /// The avatar's address under /media, when one is set.
+    pub avatar_url: Option<String>,
     pub email: Option<String>,
     pub email_verified: bool,
     pub global_role: String,
@@ -96,7 +98,8 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
         SELECT s.expires_at, u.id AS user_id, u.username,
                u.email AS email_opt,
                (u.email_verified_at IS NOT NULL) AS email_verified,
-               u.global_role, u.locale, u.must_change_password, u.display_name
+               u.global_role, u.locale, u.must_change_password, u.display_name,
+               u.avatar_key
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.id = $1
@@ -122,6 +125,7 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
         id: row.user_id,
         username: row.username,
         display_name: row.display_name,
+        avatar_url: row.avatar_key.as_deref().map(crate::media::url_for_key),
         email: row.email_opt,
         email_verified: row.email_verified.unwrap_or(false),
         global_role: row.global_role,

@@ -64,9 +64,17 @@
 <button type="button" data-wrap="$" title="Inline math">$</button>
 <button type="button" data-prefix="- " title="List">&bull;</button>
 <button type="button" data-footnote title="Footnote">[^]</button>
+<button type="button" data-image title="{{ t('media.insert') }}" hidden><svg class="icon" aria-hidden="true"><use href="#i-photo" /></svg></button>
+<input type="file" id="image-file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif" multiple hidden
+       data-max="{{ upload_max }}" data-too-large="{{ t('media.refused_too_large', max=upload_max_mb) }}"
+       data-uploading="{{ t('media.uploading', name='{name}') }}" data-failed="{{ t('media.failed') }}" />
 </div>
+{# Without a script the button above stays hidden, and this link does the
+   same job on its own page: upload, then copy the Markdown it gives back. #}
+<p class="field-note editor-media-note"><a href="/media" target="_blank" rel="noopener">{{ t("media.upload_link") }}</a> <span class="editor-media-status" id="image-status" role="status"></span></p>
 <label class="field">{{ t("editor.body") }}
-<textarea class="field-body" id="body-md" name="body_md" rows="20" required>{{ body_md }}</textarea>
+<textarea class="field-body" id="body-md" name="body_md" rows="20" required
+          data-max="{{ body_max }}" data-too-large="{{ t('editor.body_too_large', max=body_max_mb) }}">{{ body_md }}</textarea>
 </label>
 <div class="form-actions">
 <button class="button-save" type="submit">{{ t("editor.save") }}</button>
@@ -165,6 +173,61 @@
     area.focus();
     area.selectionStart = area.selectionEnd = s + snippet.length;
     area.dispatchEvent(new Event("input"));
+  }
+  // Images: the button picks one or more files, and each goes to the server
+  // as its own upload, one after another, under its own size limit. Each
+  // Markdown line lands at the cursor as its file is stored. The same
+  // endpoint answers the no-script page.
+  var imageBtn = document.querySelector("button[data-image]");
+  var imageFile = document.getElementById("image-file");
+  var imageStatus = document.getElementById("image-status");
+  if (imageBtn && imageFile && window.fetch && window.FormData) {
+    imageBtn.hidden = false;
+    var imageMax = parseInt(imageFile.dataset.max, 10) || 0;
+    var say = function (text) { if (imageStatus) imageStatus.textContent = text; };
+    var uploadOne = function (file) {
+      if (imageMax && file.size > imageMax) {
+        return Promise.resolve(file.name + ": " + imageFile.dataset.tooLarge);
+      }
+      var data = new FormData();
+      data.append("file", file);
+      say(imageFile.dataset.uploading.replace("{name}", file.name));
+      return fetch("/media/upload", { method: "POST", headers: { "Accept": "application/json" }, body: data })
+        .then(function (res) {
+          return res.json().then(function (json) {
+            if (res.ok && json.markdown) { insertSnippet(json.markdown + "
+"); return ""; }
+            return file.name + ": " + (json.error || imageFile.dataset.failed);
+          }, function () {
+            return file.name + ": " + (res.status === 413 ? imageFile.dataset.tooLarge : imageFile.dataset.failed);
+          });
+        }, function () { return file.name + ": " + imageFile.dataset.failed; });
+    };
+    imageBtn.addEventListener("click", function () { imageFile.click(); });
+    imageFile.addEventListener("change", function () {
+      var files = Array.prototype.slice.call(imageFile.files || []);
+      var problems = [];
+      var chain = Promise.resolve();
+      files.forEach(function (file) {
+        chain = chain.then(function () { return uploadOne(file); })
+          .then(function (problem) { if (problem) problems.push(problem); });
+      });
+      chain.then(function () { say(problems.join(" · ")); imageFile.value = ""; });
+    });
+  }
+  // The text limit, before the form is sent. The server holds the same line.
+  var bodyMax = parseInt(area.dataset.max, 10) || 0;
+  if (bodyMax && window.Blob) {
+    // The browser's own bubble says why, on the field itself; the next
+    // keystroke clears it. Measured in bytes, as the server measures it.
+    area.form.addEventListener("submit", function (ev) {
+      if (new Blob([area.value]).size > bodyMax) {
+        ev.preventDefault();
+        area.setCustomValidity(area.dataset.tooLarge);
+        area.reportValidity();
+      }
+    });
+    area.addEventListener("input", function () { area.setCustomValidity(""); });
   }
   document.addEventListener("click", function (ev) {
     var btn = ev.target.closest("button[data-wrap],button[data-prefix],button[data-link],button[data-footnote],button[data-block],button[data-snippet]");

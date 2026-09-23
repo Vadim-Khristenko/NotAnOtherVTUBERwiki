@@ -26,6 +26,7 @@ base64.workspace = true
 rand.workspace = true
 argon2.workspace = true
 unicode-segmentation.workspace = true
+imagesize.workspace = true
 sha2.workspace = true
 similar.workspace = true
 cookie.workspace = true

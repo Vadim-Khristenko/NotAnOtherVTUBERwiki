@@ -24,6 +24,7 @@ const TEMPLATES: &[&str] = &[
     "settings.html",
     "profile.html",
     "untranslated.html",
+    "media.html",
     "message.html",
     "search.html",
     "history.html",

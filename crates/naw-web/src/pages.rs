@@ -37,7 +37,14 @@ pub(crate) const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const TITLE_MAX: usize = 200;
 const SUMMARY_MAX: usize = 200;
-const BODY_MAX: usize = 500_000;
+/// Largest article text, in bytes of Markdown. Images never count toward it:
+/// they are uploaded one file at a time under their own limit, and the text
+/// only holds a link to each.
+pub(crate) const BODY_MAX: usize = 5 * 1024 * 1024;
+/// Largest form that carries an article. A urlencoded body can be three
+/// times its text: every byte outside ASCII travels as `%XX`, and Cyrillic is
+/// two such bytes per letter. Plus room for the title, summary and the rest.
+pub(crate) const TEXT_FORM_MAX: usize = 3 * BODY_MAX + 256 * 1024;
 const SLUG_MAX: usize = 100;
 
 const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; charset=utf-8");
@@ -584,7 +591,9 @@ pub(crate) fn validate(title: &str, summary: &str, body_md: &str) -> Result<Draf
         return Err("summary: up to 200 characters");
     }
     if body_md.is_empty() || body_md.len() > BODY_MAX {
-        return Err("body: 1 to 500000 characters");
+        return Err(
+            "body: from 1 byte to 5 MB of text. Images do not count: each is uploaded on its own",
+        );
     }
     Ok(Draft {
         title,
@@ -642,6 +651,12 @@ pub(crate) fn render_form(ctx: &Ctx, view: &FormView<'_>) -> Result<Response, Ap
                 back_href => view.back_href,
                 translation_of => view.translation_of,
                 form_locale => view.form_locale,
+                // Checked in the browser too, so a file or a text over the
+                // limit is refused before it is sent, not after.
+                body_max => BODY_MAX,
+                body_max_mb => BODY_MAX / 1024 / 1024,
+                upload_max => ctx.upload_max_bytes,
+                upload_max_mb => ctx.upload_max_bytes / 1024 / 1024,
                 locale_options => view.form_locale.map(|_| {
                     ctx.offered_languages()
                         .into_iter()
@@ -1216,11 +1231,7 @@ pub async fn preview(
         return Ok(bad_request("title: 1 to 200 characters"));
     }
     if form.body_md.len() > BODY_MAX {
-        return Ok((
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "body: up to 500000 characters",
-        )
-            .into_response());
+        return Ok((StatusCode::PAYLOAD_TOO_LARGE, "body: up to 5 MB of text").into_response());
     }
     if query.fragment.unwrap_or(0) == 1 {
         let body_html = naw_markdown::render_html(&form.body_md);

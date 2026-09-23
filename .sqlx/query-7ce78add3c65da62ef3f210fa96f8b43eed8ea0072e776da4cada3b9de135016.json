@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE pages p SET\n          search_lang = cfg.name,\n          search_vector =\n              setweight(to_tsvector(cfg.name::regconfig, p.title), 'A')\n           || setweight(to_tsvector(cfg.name::regconfig, coalesce(r.summary, '')), 'B')\n           || setweight(to_tsvector(cfg.name::regconfig, left(r.body_md, 300000)), 'C')\n        FROM revisions r, wikis w,\n             LATERAL (\n               SELECT COALESCE(\n                 (SELECT c.cfgname::text FROM pg_ts_config c\n                   WHERE c.cfgname::text = CASE split_part(lower(w.default_locale), '-', 1)\n                     WHEN 'en' THEN 'english'\n                     WHEN 'ru' THEN 'russian'\n                     WHEN 'de' THEN 'german'\n                     WHEN 'fr' THEN 'french'\n                     WHEN 'es' THEN 'spanish'\n                     WHEN 'it' THEN 'italian'\n                     WHEN 'pt' THEN 'portuguese'\n                     WHEN 'nl' THEN 'dutch'\n                     WHEN 'tr' THEN 'turkish'\n                     ELSE 'simple'\n                   END),\n                 'simple'\n               ) AS name\n             ) cfg\n        WHERE r.id = p.current_revision_id\n          AND w.id = p.wiki_id\n          AND p.deleted_at IS NULL\n          AND ($1::uuid IS NULL OR p.wiki_id = $1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7ce78add3c65da62ef3f210fa96f8b43eed8ea0072e776da4cada3b9de135016"
+}

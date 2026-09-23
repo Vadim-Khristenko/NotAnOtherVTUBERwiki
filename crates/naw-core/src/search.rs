@@ -161,7 +161,7 @@ impl SearchBackend for Postgres {
             SELECT p.slug,
                    p.title,
                    ts_headline(
-                     $1::text::regconfig, r.body_md, parsed.tsq,
+                     $1::text::regconfig, left(r.body_md, 300000), parsed.tsq,
                      'MaxWords=34, MinWords=14, ShortWord=3, MaxFragments=2,
                       FragmentDelimiter= … , StartSel=<mark>, StopSel=</mark>'
                    ) AS "snippet!",
@@ -208,6 +208,12 @@ impl SearchBackend for Postgres {
 ///
 /// The weights are the ranking policy: a hit in the title outranks one in the
 /// summary, which outranks one in the body.
+///
+/// Only the first 300 000 characters of the body are indexed, here, in
+/// `reindex` and in the search snippet. An article may be 5 MB, a tsvector
+/// may not pass 1 MB, and PostgreSQL refuses the whole save with "string is
+/// too long for tsvector". Word positions stop counting at 16 383 anyway, so
+/// the tail of a very long article would add little but new words.
 pub async fn index_page(
     conn: &mut sqlx::PgConnection,
     page_id: Uuid,
@@ -227,7 +233,7 @@ pub async fn index_page(
           search_vector =
               setweight(to_tsvector($2::text::regconfig, $3), 'A')
            || setweight(to_tsvector($2::text::regconfig, coalesce($4, '')), 'B')
-           || setweight(to_tsvector($2::text::regconfig, $5), 'C')
+           || setweight(to_tsvector($2::text::regconfig, left($5, 300000)), 'C')
         WHERE id = $1
         "#,
         page_id,
@@ -260,7 +266,7 @@ pub async fn reindex(db: &sqlx::PgPool, wiki_id: Option<Uuid>) -> Result<u64, Ap
           search_vector =
               setweight(to_tsvector(cfg.name::regconfig, p.title), 'A')
            || setweight(to_tsvector(cfg.name::regconfig, coalesce(r.summary, '')), 'B')
-           || setweight(to_tsvector(cfg.name::regconfig, r.body_md), 'C')
+           || setweight(to_tsvector(cfg.name::regconfig, left(r.body_md, 300000)), 'C')
         FROM revisions r, wikis w,
              LATERAL (
                SELECT COALESCE(

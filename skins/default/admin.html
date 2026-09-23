@@ -460,7 +460,7 @@
   #}
   {% if done %}<p class="notice {% if done in ['reason_needed', 'note_empty'] %}notice-warn{% else %}notice-ok{% endif %}" role="status">{{ t("admin.done_" ~ done) }}</p>{% endif %}
   <header class="au-head">
-    <div class="settings-avatar" aria-hidden="true">{{ (u_display or u_name)[:1] | upper }}</div>
+    <div class="settings-avatar" aria-hidden="true">{% if u_avatar %}<img src="{{ u_avatar }}" alt="" width="56" height="56" />{% else %}{{ (u_display or u_name)[:1] | upper }}{% endif %}</div>
     <div class="au-id">
       <p class="au-name"><bdi>{{ u_display or u_name }}</bdi></p>
       <p class="muted-cell">@{{ u_name }}
@@ -498,6 +498,9 @@
         <form method="post" action="/admin/users/password"><input type="hidden" name="user_id" value="{{ u_id }}" /><button class="button-preview" type="submit">{{ t("admin.password_reset") }}</button></form>
         {% if s_sessions > 0 %}
         <form method="post" action="/admin/user/{{ u_name }}/end-sessions"><button class="button-preview" type="submit">{{ t("admin.au_end_sessions") }}</button></form>
+        {% endif %}
+        {% if u_avatar %}
+        <form method="post" action="/admin/user/{{ u_name }}/avatar/remove"><button class="button-preview" type="submit">{{ t("admin.au_remove_avatar") }}</button></form>
         {% endif %}
       </div>
       {% endif %}

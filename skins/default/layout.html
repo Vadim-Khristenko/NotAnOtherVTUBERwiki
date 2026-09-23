@@ -162,6 +162,8 @@ body > main { flex: 1 0 auto; width: 100%; box-sizing: border-box; }
 .lang-code { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; }
 .nav-avatar { display: inline-grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 0.85rem; font-weight: 800; }
 .nav-user:hover .nav-avatar { background: var(--accent); color: var(--accent-ink); }
+.nav-avatar, .settings-avatar, .profile-avatar { overflow: hidden; }
+.nav-avatar img, .settings-avatar img, .profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 /* One button, two glyphs: show the theme you would switch to, which is the only
  * way people read a theme toggle correctly. */
@@ -314,6 +316,11 @@ a.button-save, a.button-preview { display: inline-flex; align-items: center; jus
 .settings-card .button-preview { display: inline-flex; text-decoration: none; }
 .settings-stack { display: grid; gap: var(--s2); justify-items: start; }
 .settings-stack .field-input { width: 100%; }
+.media-form { margin: var(--s4) 0; }
+.media-md { font-family: var(--font-mono); font-size: 0.85rem; }
+.media-grid { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--s4); }
+.media-item { display: grid; gap: var(--s2); align-content: start; }
+.media-item img { width: 100%; height: 9rem; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface-sunken); }
 .settings-row { display: flex; gap: var(--s2); flex-wrap: wrap; }
 .settings-row .field-input { flex: 1 1 12rem; width: auto; }
 .settings-list { list-style: none; margin: 0 0 var(--s3); padding: 0; }

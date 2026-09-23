@@ -1,0 +1,51 @@
+{% extends "layout.html" %}
+{#
+  Uploading an image without the editor's script, and the uploader's recent
+  files with the Markdown for each.
+
+  `uploaded`  the file just stored: url, markdown, name. Absent otherwise
+  `error`     why the last upload was refused, already worded
+  `mine`      recent uploads: url, markdown, name, width, height, at
+  `max_mb`    the per file limit
+#}
+{% block body %}
+<h1>{{ t("media.title") }}</h1>
+<p>{{ t("media.intro", max=max_mb) }}</p>
+
+{% if error %}<p class="notice notice-warn" role="alert">{{ error }}</p>{% endif %}
+{% if uploaded %}
+<div class="notice notice-ok" role="status">
+  <p>{{ t("media.uploaded") }}</p>
+  <label class="visually-hidden" for="media-md-new">{{ uploaded.name }}</label>
+  <input class="field-input media-md" id="media-md-new" readonly value="{{ uploaded.markdown }}" />
+  <p class="field-note">{{ t("media.copy_hint") }}</p>
+</div>
+{% endif %}
+
+<form method="post" action="/media/upload" enctype="multipart/form-data" class="settings-stack media-form">
+  <label class="field">{{ t("media.choose") }}
+    <input class="field-input" name="file" type="file" required
+           accept="image/png,image/jpeg,image/gif,image/webp,image/avif" />
+    <span class="field-note">{{ t("media.types") }}</span>
+  </label>
+  <button class="button-save" type="submit">
+    <svg class="icon" aria-hidden="true"><use href="#i-photo" /></svg>{{ t("media.upload") }}</button>
+</form>
+
+<h2>{{ t("media.mine") }}</h2>
+{% if mine %}
+<ul class="media-grid">
+  {% for m in mine %}
+  <li class="media-item">
+    <a href="{{ m.url }}" target="_blank" rel="noopener"><img src="{{ m.url }}" alt="{{ m.name }}" loading="lazy" decoding="async"
+      {%- if m.width and m.height %} width="{{ m.width }}" height="{{ m.height }}"{% endif %} /></a>
+    <label class="visually-hidden" for="media-md-{{ loop.index }}">{{ m.name }}</label>
+    <input class="field-input media-md" id="media-md-{{ loop.index }}" readonly value="{{ m.markdown }}" />
+    <span class="muted-cell">{{ m.name }} · {{ m.at }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted-cell">{{ t("media.none_yet") }}</p>
+{% endif %}
+{% endblock %}

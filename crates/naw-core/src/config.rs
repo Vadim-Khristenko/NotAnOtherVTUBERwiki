@@ -40,6 +40,14 @@ pub struct Config {
     /// is the wrong home for a password.
     #[serde(skip)]
     pub bootstrap_owner: Option<BootstrapOwner>,
+    /// Largest image an editor may upload, in bytes, per file. Each upload
+    /// is its own request, so a page may hold any number of them, and none of
+    /// them counts toward the article text limit.
+    #[serde(default = "default_upload_max_bytes")]
+    pub upload_max_bytes: usize,
+    /// Largest avatar, in bytes. Smaller than uploads: it is shown everywhere.
+    #[serde(default = "default_avatar_max_bytes")]
+    pub avatar_max_bytes: usize,
     /// Defaults for how accounts may change. The install owner can override
     /// each value from the admin panel; these apply until they do.
     #[serde(default)]
@@ -165,6 +173,8 @@ impl Default for Config {
             trust_proxy: false,
             bootstrap_owner: None,
             accounts: AccountPolicy::default(),
+            upload_max_bytes: default_upload_max_bytes(),
+            avatar_max_bytes: default_avatar_max_bytes(),
             auth: AuthConfig::default(),
         }
     }
@@ -307,6 +317,14 @@ impl Registration {
     }
 }
 
+fn default_upload_max_bytes() -> usize {
+    20 * 1024 * 1024
+}
+
+fn default_avatar_max_bytes() -> usize {
+    2 * 1024 * 1024
+}
+
 fn default_session_ttl_hours() -> i64 {
     720
 }
@@ -383,6 +401,8 @@ impl fmt::Debug for Config {
             .field("trust_proxy", &self.trust_proxy)
             .field("bootstrap_owner", &self.bootstrap_owner)
             .field("accounts", &self.accounts)
+            .field("upload_max_bytes", &self.upload_max_bytes)
+            .field("avatar_max_bytes", &self.avatar_max_bytes)
             .field("auth", &self.auth)
             .finish()
     }
@@ -477,6 +497,20 @@ impl Config {
         }
         apply_auth_env(&mut cfg.auth)?;
         apply_accounts_env(&mut cfg.accounts)?;
+        for (name, slot) in [
+            ("NAW_UPLOAD_MAX_BYTES", &mut cfg.upload_max_bytes),
+            ("NAW_AVATAR_MAX_BYTES", &mut cfg.avatar_max_bytes),
+        ] {
+            if let Ok(raw) = std::env::var(name) {
+                *slot = raw
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|_| {
+                        AppError::Config(format!("{name} must be a number of bytes, got {raw:?}"))
+                    })?
+                    .clamp(64 * 1024, 64 * 1024 * 1024);
+            }
+        }
         cfg.bootstrap_owner = BootstrapOwner::from_env()?;
         cfg.check_dev_login()?;
         Ok(cfg)

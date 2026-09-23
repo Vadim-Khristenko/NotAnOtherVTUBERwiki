@@ -4,7 +4,7 @@
 //! nobody else, so there are no capability checks beyond being signed in.
 //! Every change is a POST, which keeps SameSite=Lax the CSRF defence.
 
-use axum::extract::{Extension, Form, Query, State};
+use axum::extract::{Extension, Form, Multipart, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
@@ -172,12 +172,13 @@ pub async fn page(
                 chosen_locale => chosen,
                 my_display_name => user.display_name.clone(),
                 display_name_max => crate::display_name::MAX_LEN,
+                avatar_max_mb => (state.config.avatar_max_bytes / 1024 / 1024).max(1),
                 identities => identity_rows,
                 linkable => linkable,
                 sessions => session_rows,
-                saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username" | "display_name")),
+                saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username" | "display_name" | "avatar" | "avatar_removed")),
                 // Only known keys, so a crafted link cannot pick the wording.
-                error => query.error.as_deref().filter(|e| (e.starts_with("rename_") || e.starts_with("display_name_")) && e.len() < 32 && e.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')),
+                error => query.error.as_deref().filter(|e| (e.starts_with("rename_") || e.starts_with("display_name_") || e.starts_with("avatar_")) && e.len() < 32 && e.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')),
                 rename_enabled => policy.rename_enabled,
                 rename_cooldown => policy.rename_cooldown_days,
                 alias_days => policy.alias_days,
@@ -306,6 +307,84 @@ pub async fn set_display_name(
     )
     .await;
     Ok(Redirect::to("/settings?saved=display_name").into_response())
+}
+
+/// POST /settings/avatar. One image, checked like any upload and held to the
+/// smaller avatar limit. The old file stays in storage: another account may
+/// have uploaded the same picture, and the key is its content hash.
+pub async fn set_avatar(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    mut multipart: Multipart,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    let max = state.config.avatar_max_bytes;
+    let refused = |refusal: crate::media::Refusal| {
+        let key = match refusal {
+            crate::media::Refusal::Empty => "avatar_empty",
+            crate::media::Refusal::TooLarge => "avatar_too_large",
+            crate::media::Refusal::NotAnImage => "avatar_type",
+            crate::media::Refusal::BadDimensions => "avatar_dimensions",
+        };
+        Redirect::to(&format!("/settings?error={key}#s-avatar")).into_response()
+    };
+    let data = match crate::media::read_file_field(&mut multipart, "avatar", max).await {
+        Ok(Some((_, data))) => data,
+        Ok(None) => return Ok(refused(crate::media::Refusal::Empty)),
+        Err(refusal) => return Ok(refused(refusal)),
+    };
+    let stored = match crate::media::store(&state, "avatars", data, max).await? {
+        Ok(stored) => stored,
+        Err(refusal) => return Ok(refused(refusal)),
+    };
+    sqlx::query!(
+        "UPDATE users SET avatar_key = $2 WHERE id = $1",
+        user.id,
+        stored.key
+    )
+    .execute(&state.db)
+    .await?;
+    crate::audit::record_or_log(
+        &state.db,
+        crate::audit::Entry {
+            wiki_id: None,
+            user_id: Some(user.id),
+            action: "user.avatar",
+            entity_type: "user",
+            entity_id: Some(user.id),
+            meta: serde_json::json!({ "key": stored.key, "size": stored.size }),
+        },
+    )
+    .await;
+    Ok(Redirect::to("/settings?saved=avatar").into_response())
+}
+
+/// POST /settings/avatar/remove
+pub async fn remove_avatar(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    sqlx::query!("UPDATE users SET avatar_key = NULL WHERE id = $1", user.id)
+        .execute(&state.db)
+        .await?;
+    crate::audit::record_or_log(
+        &state.db,
+        crate::audit::Entry {
+            wiki_id: None,
+            user_id: Some(user.id),
+            action: "user.avatar_removed",
+            entity_type: "user",
+            entity_id: Some(user.id),
+            meta: serde_json::json!({}),
+        },
+    )
+    .await;
+    Ok(Redirect::to("/settings?saved=avatar_removed").into_response())
 }
 
 #[derive(Deserialize)]
