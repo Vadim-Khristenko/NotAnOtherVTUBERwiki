@@ -25,7 +25,7 @@ That is the whole document. The rest is the precise wording.
 | File | What it is | Made by |
 |------|------------|---------|
 | `.github/assets/FILIAN.png` | Character illustration, 1254 x 1254 | AI generated |
-| `.github/assets/FILIAN_WIKI_BANNER.jpeg` | Repository banner, 2816 x 1584 | AI generated |
+| `.github/assets/FILIAN_WIKI_BANNER.png` | Repository banner, 1920 x 1080 | Human made by just.call.me.l (Discord, SnackersHQ) |
 | `.github/assets/filian-ascii.txt` | ASCII art | Human made |
 | All `.rs`, `.ts`, `.vue`, `.sql`, `.toml` files | The engine | Humans |
 | `skins/snackers/favicon/` icon pack (ico, png, svg, manifest) | FilianWIKI brand icons | AI generated |

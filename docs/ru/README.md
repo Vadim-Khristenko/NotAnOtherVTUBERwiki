@@ -1,6 +1,8 @@
 <div align="center">
 
-<img src="../../.github/assets/FILIAN_WIKI_BANNER.jpeg" alt="NotAnotherWiki" width="100%">
+<img src="../../.github/assets/FILIAN_WIKI_BANNER.png" alt="Баннер FilianWIKI: логотип вики, иконки разделов и машущая Filian" width="100%">
+
+<sub>Баннер нарисовал(а) <b>just.call.me.l</b> (Discord, SnackersHQ). Сделан человеком, спасибо огромное.</sub>
 
 # NotAnotherWiki Engine
 

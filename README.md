@@ -1,6 +1,8 @@
 <div align="center">
 
-<img src=".github/assets/FILIAN_WIKI_BANNER.jpeg" alt="NotAnotherWiki" width="100%">
+<img src=".github/assets/FILIAN_WIKI_BANNER.png" alt="FilianWIKI banner: the wiki logo, section icons and Filian waving" width="100%">
+
+<sub>Banner drawn by <b>just.call.me.l</b> (Discord, SnackersHQ). Human made, and thank you.</sub>
 
 # NotAnotherWiki Engine
 

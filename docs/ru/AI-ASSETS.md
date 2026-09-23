@@ -26,7 +26,7 @@
 | Файл | Что это | Кто сделал |
 |------|---------|------------|
 | `.github/assets/FILIAN.png` | Иллюстрация персонажа, 1254 x 1254 | ИИ-генерация |
-| `.github/assets/FILIAN_WIKI_BANNER.jpeg` | Баннер репозитория, 2816 x 1584 | ИИ-генерация |
+| `.github/assets/FILIAN_WIKI_BANNER.png` | Баннер репозитория, 1920 x 1080 | Сделан человеком: just.call.me.l (Discord, SnackersHQ) |
 | `.github/assets/filian-ascii.txt` | ASCII-арт | Сделан людьми |
 | Все файлы `.rs`, `.ts`, `.vue`, `.sql`, `.toml` | Сам движок | Люди |
 | Набор иконок `skins/snackers/favicon/` (ico, png, svg, manifest) | Фирменные иконки FilianWIKI | ИИ-генерация |
