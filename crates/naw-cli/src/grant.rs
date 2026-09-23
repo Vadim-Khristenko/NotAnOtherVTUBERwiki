@@ -15,7 +15,7 @@ use uuid::Uuid;
 use naw_core::error::AppError;
 
 pub const USAGE: &str = "usage:\n  \
-    naw grant --user NAME --wiki SLUG --role <registered|sponsor|moderator|admin|owner>\n  \
+    naw grant --user NAME --wiki SLUG --role <registered|sponsor|curator|moderator|admin|owner>\n  \
     naw grant --user NAME --install <registered|staff|root>\n  \
     naw grant --user NAME --wiki SLUG --revoke\n\
   \n\
@@ -23,12 +23,17 @@ pub const USAGE: &str = "usage:\n  \
   --install  a cross-wiki role: staff moderates everywhere, root holds every\n             \
              capability on every wiki. Use root for the operator account.";
 
-/// The per-wiki roles, spelled as the `user_wiki_role` enum stores them.
-const WIKI_ROLES: [&str; 5] = ["registered", "sponsor", "moderator", "admin", "owner"];
+/// Per-wiki roles as the `user_wiki_role` enum spells them.
+const WIKI_ROLES: [&str; 6] = [
+    "registered",
+    "sponsor",
+    "curator",
+    "moderator",
+    "admin",
+    "owner",
+];
 
-/// The cross-wiki roles, spelled as the CHECK constraint from migration 0003
-/// allows. Anything else is refused here rather than by the database, so the
-/// error says what the choices are.
+/// Install-wide roles the CHECK constraint allows.
 const INSTALL_ROLES: [&str; 3] = ["registered", "staff", "root"];
 
 pub struct Args {
@@ -269,6 +274,47 @@ mod tests {
                 "root",
             ]))
             .is_err()
+        );
+    }
+
+    #[test]
+    fn wiki_roles_match_the_database_enum() {
+        // Every value the migrations give `user_wiki_role`, in any order.
+        let dir = format!("{}/../../migrations", env!("CARGO_MANIFEST_DIR"));
+        let mut from_sql = std::collections::BTreeSet::new();
+        for entry in std::fs::read_dir(dir).expect("migrations dir") {
+            let sql = std::fs::read_to_string(entry.expect("entry").path()).expect("read");
+            let mut rest = sql.as_str();
+            while let Some(at) = rest.find("user_wiki_role") {
+                rest = &rest[at + "user_wiki_role".len()..];
+                let head = rest.trim_start();
+                let values = if let Some(list) = head.strip_prefix("AS ENUM") {
+                    list.split(')').next().unwrap_or_default()
+                } else if let Some(added) = head.strip_prefix("ADD VALUE") {
+                    added.split(';').next().unwrap_or_default()
+                } else {
+                    continue;
+                };
+                let quoted: Vec<&str> = values.split('\'').collect();
+                // Only the quoted value of ADD VALUE, not its BEFORE target.
+                let take = if head.starts_with("ADD VALUE") {
+                    1
+                } else {
+                    usize::MAX
+                };
+                for value in quoted.iter().skip(1).step_by(2).take(take) {
+                    from_sql.insert(value.to_string());
+                }
+            }
+        }
+        let ours: std::collections::BTreeSet<String> =
+            WIKI_ROLES.iter().map(|r| r.to_string()).collect();
+        assert_eq!(ours, from_sql);
+        assert!(
+            parse(&flags(&[
+                "--user", "vai", "--wiki", "filian", "--role", "curator"
+            ]))
+            .is_ok()
         );
     }
 
