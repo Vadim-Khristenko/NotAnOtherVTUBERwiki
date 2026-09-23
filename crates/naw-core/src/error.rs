@@ -7,8 +7,7 @@ use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
-    /// The message names what is wrong so an operator can fix it, and must
-    /// never quote a secret. HTTP responses still say only "internal error".
+    /// Names what is wrong for the operator; never quotes a secret.
     #[error("configuration error: {0}")]
     Config(String),
     #[error("database error")]
@@ -23,8 +22,7 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        // Details go to the log where they are safe, never to the response
-        // body, and never include configuration values.
+        // Details go to the log, never to the response body.
         let (status, message) = match &self {
             AppError::Config(_) | AppError::Internal => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal error")

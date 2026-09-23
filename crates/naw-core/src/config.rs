@@ -1,4 +1,4 @@
-//! Configuration loading from config.toml plus environment overrides.
+//! Configuration from `config.toml` with environment overrides.
 
 use std::fmt;
 use std::path::Path;
@@ -25,56 +25,44 @@ pub struct Config {
     pub seed_dir: String,
     #[serde(default = "default_locales_dir")]
     pub locales_dir: String,
-    /// Seconds between checks for edited skin and locale files. 0 turns the
-    /// watcher off; the admin panel can still reload on demand.
+    /// Seconds between skin and locale reload checks; 0 disables the watcher.
     #[serde(default = "default_reload_interval_secs")]
     pub reload_interval_secs: u64,
-    /// Take the client address from `X-Real-IP` or `X-Forwarded-For` when
-    /// the request comes from loopback, which is where a reverse proxy on the
-    /// same host or a tunnel end connects from. Off by default: without a
-    /// proxy those headers are whatever the client typed.
+    /// Trust `X-Real-IP` / `X-Forwarded-For` from loopback (a local reverse proxy
+    /// or tunnel). Off by default, since without a proxy clients set them freely.
     #[serde(default)]
     pub trust_proxy: bool,
-    /// The first owner, created or promoted when the server starts. Env only,
-    /// never read from config.toml, because a file in the working directory
-    /// is the wrong home for a password.
+    /// The first owner, ensured at startup. Read from the environment only.
     #[serde(skip)]
     pub bootstrap_owner: Option<BootstrapOwner>,
-    /// Largest image an editor may upload, in bytes, per file. Each upload
-    /// is its own request, so a page may hold any number of them, and none of
-    /// them counts toward the article text limit.
+    /// Largest uploaded image, in bytes, per file.
     #[serde(default = "default_upload_max_bytes")]
     pub upload_max_bytes: usize,
-    /// Largest avatar, in bytes. Smaller than uploads: it is shown everywhere.
+    /// Largest avatar, in bytes.
     #[serde(default = "default_avatar_max_bytes")]
     pub avatar_max_bytes: usize,
-    /// How much storage 7TV emotes may take across the install, in bytes. An
-    /// import stops at this line and says so.
+    /// Storage all 7TV emotes may take across the install, in bytes.
     #[serde(default = "default_emote_budget_bytes")]
     pub emote_budget_bytes: u64,
-    /// Defaults for how accounts may change. The install owner can override
-    /// each value from the admin panel; these apply until they do.
+    /// Defaults for account changes; the admin panel can override each value.
     #[serde(default)]
     pub accounts: AccountPolicy,
     #[serde(default)]
     pub auth: AuthConfig,
 }
 
-/// What an account may change about itself, and for how long an old name
-/// stays reserved.
+/// What an account may change about itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct AccountPolicy {
-    /// Whether people may change their own username at all.
     pub rename_enabled: bool,
-    /// Days between two changes of one account's username.
+    /// Days between two username changes.
     pub rename_cooldown_days: i64,
-    /// Switches former usernames off entirely: a rename frees the old name at
-    /// once and old links stop finding the person. Off by default.
+    /// Frees an old username at once on rename instead of keeping it as an alias.
     pub aliases_disabled: bool,
-    /// Days a former username stays reserved for its owner. 0 keeps it forever.
+    /// Days a former username stays reserved; 0 keeps it forever.
     pub alias_days: i64,
-    /// Former usernames kept per account. The oldest goes first.
+    /// Former usernames kept per account; the oldest is dropped first.
     pub max_aliases: i64,
 }
 
@@ -91,8 +79,7 @@ impl Default for AccountPolicy {
 }
 
 impl AccountPolicy {
-    /// Pulls every value into a sane range, so a typo in an env var or a form
-    /// cannot mean "rename every second" or "keep a million names".
+    /// Clamps every value into a sane range.
     pub fn clamped(self) -> Self {
         Self {
             rename_enabled: self.rename_enabled,
@@ -104,12 +91,11 @@ impl AccountPolicy {
     }
 }
 
-/// An account that must exist with every right on the install.
+/// An account ensured to exist with every right on the install.
 ///
-/// Set with NAW_BOOTSTRAP_OWNER_USERNAME plus either
-/// NAW_BOOTSTRAP_OWNER_PASSWORD_FILE (a secrets file, preferred) or
-/// NAW_BOOTSTRAP_OWNER_PASSWORD. The password is only used when the account has
-/// none yet, so a restart never undoes a password its owner changed since.
+/// `NAW_BOOTSTRAP_OWNER_USERNAME` plus `NAW_BOOTSTRAP_OWNER_PASSWORD_FILE`
+/// (preferred) or `NAW_BOOTSTRAP_OWNER_PASSWORD`. The password is only set
+/// when the account has none, so a restart never undoes a change.
 #[derive(Clone)]
 pub struct BootstrapOwner {
     pub username: String,
@@ -126,9 +112,7 @@ impl fmt::Debug for BootstrapOwner {
 }
 
 impl BootstrapOwner {
-    /// Reads the three variables. Half a configuration is an error rather than
-    /// silently nothing: a password without a name, or a name without a
-    /// password, is somebody's typo on the way to locking themselves out.
+    /// Reads the variables. A name without a password, or the reverse, is an error.
     fn from_env() -> Result<Option<Self>, AppError> {
         let username = std::env::var("NAW_BOOTSTRAP_OWNER_USERNAME")
             .ok()
@@ -213,7 +197,6 @@ fn default_seed_dir() -> String {
     "seeds".to_string()
 }
 
-/// Interface message catalogues, one TOML file per language.
 fn default_locales_dir() -> String {
     "locales".to_string()
 }
@@ -222,62 +205,53 @@ fn default_reload_interval_secs() -> u64 {
     2
 }
 
-/// OAuth, sessions and mail. A provider is enabled when its credentials
-/// exist; there is no separate per-provider switch. Secrets are loaded from
-/// the environment only and are redacted from `Debug` output.
+/// OAuth, sessions and mail. A provider is enabled by its credentials.
+/// Secrets come from the environment only and are redacted from `Debug`.
 #[derive(Clone, Deserialize)]
 pub struct AuthConfig {
-    /// Master switch. When false every auth route answers 404.
+    /// Master switch; when false every auth route answers 404.
     #[serde(default)]
     pub enabled: bool,
-    /// Absolute base URL used in callbacks and email links.
+    /// Absolute base URL for callbacks and email links.
     pub base_url: Option<String>,
-    /// Session lifetime in hours, 720 = 30 days.
+    /// Session lifetime in hours (720 = 30 days).
     #[serde(default = "default_session_ttl_hours")]
     pub session_ttl_hours: i64,
-    /// Attach an identity by provider-certified email when the switch is on.
+    /// Link an identity by provider-verified email.
     #[serde(default = "default_true")]
     pub auto_link_verified_email: bool,
-    /// Enables the loopback-only `dev` provider for end-to-end runs.
+    /// Enables the loopback-only `dev` provider.
     #[serde(default)]
     pub dev_login: bool,
-    /// Serves /dev/mailbox from the log mailer, loopback only.
+    /// Serves `/dev/mailbox` from the log mailer, loopback only.
     #[serde(default)]
     pub dev_mailbox: bool,
-    /// Usernames only an admin may grant (seed, admin, wiki, support).
+    /// Usernames only an admin may grant.
     #[serde(default = "default_reserved_usernames")]
     pub reserved_usernames: Vec<String>,
-    /// Whether a sign-in may create an account. `closed` is a closed alpha:
-    /// providers still sign in people who already have an account, and new
-    /// accounts come from an admin.
+    /// Whether a sign-in may create an account.
     #[serde(default)]
     pub registration: Registration,
-    /// Where the "no account yet" page sends people, for example the page
-    /// that explains how to apply. Nothing is shown when unset.
+    /// Where the "no account yet" page points, e.g. how to apply.
     pub apply_url: Option<String>,
-    /// Username and password sign-in. On by default: it is how accounts an
-    /// admin created get in, and how the first admin gets in at all.
+    /// Username and password sign-in.
     #[serde(default = "default_true")]
     pub password_login: bool,
-    /// Round 1 through round 3 provider credentials, env supplied.
     pub github: Option<OAuth2Creds>,
     pub discord: Option<OAuth2Creds>,
     pub telegram: Option<OAuth2Creds>,
     pub google: Option<OAuth2Creds>,
     pub yandex: Option<OAuth2Creds>,
     pub twitch: Option<OAuth2Creds>,
-    /// Steam keeps an API key for the profile lookup, login works without it.
+    /// Steam Web API key for the profile lookup; login works without it.
     pub steam_api_key: Option<String>,
-    /// Outbound mail delivery, see `MailConfig`.
     #[serde(default = "default_mail")]
     pub mail: MailConfig,
 }
 
 impl Default for AuthConfig {
     fn default() -> Self {
-        // Mirrors the serde defaults above. A derived Default would hand out
-        // session_ttl_hours = 0 and an empty reserved list whenever
-        // config.toml is missing, which silently kills every session.
+        // Mirrors the serde defaults: a derived Default would set a zero session TTL.
         Self {
             enabled: false,
             base_url: None,
@@ -305,10 +279,10 @@ impl Default for AuthConfig {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Registration {
-    /// Anyone who signs in with a provider gets an account.
+    /// Any provider sign-in gets an account.
     #[default]
     Open,
-    /// Only people who already have an account get in.
+    /// Only existing accounts get in.
     Closed,
 }
 
@@ -367,17 +341,14 @@ pub struct OAuth2Creds {
     pub client_secret: String,
 }
 
-/// `log` prints to the log and /dev/mailbox in dev, `smtp` is the real path
-/// (Mailpit in compose). Receiving in tests goes through testmail.app, which
-/// cannot send.
+/// Outbound mail: `log` writes to the log (and /dev/mailbox), `smtp` sends.
 #[derive(Clone, Default, Deserialize)]
 pub struct MailConfig {
-    /// "log" or "smtp".
     #[serde(default)]
     pub backend: MailBackend,
-    /// smtp://host:port or smtps://user:pass@host:port.
+    /// `smtp://host:port` or `smtps://user:pass@host:port`.
     pub smtp_url: Option<String>,
-    /// Envelope from, e.g. "FilianWIKI <noreply@vai-rice.space>".
+    /// Envelope sender.
     pub mail_from: Option<String>,
 }
 
@@ -389,14 +360,14 @@ pub enum MailBackend {
     Smtp,
 }
 
-/// Presence flag for `Debug` output: secrets print as set or unset.
+/// Prints a secret as set or unset.
 fn creds<T>(value: &Option<T>) -> &'static str {
     if value.is_some() { "set" } else { "unset" }
 }
 
 impl fmt::Debug for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Credentials live inside the URLs. Never print them.
+        // URLs carry credentials.
         f.debug_struct("Config")
             .field("database_url", &"[redacted]")
             .field("valkey_url", &"[redacted]")
@@ -420,8 +391,6 @@ impl fmt::Debug for Config {
 
 impl fmt::Debug for AuthConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Every secret field is collapsed to a presence flag. Debug output
-        // must stay safe for logs and bug reports.
         f.debug_struct("AuthConfig")
             .field("enabled", &self.enabled)
             .field("base_url", &self.base_url)
@@ -447,7 +416,6 @@ impl fmt::Debug for AuthConfig {
 
 impl fmt::Debug for MailConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // The SMTP URL can embed the password. Redact like the URLs above.
         f.debug_struct("MailConfig")
             .field("backend", &self.backend)
             .field("smtp_url", &"[redacted]")
@@ -457,8 +425,7 @@ impl fmt::Debug for MailConfig {
 }
 
 impl Config {
-    /// Loads from a TOML file, then applies env overrides. A missing file is
-    /// not an error: defaults target the local compose stack.
+    /// Loads the TOML file, then env overrides. A missing file means defaults.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, AppError> {
         let mut cfg: Self = match std::fs::read_to_string(path) {
             Ok(raw) => toml::from_str(&raw).map_err(|err| AppError::Config(err.to_string()))?,
@@ -533,11 +500,8 @@ impl Config {
         Ok(cfg)
     }
 
-    /// Refuses to start with the dev login anywhere it could be reached from
-    /// outside. The handler checks the peer address too, but behind a reverse
-    /// proxy every request comes from loopback, so that check alone would let
-    /// the whole internet sign in as the dev account. A public https base URL
-    /// or a bind on a non-loopback address both mean "not a laptop".
+    /// Refuses the dev login anywhere reachable from outside: behind a reverse
+    /// proxy every peer is loopback, so the handler's own check is not enough.
     pub fn check_dev_login(&self) -> Result<(), AppError> {
         if !self.auth.dev_login {
             return Ok(());
@@ -565,9 +529,8 @@ fn parse_bool(raw: &str) -> Option<bool> {
     }
 }
 
-/// NAW_RENAME_ENABLED, NAW_ALIASES_DISABLED, NAW_RENAME_COOLDOWN_DAYS, NAW_ALIAS_DAYS and
-/// NAW_MAX_ALIASES. A value that does not parse stops the start rather than
-/// quietly leaving the default in place.
+/// Account policy overrides from `NAW_RENAME_*`, `NAW_ALIAS*` and
+/// `NAW_MAX_ALIASES`. A value that does not parse stops the start.
 fn apply_accounts_env(policy: &mut AccountPolicy) -> Result<(), AppError> {
     if let Ok(raw) = std::env::var("NAW_ALIASES_DISABLED") {
         policy.aliases_disabled = parse_bool(&raw).ok_or_else(|| {
@@ -598,10 +561,9 @@ fn apply_accounts_env(policy: &mut AccountPolicy) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Applies the NAW_AUTH_* and provider env overrides, env wins over TOML.
+/// `NAW_AUTH_*` and provider overrides; env wins over TOML.
 fn apply_auth_env(auth: &mut AuthConfig) -> Result<(), AppError> {
     if let Ok(raw) = std::env::var("NAW_AUTH_REGISTRATION") {
-        // A typo here must not quietly leave registration open.
         auth.registration = Registration::parse(&raw).ok_or_else(|| {
             AppError::Config(format!(
                 "NAW_AUTH_REGISTRATION must be open or closed, got {raw:?}"
@@ -821,8 +783,7 @@ mod tests {
 
     #[test]
     fn reserved_usernames_env_replaces_the_default_list() {
-        // SAFETY: tests run in one process, the env pair is unique to this
-        // test and restored right away.
+        // SAFETY: the variable pair is unique to this test and restored right away.
         unsafe {
             std::env::set_var("NAW_AUTH_RESERVED_USERNAMES", "root, keeper");
         }

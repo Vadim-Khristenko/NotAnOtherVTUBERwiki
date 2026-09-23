@@ -1,10 +1,7 @@
-//! The script nonce of the response being built.
+//! The script nonce of the response being rendered.
 //!
-//! The web layer draws a fresh nonce per request, allows it in the
-//! Content-Security-Policy header and runs the handler inside [`scope`].
-//! Templates print it with `csp_nonce()` on every inline `<script>`, so the
-//! engine's own scripts run and a script that reached a page any other way,
-//! through some future escaping bug, does not.
+//! The web layer draws a nonce per request, allows it in the CSP header and
+//! runs the handler inside [`scope`]; templates read it with `csp_nonce()`.
 
 use std::future::Future;
 
@@ -17,8 +14,7 @@ pub async fn scope<F: Future>(nonce: String, future: F) -> F::Output {
     NONCE.scope(nonce, future).await
 }
 
-/// The nonce of the current request. Empty outside one, where no policy
-/// header goes out either.
+/// The current request's nonce, or empty outside a request.
 pub fn current() -> String {
     NONCE.try_with(String::clone).unwrap_or_default()
 }

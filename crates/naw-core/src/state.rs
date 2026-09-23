@@ -1,4 +1,4 @@
-//! Shared application state wired from configuration.
+//! Application state shared by every handler.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,9 +18,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub search: Arc<dyn SearchBackend>,
     pub storage: Arc<dyn StorageBackend>,
-    /// Templates and interface messages, reloadable at runtime. Take one
-    /// snapshot per request with `skin.current()` and render from it; see
-    /// `skin.rs` for why the two travel together.
+    /// Templates and messages, reloadable. Take one `current()` snapshot per request.
     pub skin: Arc<Skin>,
 }
 
@@ -33,9 +31,6 @@ pub async fn build(config: Config) -> Result<AppState, AppError> {
         crate::templates::DEFAULT_SKIN_DIR,
         &config.locales_dir,
     )?);
-    // Zero turns the watcher off, for an install that wants reloads only from
-    // the admin panel. It is cheap enough to leave on everywhere else: a walk
-    // over a few dozen files every couple of seconds.
     if config.reload_interval_secs > 0 {
         Arc::clone(&skin).watch(Duration::from_secs(config.reload_interval_secs));
     }

@@ -1,7 +1,4 @@
-//! Pluggable backend traits plus scaffold stubs.
-//!
-//! `dyn` is deliberate here: the active backend is chosen at runtime from
-//! configuration, not at compile time.
+//! Storage backend trait and the local filesystem implementation.
 
 use async_trait::async_trait;
 use std::fmt;
@@ -26,8 +23,7 @@ impl SearchBackend for NoopSearch {
 #[async_trait]
 pub trait StorageBackend: fmt::Debug + Send + Sync {
     async fn ping(&self) -> Result<(), AppError>;
-    /// Stores `data` under `key`, replacing whatever was there. Keys are
-    /// slash separated, like `media/ab/abcd....png`.
+    /// Stores `data` under `key` (slash separated, e.g. `media/ab/<hash>.png`).
     async fn put(&self, key: &str, data: Vec<u8>) -> Result<(), AppError>;
     /// The object at `key`, or `None` when there is none.
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, AppError>;
@@ -44,8 +40,6 @@ pub struct LocalStorage {
 
 impl LocalStorage {
     pub fn new(root: &str) -> Result<Self, AppError> {
-        // The server owns its data directory: create it on boot so a fresh
-        // checkout serves without manual setup. Only the path is reported.
         std::fs::create_dir_all(root)
             .map_err(|err| AppError::Config(format!("storage root {root}: {err}")))?;
         let store = object_store::local::LocalFileSystem::new_with_prefix(root)
@@ -54,9 +48,7 @@ impl LocalStorage {
     }
 }
 
-/// A storage key as an object_store path. Keys come from the server (hashes
-/// and fixed prefixes), never from a request, but a malformed one still fails
-/// here rather than escaping the root.
+/// Parses a server-built key; a malformed one fails instead of escaping the root.
 fn object_path(key: &str) -> Result<object_store::path::Path, AppError> {
     object_store::path::Path::parse(key).map_err(|err| {
         tracing::error!(error = %err, "invalid storage key");

@@ -1,28 +1,9 @@
-//! Search storage and querying, behind a backend trait.
+//! Full text search over PostgreSQL, behind a backend trait.
 //!
-//! This lives in the core rather than in the web layer because writing the
-//! index is a storage concern, not an HTTP one: the seeder needs it as much as
-//! the save handler does, and a seeded page that is missing from search is a
-//! wiki whose search box lies.
-//!
-//! PLAN.md decision D10 picked PostgreSQL full text first: it is already
-//! running, it needs no second process, and on a wiki the size of a fan
-//! community it is not the bottleneck. The trait exists so that swapping in
-//! Meilisearch or Tantivy later is a new implementation rather than a rewrite.
-//!
-//! Two things here are easy to get wrong.
-//!
-//! **The query parser.** `to_tsquery` raises an error on input like `a & &`,
-//! which arriving straight from a search box would be a 500 caused by a visitor
-//! typing punctuation. `websearch_to_tsquery` never raises: it reads quotes as
-//! phrases, `or` as alternation and a leading `-` as exclusion, and treats
-//! anything else as words. A search box is exactly what it is for.
-//!
-//! **The stemmer has to match on both sides.** PostgreSQL stems when it writes
-//! the tsvector, not when it reads it, so a vector built under `russian` and
-//! queried under `english` matches almost nothing. The configuration comes from
-//! the wiki locale in both directions, and `pages.search_lang` records which one
-//! was used so a reindex can find rows that drifted after a locale change.
+//! Queries go through `websearch_to_tsquery`, which never raises on visitor
+//! input. The text search configuration comes from the locale on both the
+//! write and the read side, since a vector stemmed as `russian` does not match
+//! a query stemmed as `english`.
 
 use async_trait::async_trait;
 use uuid::Uuid;
@@ -34,9 +15,8 @@ use crate::error::AppError;
 pub struct Hit {
     pub slug: String,
     pub title: String,
-    /// The matching part of the body with matched words wrapped in `<mark>`.
-    /// Sanitized down to `<mark>` and text by [`clean_snippet`], so this is
-    /// safe to render unescaped. It is the only field that is.
+    /// The matching part of the body, escaped, with matches in `<mark>`. Built by
+    /// [`clean_snippet`]; the only field safe to render unescaped.
     pub snippet: String,
 }
 
@@ -45,8 +25,7 @@ pub struct Hit {
 pub struct Request<'a> {
     pub wiki_id: Uuid,
     pub text: &'a str,
-    /// The language searched: results are limited to it, and each backend
-    /// maps it to what it needs, a PostgreSQL text search configuration here.
+    /// The language searched; results are limited to it.
     pub locale: &'a str,
     pub limit: i64,
 }
@@ -58,19 +37,10 @@ pub trait SearchBackend: Send + Sync {
 
 /// Maps a locale to a PostgreSQL text search configuration.
 ///
-/// The return type is `&'static str` from a closed list on purpose. These
-/// values are interpolated into a `::regconfig` cast, and PostgreSQL raises an
-/// error for a configuration that does not exist, so a locale read straight out
-/// of the database must never reach that cast unchecked. Everything
-/// unrecognised lands on `simple`, which does no stemming and no stop word
-/// removal but tokenises any script.
-///
-/// `simple` is also the honest answer for Japanese, Korean and Chinese:
-/// PostgreSQL ships no configuration for them, and they need a segmenter
-/// (`pgroonga`, `zhparser`) rather than a stemmer. Whole-word matching still
-/// works; relevance is worse than it could be.
+/// Returns a value from a closed list because it is cast to `::regconfig`,
+/// which fails for an unknown name. Anything unrecognised, including CJK,
+/// which PostgreSQL has no stemmer for, maps to `simple`.
 pub fn regconfig_for(locale: &str) -> &'static str {
-    // "ru-RU" and "ru" are the same language for stemming purposes.
     let base = locale
         .split(['-', '_'])
         .next()
@@ -110,31 +80,26 @@ pub fn regconfig_for(locale: &str) -> &'static str {
     }
 }
 
-/// Longest query we will run. Past this it is not a search, it is a paste.
+/// Longest query run, in characters.
 pub const QUERY_MAX: usize = 200;
 
-/// Trims and caps a raw query. `None` means there is nothing to search for,
-/// which the route answers with the empty search page rather than a query.
+/// Trims and caps a raw query; `None` when nothing is left.
 pub fn normalize(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return None;
     }
-    // Cut on a character boundary. Slicing bytes would panic mid-codepoint on
-    // a Cyrillic or Japanese query, which is most of the expected traffic.
     Some(trimmed.chars().take(QUERY_MAX).collect())
 }
 
-/// Where `ts_headline` marks a match: two private use characters, given to
-/// it as `chr(57344)` and `chr(57345)`.
+/// Match markers given to `ts_headline` as `chr(57344)` and `chr(57345)`.
 const MATCH_OPEN: char = '\u{E000}';
 const MATCH_CLOSE: char = '\u{E001}';
 
 /// Turns a `ts_headline` result into safe HTML.
 ///
-/// `ts_headline` escapes nothing and runs over the raw Markdown, author HTML
-/// included, so the whole snippet is escaped as text and only then gains
-/// `<mark>` tags, always balanced whatever markers the text itself contains.
+/// `ts_headline` escapes nothing and runs over raw Markdown, so the snippet
+/// is escaped as text first and only then gains balanced `<mark>` tags.
 pub fn clean_snippet(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len() + 32);
     let mut open = false;
@@ -181,28 +146,17 @@ impl Postgres {
 impl SearchBackend for Postgres {
     async fn search(&self, request: Request<'_>) -> Result<Vec<Hit>, AppError> {
         let config = regconfig_for(request.locale);
-        // Two match paths, deliberately. The tsvector finds stemmed whole words
-        // anywhere in the article, which is the main event. The trigram
-        // similarity on the title catches a typo ("filan") and a fragment
-        // ("ili"), neither of which a tsvector can match at all and both of
-        // which a search box receives constantly.
-        //
-        // The score adds them with the full text side weighted far higher, so a
-        // body match beats a fuzzy title resemblance. A title match beats both,
-        // because `setweight` marked the title as rank A when the vector was
-        // written.
+        // Full text finds stemmed words anywhere; trigram similarity on the title
+        // catches typos and fragments. Full text weighs far more in the score.
         let rows = sqlx::query!(
             r#"
-            -- $1 is bound as text and cast, never bound as regconfig. sqlx has
-            -- no mapping for regconfig, and binding it directly is the error
-            -- "no built-in mapping for type regconfig of param #1".
+            -- $1 is bound as text and cast: sqlx has no mapping for regconfig.
             WITH parsed AS (
               SELECT websearch_to_tsquery($1::text::regconfig, $2) AS tsq
             )
             SELECT p.slug,
                    p.title,
-                   -- The snippet comes from where the words are: the head
-                   -- when it matches, otherwise the best matching chunk.
+                   -- From the head when it matches, otherwise from the best chunk.
                    ts_headline(
                      $1::text::regconfig,
                      CASE WHEN hit.start_char IS NOT NULL
@@ -218,8 +172,6 @@ impl SearchBackend for Postgres {
             FROM pages p
             JOIN revisions r ON r.id = p.current_revision_id
             CROSS JOIN parsed
-            -- Only long articles have chunks, and the primary key finds them,
-            -- so a short page costs one empty index probe here.
             LEFT JOIN LATERAL (
               SELECT c.start_char, c.len_chars, ts_rank_cd(c.vector, parsed.tsq) AS rank
               FROM page_search_chunks c
@@ -230,8 +182,6 @@ impl SearchBackend for Postgres {
             WHERE p.wiki_id = $3
               AND p.namespace = 'main'
               AND p.deleted_at IS NULL
-              -- One language at a time: a search on the Russian side of a wiki
-              -- finds Russian articles, and links to them in Russian.
               AND COALESCE(p.locale, '') = $5
               AND (p.search_vector @@ parsed.tsq OR p.title % $2 OR hit.start_char IS NOT NULL)
             ORDER BY "score!" DESC, p.updated_at DESC
@@ -256,21 +206,12 @@ impl SearchBackend for Postgres {
     }
 }
 
-/// Rebuilds `pages.search_vector` for one page.
+/// Rebuilds the search vectors of one page, inside the caller's transaction
+/// so a save and its index never disagree.
 ///
-/// Takes a connection rather than a pool so the save path can run it inside the
-/// same transaction as the revision. A page is then never briefly saved but
-/// unsearchable, and a failed index write rolls the save back rather than
-/// leaving the two out of step.
-///
-/// The weights are the ranking policy: a hit in the title outranks one in the
-/// summary, which outranks one in the body.
-///
-/// The whole body is indexed. An article may be 5 MB and a tsvector may not
-/// pass 1 MB (PostgreSQL refuses the whole save with "string is too long for
-/// tsvector"), so the page's own vector holds the title, the summary and the
-/// first piece of the body, and any further pieces go to
-/// `page_search_chunks`, one vector each. See `split_for_index`.
+/// Weights rank title over summary over body. A tsvector may not pass 1 MB,
+/// so the page vector holds the title, the summary and the first piece of the
+/// body, and further pieces go to `page_search_chunks` (see [`split_for_index`]).
 pub async fn index_page(
     conn: &mut sqlx::PgConnection,
     page_id: Uuid,
@@ -284,9 +225,7 @@ pub async fn index_page(
     let head = pieces.first().map_or("", |piece| piece.text);
     sqlx::query!(
         r#"
-        -- Every use of $2 is annotated ::text. Writing it bare in the
-        -- assignment and as ::regconfig in the casts made PostgreSQL deduce two
-        -- different types for one parameter, which it refuses outright.
+        -- Every $2 is cast from ::text so PostgreSQL infers one type for it.
         UPDATE pages SET
           search_lang = $2::text,
           search_vector =
@@ -312,8 +251,6 @@ pub async fn index_page(
         let starts: Vec<i32> = rest.iter().map(|p| p.start_char as i32).collect();
         let lens: Vec<i32> = rest.iter().map(|p| p.len_chars as i32).collect();
         let texts: Vec<String> = rest.iter().map(|p| p.text.to_string()).collect();
-        // One statement for every piece: PostgreSQL builds the vectors, and
-        // the text crosses the wire once.
         sqlx::query!(
             r#"
             INSERT INTO page_search_chunks (page_id, chunk_no, start_char, len_chars, vector)
@@ -335,13 +272,11 @@ pub async fn index_page(
     Ok(())
 }
 
-/// Characters per indexed piece of a body. A tsvector costs at most about
-/// three bytes per character of text (short unique words in a two byte
-/// script), so 200 000 characters stays well under the 1 MB limit, and
-/// nearly every article is a single piece.
+/// Characters per indexed piece. At most about three bytes of tsvector per
+/// character, so a piece stays well under the 1 MB limit.
 pub const PIECE_CHARS: usize = 200_000;
 
-/// One piece of a body, as indexed.
+/// One indexed piece of a body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Piece<'a> {
     pub text: &'a str,
@@ -350,18 +285,15 @@ pub struct Piece<'a> {
     pub len_chars: usize,
 }
 
-/// Cuts a body into pieces of at most `size` characters for indexing. A cut
-/// goes on the last line break in the final tenth of a piece, or else on the
-/// last whitespace there, so a word is never split in two and lost to search.
-/// Only a body with no whitespace at all is cut mid-word. Always at least one
-/// piece, empty for an empty body.
+/// Cuts a body into pieces of at most `size` characters, on the last line
+/// break or whitespace in the final tenth of each piece so no word is split.
+/// Always returns at least one piece.
 pub fn split_for_index(body: &str, size: usize) -> Vec<Piece<'_>> {
     let size = size.max(10);
     let mut pieces = Vec::new();
     let mut rest = body;
     let mut start_char = 0;
     loop {
-        // The byte offset of character `size`, or the whole remainder.
         let Some((hard, _)) = rest.char_indices().nth(size) else {
             let len_chars = rest.chars().count();
             pieces.push(Piece {
@@ -395,15 +327,9 @@ pub fn split_for_index(body: &str, size: usize) -> Vec<Piece<'_>> {
     }
 }
 
-/// Rebuilds every live page's vectors in one wiki, or across the install when
-/// `wiki_id` is `None`. Returns how many pages were touched.
-///
-/// Needed after a locale change, after a bulk import, and after any change to
-/// the weights or the cut points in `index_page`. Every page goes through
-/// `index_page` itself, so a reindex writes exactly what a save would: the
-/// same stemmer for the page's own language, the same pieces. Pages are read
-/// in batches, so a wiki of long articles never sits in memory whole, and each
-/// batch is one transaction.
+/// Rebuilds every live page's vectors in one wiki, or everywhere when
+/// `wiki_id` is `None`, through [`index_page`] in batches of one transaction
+/// each. Returns how many pages were indexed.
 pub async fn reindex(db: &sqlx::PgPool, wiki_id: Option<Uuid>) -> Result<u64, AppError> {
     const BATCH: usize = 50;
     let ids = sqlx::query_scalar!(
@@ -468,7 +394,6 @@ mod tests {
         let body = "Филиан светит снакерам. ".repeat(500) + "финал";
         let pieces = split_for_index(&body, 1000);
         assert!(pieces.len() > 1);
-        // Nothing lost, nothing doubled, and the offsets line up.
         let joined: String = pieces.iter().map(|p| p.text).collect();
         assert_eq!(joined, body);
         let mut at = 0;
@@ -477,7 +402,6 @@ mod tests {
             assert_eq!(piece.len_chars, piece.text.chars().count());
             assert!(piece.len_chars <= 1000);
             at += piece.len_chars;
-            // Cut between words, never inside one.
             let first = piece.text.chars().next().unwrap();
             assert!(piece.start_char == 0 || first.is_whitespace());
         }
@@ -506,9 +430,6 @@ mod tests {
 
     #[test]
     fn an_unsupported_language_falls_back_instead_of_breaking_the_query() {
-        // PostgreSQL ships no configuration for these, and casting an unknown
-        // name to regconfig raises an error. Landing on 'simple' keeps search
-        // working with worse relevance, which is the honest trade.
         for locale in [
             "ja",
             "ko",
@@ -526,9 +447,7 @@ mod tests {
 
     #[test]
     fn every_configuration_name_is_one_postgres_actually_ships() {
-        // The full list from `SELECT cfgname FROM pg_ts_config` on the pinned
-        // PostgreSQL 18. A typo here would be a 500 on every search for that
-        // one locale, which is the kind of bug that reaches production.
+        // Every configuration shipped with the pinned PostgreSQL 18.
         const SHIPPED: &[&str] = &[
             "arabic",
             "armenian",
@@ -581,8 +500,7 @@ mod tests {
 
     #[test]
     fn an_overlong_query_is_cut_on_a_character_boundary() {
-        // Byte slicing would panic here: every character is two bytes, so the
-        // 200 byte mark lands inside one.
+        // Every character is two bytes, so byte slicing would panic.
         let cyrillic = "я".repeat(500);
         let capped = normalize(&cyrillic).expect("not blank");
         assert_eq!(capped.chars().count(), QUERY_MAX);
@@ -597,7 +515,6 @@ mod tests {
 
     #[test]
     fn a_snippet_keeps_its_marks_and_escapes_everything_else() {
-        // ts_headline passes an unquoted tag through byte for byte.
         let raw =
             "Audit page. \u{E000}zxqneedle\u{E001} <img src=x onerror=alert(document.domain)> text";
         let clean = clean_snippet(raw);

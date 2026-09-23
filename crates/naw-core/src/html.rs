@@ -1,4 +1,4 @@
-//! HTML escaping shared by every crate that writes markup by hand.
+//! HTML helpers for markup written by hand.
 
 /// Escapes text for HTML element content and quoted attribute values.
 pub fn escape(raw: &str) -> String {

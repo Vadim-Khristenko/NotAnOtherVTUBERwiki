@@ -1,20 +1,9 @@
-//! Log initialisation, driven by the environment rather than `config.toml`.
+//! Log setup from the environment, so it works even when `config.toml` does not.
 //!
-//! Reading these from the environment is deliberate: a broken `config.toml` is
-//! exactly when the log matters most, so logging must come up before any
-//! parsing can fail.
-//!
-//! Three knobs:
-//!
-//! - `NAW_LOG_TRACE=1` turns on request-level detail. Every request gets a span
-//!   carrying an id, the method, the path and the matched route, and the
-//!   headers are dumped through a redaction filter. Off by default because it
-//!   is loud and because the header dump deserves a conscious decision.
-//! - `NAW_LOG_FORMAT=json` switches to structured output for a log shipper.
-//!   Anything else stays human readable.
-//! - `RUST_LOG` overrides the filter entirely, as always.
+//! - `NAW_LOG_TRACE=1`: per-request spans and a redacted header dump.
+//! - `NAW_LOG_FORMAT=json`: structured output.
+//! - `RUST_LOG`: overrides the filter.
 
-/// Text for humans, json for machines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogFormat {
     Text,
@@ -34,11 +23,7 @@ fn truthy(raw: &str) -> bool {
     )
 }
 
-/// The default filter for a given verbosity. `RUST_LOG` beats this.
-///
-/// Trace mode deliberately does not turn on `trace` for the whole world: sqlx
-/// at trace level prints every statement it prepares, which buries the request
-/// detail this flag exists to surface.
+/// The default filter. Trace mode leaves sqlx out, which would log every statement.
 pub fn default_filter(trace: bool) -> &'static str {
     if trace {
         "naw=trace,naw_web=trace,naw_core=trace,tower_http=debug,sqlx=warn"
@@ -58,10 +43,7 @@ pub fn settings_from_env() -> LogSettings {
     LogSettings { trace, format }
 }
 
-/// Headers that must never reach the log, even in trace mode.
-///
-/// A session cookie in a log file is a session anyone with log access can
-/// replay, and a bearer token is worse. Matching is on the lowercased name.
+/// Headers never logged, even in trace mode (lowercased names).
 const NEVER_LOG: &[&str] = &[
     "cookie",
     "set-cookie",
@@ -71,13 +53,12 @@ const NEVER_LOG: &[&str] = &[
     "x-auth-token",
 ];
 
-/// True when this header's value is safe to write to a log.
 pub fn header_is_loggable(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     !NEVER_LOG.iter().any(|blocked| lower == *blocked)
 }
 
-/// Installs the global subscriber. Call once, early, before anything logs.
+/// Installs the global subscriber. Call once, before anything logs.
 pub fn init() -> LogSettings {
     let settings = settings_from_env();
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
@@ -92,8 +73,6 @@ pub fn init() -> LogSettings {
             .init(),
         LogFormat::Text => tracing_subscriber::fmt()
             .with_env_filter(filter)
-            // Span context is what makes a request traceable across modules,
-            // and it is noise the rest of the time.
             .with_span_events(if settings.trace {
                 tracing_subscriber::fmt::format::FmtSpan::NEW
                     | tracing_subscriber::fmt::format::FmtSpan::CLOSE
@@ -123,8 +102,6 @@ mod tests {
 
     #[test]
     fn credentials_are_never_loggable() {
-        // The whole value of trace mode is dumping headers, so this list is the
-        // only thing standing between a debug session and a replayable session.
         for blocked in [
             "cookie",
             "Cookie",
@@ -156,15 +133,12 @@ mod tests {
 
     #[test]
     fn a_header_that_merely_contains_cookie_is_not_redacted_by_accident() {
-        // Matching is exact, so a hypothetical future header keeps working.
         assert!(header_is_loggable("x-cookie-consent"));
         assert!(header_is_loggable("cookie-policy-version"));
     }
 
     #[test]
     fn trace_mode_keeps_sqlx_quiet() {
-        // sqlx at trace level prints every prepared statement and drowns the
-        // request detail this flag exists to show.
         let filter = default_filter(true);
         assert!(filter.contains("naw_web=trace"));
         assert!(filter.contains("sqlx=warn"));
@@ -173,7 +147,6 @@ mod tests {
 
     #[test]
     fn format_only_switches_on_an_explicit_json_value() {
-        // Guarding against a stray "1" turning the log into json.
         assert_eq!(
             settings_from_env().format,
             LogFormat::Text,

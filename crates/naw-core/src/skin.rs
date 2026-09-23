@@ -1,20 +1,8 @@
 //! Templates and messages, reloadable without a restart.
 //!
-//! The template environment and the message catalogue are loaded together and
-//! swapped together, because they depend on each other: a template edited to
-//! call a new message key, loaded against the old catalogue, would show the raw
-//! key until the next restart.
-//!
-//! **A reload never makes things worse.** The new set is built completely
-//! first, and only a successful build replaces the running one. A skin author
-//! who saves a template with a syntax error gets a log line and an entry in the
-//! admin panel; readers keep getting the last good version. The alternative,
-//! swapping first and failing later, would turn one typo into an outage.
-//!
-//! **Requests see a consistent snapshot.** `current()` hands out an `Arc` to
-//! the loaded set. A request holds its own reference for as long as it renders,
-//! so a reload in the middle of that render cannot give it half an old skin and
-//! half a new one, and the old set is freed when the last request using it ends.
+//! Both are built together and swapped together, and only after a complete,
+//! successful build, so a broken file never replaces a working skin. Requests
+//! render from an `Arc` snapshot that a reload cannot change under them.
 
 use std::hash::{Hash, Hasher};
 use std::path::Path;
@@ -24,22 +12,19 @@ use std::time::{Duration, SystemTime};
 use crate::error::AppError;
 use crate::i18n::Catalog;
 
-/// One loaded skin plus the messages it renders with.
+/// One loaded skin and its messages.
 pub struct Loaded {
     pub env: minijinja::Environment<'static>,
     pub messages: Arc<Catalog>,
     pub loaded_at: chrono::DateTime<chrono::Utc>,
-    /// The file fingerprint this set was built from, so the watcher can tell
-    /// whether anything changed since.
+    /// The file fingerprint this set was built from.
     pub fingerprint: u64,
 }
 
 /// What a reload did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
-    /// Nothing on disk changed, so nothing was rebuilt.
     Unchanged,
-    /// Rebuilt and swapped in.
     Reloaded,
 }
 
@@ -48,15 +33,12 @@ pub struct Skin {
     fallback_dir: String,
     locales_dir: String,
     current: RwLock<Arc<Loaded>>,
-    /// The last reload that failed, if the most recent attempt failed. Cleared
-    /// by the next success. Shown in the admin panel, because a failed reload is
-    /// otherwise invisible: the site keeps working on the old files.
+    /// The last failed reload, cleared by the next success.
     last_error: RwLock<Option<String>>,
 }
 
 impl Skin {
-    /// Loads the first set. Unlike a reload, a failure here is fatal: there is
-    /// no previous version to keep serving.
+    /// Loads the first set. Fatal on failure, since there is nothing to fall back on.
     pub fn load(skin_dir: &str, fallback_dir: &str, locales_dir: &str) -> Result<Self, AppError> {
         let fingerprint = fingerprint(&[skin_dir, fallback_dir, locales_dir]);
         let loaded = build(skin_dir, fallback_dir, locales_dir, fingerprint)?;
@@ -69,12 +51,9 @@ impl Skin {
         })
     }
 
-    /// The set a request should render with. Hold on to it for the whole
-    /// request; it stays valid across a reload.
+    /// The set to render one request with.
     pub fn current(&self) -> Arc<Loaded> {
-        // A poisoned lock means a thread panicked while swapping, which only
-        // happens between two complete values. Either value is usable, so
-        // recover it rather than turn every later request into a 500.
+        // Poisoning only happens between two complete values; either is usable.
         match self.current.read() {
             Ok(guard) => Arc::clone(&guard),
             Err(poisoned) => Arc::clone(&poisoned.into_inner()),
@@ -88,10 +67,8 @@ impl Skin {
         }
     }
 
-    /// Rebuilds when the files changed, and swaps only on success.
-    ///
-    /// `force` rebuilds even when the fingerprint says nothing changed, for the
-    /// admin button: a file restored from a backup can carry an old mtime.
+    /// Rebuilds when the files changed and swaps only on success. `force`
+    /// rebuilds regardless, for files restored with an old mtime.
     pub fn reload(&self, force: bool) -> Result<Outcome, AppError> {
         let now = fingerprint(&[&self.skin_dir, &self.fallback_dir, &self.locales_dir]);
         if !force && now == self.current().fingerprint {
@@ -108,8 +85,7 @@ impl Skin {
                 Ok(Outcome::Reloaded)
             }
             Err(err) => {
-                // Remember which fingerprint failed, so the watcher does not
-                // retry the same broken files every tick and fill the log.
+                // Remember the failed fingerprint so the watcher does not retry every tick.
                 self.set_error(Some(err.to_string()));
                 Err(err)
             }
@@ -123,12 +99,8 @@ impl Skin {
         }
     }
 
-    /// Polls the skin and locale directories and reloads on change.
-    ///
-    /// Polling rather than a filesystem notification API: the directories hold a
-    /// few dozen small files, a walk costs microseconds, and it behaves the same
-    /// on Windows, Linux, inside a container and over a network mount, which the
-    /// notification APIs do not.
+    /// Polls the skin and locale directories and reloads on change. Polling works
+    /// the same on every platform and mount, and costs microseconds here.
     pub fn watch(self: Arc<Self>, every: Duration) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut failed_at: Option<u64> = None;
@@ -180,27 +152,21 @@ fn build(
     })
 }
 
-/// A hash of every file's path, size and modification time under `roots`.
-///
-/// Size is in there because some editors and some filesystems keep a coarse
-/// mtime, and a save within the same second would otherwise be missed. A
-/// missing root hashes as empty rather than failing: a skin with no directory
-/// of its own is valid, it inherits everything from the fallback.
+/// A hash of every file's path, size and mtime under `roots`. Size catches a
+/// save within a coarse mtime tick; a missing root hashes as empty.
 pub fn fingerprint(roots: &[&str]) -> u64 {
     let mut entries: Vec<(String, u64, u128)> = Vec::new();
     for root in roots {
         collect(Path::new(root), &mut entries, 0);
     }
-    // Directory iteration order is not stable across platforms. Sorting makes
-    // the hash depend on what is on disk and nothing else.
+    // Directory order is not stable across platforms.
     entries.sort();
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     entries.hash(&mut hasher);
     hasher.finish()
 }
 
-/// Depth-limited, so a symlink loop inside a skin directory cannot hang the
-/// watcher. Skins and packs are two levels deep; eight is generous.
+/// Depth-limited so a symlink loop cannot hang the watcher.
 fn collect(dir: &Path, out: &mut Vec<(String, u64, u128)>, depth: usize) {
     if depth > 8 {
         return;
@@ -235,8 +201,7 @@ mod tests {
         format!("{}/../../{path}", env!("CARGO_MANIFEST_DIR"))
     }
 
-    /// A private copy of the default skin and the shipped locales, so a test
-    /// can edit files without touching the repository.
+    /// A private copy of the default skin and the shipped locales.
     fn scratch(name: &str) -> (std::path::PathBuf, String, String) {
         let root = std::env::temp_dir().join(format!("naw-skin-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -266,8 +231,7 @@ mod tests {
         }
     }
 
-    /// Filesystems with a coarse mtime would hide a quick second write, so the
-    /// tests change the size as well, which the fingerprint also covers.
+    /// Appends to a file, changing its size so a coarse mtime cannot hide it.
     fn append(path: &str, text: &str) {
         let mut body = std::fs::read_to_string(path).expect("read");
         body.push_str(text);
@@ -311,19 +275,16 @@ mod tests {
 
     #[test]
     fn a_broken_template_keeps_the_previous_one_serving() {
-        // The property that makes reloading safe to leave on in production.
         let (root, skin, locales) = scratch("broken");
         let s = Skin::load(&skin, &skin, &locales).expect("loads");
         let before = s.current().loaded_at;
 
         append(&format!("{skin}/page.html"), "\n{% if unclosed %}\n");
         assert!(s.reload(false).is_err());
-        // Still the old set, still renderable, and the failure is on record.
         assert_eq!(s.current().loaded_at, before);
         assert!(s.current().env.get_template("page.html").is_ok());
         assert!(s.last_error().is_some());
 
-        // Fixing the file clears the error on the next reload.
         let body = std::fs::read_to_string(format!("{skin}/page.html")).expect("read");
         std::fs::write(
             format!("{skin}/page.html"),
@@ -356,7 +317,6 @@ mod tests {
             s.current().messages.render("de", "nav.sign_in", &[]),
             "Anmelden"
         );
-        // Everything German does not translate falls through to English.
         assert_eq!(
             s.current().messages.render("de", "nav.sign_out", &[]),
             "Sign out"
@@ -371,7 +331,6 @@ mod tests {
         let held = s.current();
         append(&format!("{locales}/en/nav.toml"), "\nextra_key = \"x\"\n");
         s.reload(false).expect("reload");
-        // The reference a request took before the reload still sees the old set.
         assert_eq!(
             held.messages.render("en", "nav.extra_key", &[]),
             "nav.extra_key"
@@ -385,7 +344,6 @@ mod tests {
         let a = fingerprint(&[&repo("skins/default"), &repo("locales")]);
         let b = fingerprint(&[&repo("skins/default"), &repo("locales")]);
         assert_eq!(a, b);
-        // A skin with no directory of its own inherits from the fallback.
         let _ = fingerprint(&["naw-no-such-directory-anywhere"]);
     }
 }
