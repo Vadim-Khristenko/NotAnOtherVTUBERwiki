@@ -47,7 +47,7 @@
     <form method="post" action="/settings/username" class="settings-stack">
       <label class="visually-hidden" for="s-name">{{ t("settings.username") }}</label>
       <input class="field-input" id="s-name" name="username" value="{{ username }}" required
-             minlength="3" maxlength="32" pattern="[a-z][a-z0-9_\-]{2,31}"
+             minlength="3" maxlength="32" pattern="[a-z](?:[a-z0-9_\-]|\.(?!\.))*[a-z0-9_\-]"
              autocomplete="off" autocapitalize="none" spellcheck="false" />
       {% if has_password %}
       <label class="visually-hidden" for="s-name-pw">{{ t("account.password_current") }}</label>

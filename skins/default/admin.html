@@ -630,7 +630,7 @@
   <form method="post" action="/admin/users/new" class="admin-form">
     <label class="field">{{ t("admin.user_name") }}
       <input class="field-input" name="username" value="{{ form_username }}" required
-             minlength="3" maxlength="32" pattern="[a-z][a-z0-9_\-]{2,31}"
+             minlength="3" maxlength="32" pattern="[a-z](?:[a-z0-9_\-]|\.(?!\.))*[a-z0-9_\-]"
              autocomplete="off" autocapitalize="none" spellcheck="false" />
       <span class="field-note">{{ t("admin.user_name_note") }}</span>
     </label>

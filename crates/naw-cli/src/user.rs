@@ -143,7 +143,7 @@ pub async fn run(pool: &PgPool, command: Command) -> Result<String, Failure> {
         } => {
             if !credentials::username_is_valid(&username) {
                 return Err(Failure::Refused(format!(
-                    "{username:?} is not a valid username: 3 to 32 characters, a-z 0-9 - _, starting with a letter"
+                    "{username:?} is not a valid username: 3 to 32 characters, a-z 0-9 - _ and dots between them, starting with a letter"
                 )));
             }
             let taken = sqlx::query!(

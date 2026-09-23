@@ -33,7 +33,7 @@ pub enum Outcome {
 fn validate(owner: &BootstrapOwner) -> Result<(), AppError> {
     if !username::is_valid(&owner.username) {
         return Err(AppError::Config(format!(
-            "NAW_BOOTSTRAP_OWNER_USERNAME {:?} is not a valid username: 3 to 32 characters, a-z 0-9 - _, starting with a letter",
+            "NAW_BOOTSTRAP_OWNER_USERNAME {:?} is not a valid username: 3 to 32 characters, a-z 0-9 - _ and dots between them, starting with a letter",
             owner.username
         )));
     }

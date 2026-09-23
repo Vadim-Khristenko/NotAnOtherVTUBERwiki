@@ -403,9 +403,9 @@ pub async fn set_role(
 fn role_back(back: &str) -> &str {
     let ok = back.strip_prefix("/admin/user/").is_some_and(|name| {
         !name.is_empty()
-            && name
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+            && name.bytes().all(|b| {
+                b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'-' | b'.')
+            })
     });
     if ok { back } else { "/admin/users" }
 }

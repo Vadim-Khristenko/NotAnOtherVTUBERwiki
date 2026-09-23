@@ -1,6 +1,8 @@
 //! Username policy: sanitize, reserved list, collision suffixes.
 //!
-//! Rules: 3 to 32 chars, `a-z0-9_-`, starts with a letter. Reserved names
+//! Rules: 3 to 32 chars, `a-z0-9_-.`, starts with a letter. A dot sits between
+//! other characters only: never last, never two in a row, so a name never
+//! reads like a path (`..`) or ends in something that looks like a file type. Reserved names
 //! come from config and are granted by an admin only. Collisions get
 //! `-2`, `-3` suffixes until a free name appears.
 
@@ -24,11 +26,14 @@ pub fn is_valid(username: &str) -> bool {
     if !first.is_ascii_lowercase() {
         return false;
     }
-    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+    if username.ends_with('.') || username.contains("..") {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-' | '.'))
 }
 
 fn in_charset(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_' || c == '-'
+    c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')
 }
 
 /// Best effort candidate from a provider handle: lowercase, truncated at the
@@ -47,7 +52,12 @@ pub fn sanitize(handle: &str) -> String {
         .trim_start_matches(|c: char| !c.is_ascii_lowercase())
         .chars()
         .take(USERNAME_MAX)
-        .collect()
+        .collect::<String>()
+        // Dots follow the same rule as in `is_valid`: no runs, none at the end.
+        .split('.')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 /// Six lowercase hex characters. `random_token` is base64url and carries
@@ -111,6 +121,19 @@ pub async fn claim(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dots_are_allowed_between_characters() {
+        assert!(is_valid("just.call.me.l"));
+        assert!(is_valid("a.b"));
+        assert!(!is_valid(".dot"), "starts with a letter");
+        assert!(!is_valid("dot."), "never last");
+        assert!(!is_valid("do..t"), "never two in a row");
+        assert_eq!(sanitize("Just.Call.Me.L"), "just.call.me.l");
+        assert_eq!(sanitize("tail.."), "tail");
+        assert_eq!(sanitize("a..b"), "a.b");
+        assert_eq!(sanitize("first.last@example.test"), "first.last");
+    }
 
     #[test]
     fn sanitize_keeps_the_charset_and_lowercases() {
