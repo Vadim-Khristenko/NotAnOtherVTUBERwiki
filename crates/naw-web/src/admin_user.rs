@@ -81,8 +81,8 @@ pub async fn show(
     let account = sqlx::query!(
         r#"SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at AS "created_at!",
                   u.must_change_password, (u.password_hash IS NOT NULL) AS "has_password!",
-                  c.username AS "created_by?"
-           FROM users u LEFT JOIN users c ON c.id = u.created_by
+                  (SELECT c.username FROM users c WHERE c.id = u.created_by) AS "created_by?"
+           FROM users u
            WHERE u.id = $1"#,
         t.id
     )
@@ -460,9 +460,7 @@ pub async fn add_sanction(
             if !matches!(ctx.actor.global, GlobalRole::Root | GlobalRole::Staff) {
                 return Ok(refuse("only install staff may ban from every wiki"));
             }
-            if let Err(reason) =
-                may_manage_account(&state, &ctx, t.id, t.global, t.role).await?
-            {
+            if let Err(reason) = may_manage_account(&state, &ctx, t.id, t.global, t.role).await? {
                 return Ok(refuse(ctx.t(reason)));
             }
             ("ban", None)

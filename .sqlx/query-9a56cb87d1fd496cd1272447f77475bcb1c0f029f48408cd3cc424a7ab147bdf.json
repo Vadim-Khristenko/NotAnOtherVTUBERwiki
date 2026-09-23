@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at AS \"created_at!\",\n                  u.must_change_password, (u.password_hash IS NOT NULL) AS \"has_password!\",\n                  c.username AS \"created_by?\"\n           FROM users u LEFT JOIN users c ON c.id = u.created_by\n           WHERE u.id = $1",
+  "query": "SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at AS \"created_at!\",\n                  u.must_change_password, (u.password_hash IS NOT NULL) AS \"has_password!\",\n                  (SELECT c.username FROM users c WHERE c.id = u.created_by) AS \"created_by?\"\n           FROM users u\n           WHERE u.id = $1",
   "describe": {
     "columns": [
       {
@@ -79,12 +79,7 @@
         "ordinal": 7,
         "name": "created_by?",
         "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "users",
-            "name": "username"
-          }
-        }
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -97,11 +92,11 @@
       true,
       true,
       true,
-      true,
-      true,
+      false,
+      false,
       null,
-      false
+      null
     ]
   },
-  "hash": "c005697ba58a1a045323012e1451a9c536d0d1a59a6fd0e7d0b81570bce47b31"
+  "hash": "9a56cb87d1fd496cd1272447f77475bcb1c0f029f48408cd3cc424a7ab147bdf"
 }
