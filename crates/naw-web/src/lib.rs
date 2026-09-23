@@ -19,6 +19,7 @@ mod auth;
 pub mod bootstrap;
 mod chrome;
 mod csp;
+mod csrf;
 mod display_name;
 mod emotes;
 mod errors;
@@ -241,6 +242,8 @@ fn routes(state: AppState) -> Router {
                     state.clone(),
                     errors::layer,
                 ))
+                // Inside the error layer, so the refusal is a themed page.
+                .layer(axum::middleware::from_fn(csrf::layer))
                 .layer(axum::middleware::from_fn_with_state(
                     state.clone(),
                     lang::layer,
