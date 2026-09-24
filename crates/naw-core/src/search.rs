@@ -359,7 +359,12 @@ fn decode_entities_into(raw: &str, out: &mut String) {
     while let Some(at) = rest.find('&') {
         out.push_str(&rest[..at]);
         let tail = &rest[at..];
-        let end = tail[..tail.len().min(12)].find(';');
+        // The `;` is looked for in the first 12 bytes, by character: a byte slice
+        // there can end inside a wide character, as in `&amp; doesn’t`, and panic.
+        let end = tail
+            .char_indices()
+            .take_while(|&(i, _)| i < 12)
+            .find_map(|(i, c)| (c == ';').then_some(i));
         let decoded = end.and_then(|end| {
             let entity = &tail[1..end];
             let c = match entity {
@@ -840,6 +845,19 @@ mod tests {
                 text: "Just text / 'quoted'".into()
             }]
         );
+    }
+
+    #[test]
+    fn an_entity_before_a_wide_character_is_decoded_without_a_panic() {
+        // In each of these, byte 12 after the `&` falls inside the character that follows.
+        for (html, text) in [
+            ("<p>&amp; doesn’t remove</p>", "& doesn’t remove"),
+            ("<p>&lt; Филиан</p>", "< Филиан"),
+            ("<p>&gt; fox 🦊</p>", "> fox 🦊"),
+            ("<p>&nbsp;I don’t know</p>", "I don’t know"),
+        ] {
+            assert_eq!(parts_from_html(html)[0].text, text, "{html}");
+        }
     }
 
     #[test]
