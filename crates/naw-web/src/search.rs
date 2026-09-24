@@ -24,7 +24,7 @@ pub struct SearchQuery {
 }
 
 /// GET /search
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn search_page(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,

@@ -575,7 +575,7 @@ pub struct PageQuery {
 // ---------------------------------------------------------------------------
 
 /// The front page, a landing around the home article.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn home(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -586,7 +586,7 @@ pub async fn home(
 }
 
 /// Serves one page in the main namespace.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn page(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -858,7 +858,7 @@ pub struct NewQuery {
 }
 
 /// The creation form, blank or begun from a starter template; needs `PageCreate`.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn new_page(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -928,7 +928,7 @@ pub async fn new_page(
 }
 
 /// Creates the page, its first revision and its search index entry.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn create_page(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1070,7 +1070,7 @@ pub(crate) fn see_other(target: &str) -> Response {
 }
 
 /// Edit form prefilled with the current revision.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn edit_page(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1136,7 +1136,7 @@ pub async fn edit_page(
 }
 
 /// Saves a new revision over an existing page.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn save_page(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1382,7 +1382,7 @@ fn path_from_referer(headers: &HeaderMap) -> Option<String> {
 
 /// POST /lang, the form equivalent of `?lang=`. Both set the cookie through
 /// `lang::cookie_for`.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn set_language(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1432,7 +1432,7 @@ pub struct PreviewQuery {
 /// Renders posted Markdown without saving; `?fragment=1` returns only the
 /// body for the live preview. Needs `PageEdit`: it is the one uncached
 /// render path.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn preview(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,

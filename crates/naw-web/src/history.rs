@@ -51,7 +51,7 @@ pub struct HistoryQuery {
 }
 
 /// GET /{slug}/history
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn history(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -236,7 +236,7 @@ async fn neighbour(
 
 /// GET /{slug}/rev/{revision}: an old revision through the live pipeline,
 /// with a banner and a canonical link to the live page.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn revision(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -334,7 +334,7 @@ pub struct DiffQuery {
 }
 
 /// GET /{slug}/diff?from=&to=; `to` defaults to the current revision.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn diff(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -422,7 +422,7 @@ pub struct RevertForm {
 }
 
 /// POST /{slug}/revert: restores an old body as a new revision.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn revert(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -529,7 +529,7 @@ pub struct PatrolForm {
 }
 
 /// POST /{slug}/patrol: marks a live revision as checked.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn patrol(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,

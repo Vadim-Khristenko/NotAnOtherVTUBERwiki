@@ -84,7 +84,7 @@ pub(crate) fn render(
 // ---------------------------------------------------------------------------
 
 /// GET /admin
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn overview(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -166,7 +166,7 @@ pub struct ListQuery {
 }
 
 /// GET /admin/users
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn users(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -262,7 +262,7 @@ pub struct RoleForm {
 }
 
 /// POST /admin/users/role
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn set_role(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -506,7 +506,7 @@ fn render_new_user(
 }
 
 /// GET /admin/users/new
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn new_user(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -543,7 +543,7 @@ fn render_issued(
 }
 
 /// POST /admin/users/new
-#[instrument(skip(state, user, form))]
+#[instrument(skip(state, user, form, headers))]
 pub async fn create_user(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -656,7 +656,7 @@ pub struct ResetForm {
 }
 
 /// POST /admin/users/password
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn reset_password(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -724,7 +724,7 @@ pub async fn reset_password(
 // ---------------------------------------------------------------------------
 
 /// GET /admin/chrome
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn chrome_settings(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -768,7 +768,7 @@ pub async fn chrome_settings(
 }
 
 /// POST /admin/chrome
-#[instrument(skip(state, user, form))]
+#[instrument(skip(state, user, form, headers))]
 pub async fn save_chrome_settings(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -871,7 +871,7 @@ pub async fn save_chrome_settings(
 // Accounts are shared by every wiki, so these belong to the install owner.
 
 /// GET /admin/accounts
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn account_rules(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -930,7 +930,7 @@ pub struct AccountRulesForm {
 }
 
 /// POST /admin/accounts
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn save_account_rules(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -975,7 +975,7 @@ pub async fn save_account_rules(
 // ---------------------------------------------------------------------------
 
 /// GET /admin/pages
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn pages_list(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1096,7 +1096,7 @@ impl PageAction {
 }
 
 /// POST /admin/pages/{action}
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn page_action(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1192,7 +1192,7 @@ pub async fn page_action(
 // ---------------------------------------------------------------------------
 
 /// GET /admin/audit
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn audit_log(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1280,7 +1280,7 @@ pub async fn audit_log(
 // ---------------------------------------------------------------------------
 
 /// GET /admin/wiki
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn wiki_settings(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1339,7 +1339,7 @@ pub struct WikiForm {
 }
 
 /// POST /admin/wiki
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn save_wiki_settings(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1455,7 +1455,7 @@ pub struct ReindexForm {
 }
 
 /// POST /admin/reindex, for an index that drifted.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn reindex(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1491,7 +1491,7 @@ pub async fn reindex(
 
 /// GET /admin/languages: installed packs, which this wiki offers, and the
 /// skin's last load and last failed reload.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn languages(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1555,7 +1555,7 @@ pub async fn languages(
 
 /// POST /admin/languages. Stored as the languages not offered, so a pack
 /// installed later is offered by default.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers, body))]
 pub async fn save_languages(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1656,7 +1656,7 @@ fn percent_decode(value: &str) -> String {
 
 /// POST /admin/reload: reloads the skin and packs now, even when nothing
 /// looks changed. A broken file keeps the running version.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn reload(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1702,7 +1702,7 @@ fn variants_of(kind: crate::errors::Kind) -> &'static [&'static str] {
 }
 
 /// GET /admin/errors: every error kind, and whether the skin ships its own.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn error_gallery(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1738,7 +1738,7 @@ pub struct PreviewQuery {
 
 /// GET /admin/errors/{kind}: one error page as a reader sees it, served as a
 /// 200 since it is a preview.
-#[instrument(skip(state, user))]
+#[instrument(skip(state, user, headers))]
 pub async fn error_preview(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
