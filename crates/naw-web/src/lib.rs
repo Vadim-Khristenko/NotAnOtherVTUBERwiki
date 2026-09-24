@@ -25,6 +25,7 @@ mod display_name;
 mod emotes;
 mod errors;
 mod fetch;
+mod files;
 mod history;
 pub mod indexing;
 mod lang;

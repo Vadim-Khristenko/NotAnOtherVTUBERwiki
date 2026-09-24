@@ -87,6 +87,7 @@ async fn index_one(db: &sqlx::PgPool, page_id: Uuid) -> Result<bool, AppError> {
     };
     let path = match row.namespace.as_str() {
         "template" => format!("{}{}", crate::pages::TEMPLATE_PREFIX, row.slug),
+        "file" => format!("file:{}", row.slug),
         "main" => row.slug.clone(),
         _ => String::new(),
     };
@@ -100,7 +101,7 @@ async fn index_one(db: &sqlx::PgPool, page_id: Uuid) -> Result<bool, AppError> {
         ..Notes::default()
     };
     let expanded = templates::expand_in(db, &wiki, &notes, &path, &row.body_md).await?;
-    let prepared = crate::pages::render_prepared(expanded).await?;
+    let prepared = crate::pages::render_prepared(db, row.wiki_id, expanded).await?;
     let mut tx = db.begin().await?;
     naw_core::search::index_page(
         &mut tx,
@@ -128,6 +129,7 @@ async fn index_one(db: &sqlx::PgPool, page_id: Uuid) -> Result<bool, AppError> {
         .execute(&mut *tx)
         .await?;
     }
+    crate::files::record_uses(&mut tx, row.wiki_id, page_id, &prepared.rendered.html).await?;
     tx.commit().await?;
     Ok(true)
 }

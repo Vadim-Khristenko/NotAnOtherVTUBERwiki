@@ -195,23 +195,31 @@ fn urlencode(value: &str) -> String {
 pub(crate) const TEMPLATE_PREFIX: &str = "template:";
 
 /// A page path as its namespace, spelled as the database spells it, and the
-/// bare slug. An article has no prefix.
+/// bare slug. An article has no prefix; a file's description page is
+/// `image:name.png` and its siblings (see `files`).
 pub(crate) fn split_path(path: &str) -> (&'static str, &str) {
-    match path.strip_prefix(TEMPLATE_PREFIX) {
-        Some(slug) => ("template", slug),
-        None => ("main", path),
+    if let Some(slug) = path.strip_prefix(TEMPLATE_PREFIX) {
+        return ("template", slug);
     }
+    if let Some((_, name)) = crate::files::split(path) {
+        return ("file", name);
+    }
+    ("main", path)
 }
 
 /// A page path: lowercase ASCII letters, digits and dashes, after an optional
-/// `template:` prefix.
+/// `template:` prefix, or a file page's name.
 pub(crate) fn slug_is_valid(path: &str) -> bool {
-    let (_, slug) = split_path(path);
-    !slug.is_empty()
-        && slug.len() <= SLUG_MAX
-        && slug
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    match split_path(path) {
+        ("file", _) => true,
+        (_, slug) => {
+            !slug.is_empty()
+                && slug.len() <= SLUG_MAX
+                && slug
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        }
+    }
 }
 
 /// The lowest role that edits a template. One bad edit to a template breaks
@@ -305,7 +313,9 @@ pub(crate) async fn cached_body(
         let html = crate::emotes::expand(state, wiki_id, row.html).await?;
         return Ok((html, None));
     }
-    let rendered = render_prepared(expanded).await?.rendered;
+    let rendered = render_prepared(&state.db, wiki_id, expanded)
+        .await?
+        .rendered;
     sqlx::query!(
         "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html)
          VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
@@ -338,19 +348,24 @@ pub(crate) async fn prepare(
     body_md: &str,
 ) -> Result<Prepared, AppError> {
     let expanded = crate::templates::expand(state, ctx, path, body_md).await?;
-    render_prepared(expanded).await
+    render_prepared(&state.db, ctx.wiki.id, expanded).await
 }
 
+/// Renders expanded text, then links each uploaded picture to its file page.
 pub(crate) async fn render_prepared(
+    db: &sqlx::PgPool,
+    wiki_id: Uuid,
     expanded: crate::templates::Expanded,
 ) -> Result<Prepared, AppError> {
     let text = expanded.text;
-    let rendered = tokio::task::spawn_blocking(move || naw_markdown::render_body(&text))
+    let mut rendered = tokio::task::spawn_blocking(move || naw_markdown::render_body(&text))
         .await
         .map_err(|err| {
             tracing::error!(error = %err, "render task failed");
             AppError::Internal
         })?;
+    rendered.html =
+        crate::files::link_images(db, wiki_id, std::mem::take(&mut rendered.html)).await?;
     Ok(Prepared {
         rendered,
         used: expanded.used,
@@ -392,6 +407,14 @@ pub(crate) async fn index(
 pub(crate) async fn after_save(state: &AppState, ctx: &Ctx, page_id: Uuid, prepared: &Prepared) {
     let wiki_id = ctx.wiki.id;
     crate::templates::record_uses(state, wiki_id, page_id, &prepared.used).await;
+    let files: Result<(), AppError> = async {
+        let mut conn = state.db.acquire().await?;
+        crate::files::record_uses(&mut conn, wiki_id, page_id, &prepared.rendered.html).await
+    }
+    .await;
+    if let Err(err) = files {
+        tracing::warn!(error = ?err, %page_id, "could not record the files a page uses");
+    }
     let rendered = &prepared.rendered;
     let result = sqlx::query!(
         "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html)
@@ -575,6 +598,10 @@ pub async fn page(
         return Ok(crate::errors::not_found());
     }
     let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
+    // A file's page shows the file first and its description under it.
+    if let Some((prefix, name)) = crate::files::split(&slug) {
+        return crate::files::page(&state, &ctx, &headers, prefix, name).await;
+    }
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
         // Offer the article in the languages it exists in, or to translate it.
@@ -906,6 +933,19 @@ pub async fn create_page(
         ));
     }
     let (namespace, bare) = split_path(&slug);
+    // A description needs its file: there is no page for a file never uploaded.
+    if namespace == "file"
+        && sqlx::query_scalar!(
+            "SELECT 1 AS \"one!\" FROM media WHERE wiki_id = $1 AND name = $2",
+            ctx.wiki.id,
+            bare
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .is_none()
+    {
+        return Ok(crate::errors::not_found());
+    }
     if namespace == "template" && !ctx.actor.can_edit_page(Some(TEMPLATE_EDIT_FLOOR)) {
         return refuse(
             &ctx,

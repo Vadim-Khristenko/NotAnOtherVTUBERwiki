@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO file_uses (page_id, wiki_id, storage_key)\n             SELECT $1, $2, unnest($3::text[]) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3cf021ebe174677c33dec81c39b4b298486204c0a044d7405973a4f53073efd9"
+}

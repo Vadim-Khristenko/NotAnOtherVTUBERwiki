@@ -1,0 +1,132 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.storage_key, m.name, m.kind, m.mime, m.filename, m.size_bytes, m.width,\n                  m.height, m.created_at,\n                  (SELECT u.username FROM users u WHERE u.id = m.uploader_id) AS \"uploader?\"\n           FROM media m\n           WHERE m.wiki_id = $1 AND m.name = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "storage_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "storage_key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "mime",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "mime"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "filename",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "filename"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "size_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "size_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "uploader?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "047eba1fa08c1343629cca2f4d07ee877d18af13b08d19216184895bbca7f343"
+}

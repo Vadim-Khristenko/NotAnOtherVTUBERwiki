@@ -1,0 +1,83 @@
+{% extends "layout.html" %}
+{#
+  One uploaded file, as on Wikimedia Commons: the file itself, what it is,
+  how to use it, its description (an ordinary page with a history), and the
+  pages that use it.
+
+  `kind`         image | audio | video | document
+  `url`          the file; `slug` this page's path (image:name.png)
+  `description`  the description page, rendered, or none
+  `uses`         pages that show the file: title, href
+#}
+{% block body %}
+<h1 class="file-heading">{{ heading }}</h1>
+
+<figure class="file-preview file-{{ kind }}">
+  {% if kind == "image" %}
+  <a href="{{ url }}" title="{{ t('file.open_original') }}"><img src="{{ url }}" alt="{{ heading }}"
+     {%- if width and height %} width="{{ width }}" height="{{ height }}"{% endif %} decoding="async" /></a>
+  {% elif kind == "audio" %}
+  <audio controls preload="metadata" src="{{ url }}"></audio>
+  {% elif kind == "video" %}
+  <video controls preload="metadata" src="{{ url }}"{% if width and height %} width="{{ width }}" height="{{ height }}"{% endif %}></video>
+  {% else %}
+  <svg class="icon file-doc-icon" aria-hidden="true"><use href="#i-file-info" /></svg>
+  {% endif %}
+  <figcaption>
+    <a class="button-preview" href="{{ url }}"{% if kind == "document" %} download{% endif %}>
+      {%- if kind == "document" %}{{ t("file.download") }}{% else %}{{ t("file.open_original") }}{% endif -%}
+    </a>
+    <span class="muted-cell">{{ size }}{% if width and height %} · {{ t("file.dimensions_value", w=width, h=height) }}{% endif %}</span>
+  </figcaption>
+</figure>
+
+<div class="file-columns">
+  <section class="file-card" aria-labelledby="file-about">
+    <h2 id="file-about">{{ t("file.about") }}</h2>
+    <dl class="kv">
+      <dt>{{ t("file.type") }}</dt><dd><code>{{ mime }}</code></dd>
+      <dt>{{ t("file.size") }}</dt><dd>{{ size }}</dd>
+      {% if width and height %}<dt>{{ t("file.dimensions") }}</dt><dd>{{ t("file.dimensions_value", w=width, h=height) }}</dd>{% endif %}
+      <dt>{{ t("file.uploaded_by") }}</dt><dd>{% if uploader %}<a href="/user/{{ uploader }}"><bdi>{{ uploader }}</bdi></a>{% else %}<span class="muted-cell">{{ t("file.anonymous") }}</span>{% endif %}</dd>
+      <dt>{{ t("file.uploaded_at") }}</dt><dd>{{ uploaded_at }}</dd>
+      <dt>{{ t("file.uploaded_as") }}</dt><dd><bdi>{{ original_name }}</bdi></dd>
+      <dt>{{ t("file.checksum") }}</dt><dd><code class="file-hash">{{ sha256 }}</code></dd>
+    </dl>
+  </section>
+
+  <section class="file-card" aria-labelledby="file-use">
+    <h2 id="file-use">{{ t("file.use_title") }}</h2>
+    {% if kind != "document" %}
+    <label class="field">{{ t("file.use_embed") }}
+      <input class="field-input media-md" readonly value="{{ embed }}" />
+    </label>
+    {% endif %}
+    <label class="field">{{ t("file.use_link") }}
+      <input class="field-input media-md" readonly value="{{ link }}" />
+    </label>
+  </section>
+</div>
+
+<section class="file-description" aria-labelledby="file-description">
+  <h2 id="file-description">{{ t("file.description") }}</h2>
+  {% if description %}
+  <div class="file-description-body">{{ description | safe }}</div>
+  {% if may_edit %}<p class="page-actions file-actions">
+    <a class="page-action" href="{{ base }}/{{ slug }}/edit"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("file.edit_description") }}</a>
+    <a class="page-action" href="{{ base }}/{{ slug }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("file.history") }}</a>
+  </p>{% endif %}
+  {% else %}
+  <p class="muted-cell">{{ t("file.no_description") }}</p>
+  {% if may_edit %}<p><a class="button-preview" href="{{ add_description }}">{{ t("file.add_description") }}</a></p>{% endif %}
+  {% endif %}
+</section>
+
+<section class="file-uses" aria-labelledby="file-uses">
+  <h2 id="file-uses">{{ t("file.used_on") }}</h2>
+  {% if uses %}
+  <ul class="template-uses">{% for u in uses %}<li><a href="{{ u.href }}">{{ u.title }}</a></li>{% endfor %}</ul>
+  {% else %}
+  <p class="muted-cell">{{ t("file.unused") }}</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -158,6 +158,10 @@ The part that makes it a wiki rather than a blog.
       of the expanded text, so nothing needs a full flush. A template's page lists where it
       is used
 - A preview of affected pages before a template is published
+- [x] A page for every uploaded file, as on Wikimedia Commons: `/image:ferris.png`,
+      `/audio:…`, `/video:…`, `/file:…`, with the file or a player, what it is, who uploaded
+      it, where it is used, and a description with its own history. Articles use a file by
+      name, `![Ferris](image:ferris.png)`; audio and video play in place, PDFs download
 - The other namespaces (`Talk:`, `Category:`) and `Module:` for components
 - Infobox fields as a YAML block the template validates against its own schema, so an
   editor can offer a form and the values become queryable data

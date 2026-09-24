@@ -93,10 +93,7 @@ pub(crate) async fn expand_with(
         body.to_string()
     };
     if !source.contains("{{") {
-        return Ok(Expanded {
-            text: source,
-            used: Vec::new(),
-        });
+        return finish(db, wiki, source, Vec::new()).await;
     }
     let mut tried: HashSet<String> = given.keys().cloned().collect();
     let mut loaded = given;
@@ -111,19 +108,24 @@ pub(crate) async fn expand_with(
             .take(room)
             .collect();
         if wanted.is_empty() {
-            return Ok(Expanded {
-                text: run.text,
-                used: run.used.into_iter().collect(),
-            });
+            return finish(db, wiki, run.text, run.used.into_iter().collect()).await;
         }
         tried.extend(wanted.iter().cloned());
         loaded.extend(load(db, wiki, &wanted).await?);
     }
     let run = transclude::expand(&source, &loaded, notes);
-    Ok(Expanded {
-        text: run.text,
-        used: run.used.into_iter().collect(),
-    })
+    finish(db, wiki, run.text, run.used.into_iter().collect()).await
+}
+
+/// The last step for any text: `image:name` and its siblings point at files.
+async fn finish(
+    db: &sqlx::PgPool,
+    wiki: &Wiki<'_>,
+    text: String,
+    used: Vec<String>,
+) -> Result<Expanded, AppError> {
+    let text = crate::files::resolve(db, wiki.id, text).await?;
+    Ok(Expanded { text, used })
 }
 
 /// The live source of each template, in the reader's language when there is

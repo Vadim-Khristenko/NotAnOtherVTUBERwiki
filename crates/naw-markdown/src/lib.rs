@@ -55,7 +55,14 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
     });
     // An outside image would tell its host who read the article, and can change
     // after review. The stack pairs each image end with its start.
-    let mut image_is_link: Vec<bool> = Vec::new();
+    // A local audio or video file plays in place, its alt text as the caption.
+    #[derive(Clone, Copy)]
+    enum Shown {
+        Image,
+        Link,
+        Player,
+    }
+    let mut shown: Vec<Shown> = Vec::new();
     let parser = parser.map(move |event| match event {
         Event::Start(Tag::Image {
             link_type,
@@ -63,31 +70,38 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
             title,
             id,
         }) => {
-            let local = is_local_image(&dest_url);
-            image_is_link.push(!local);
-            if local {
-                Event::Start(Tag::Image {
+            if !is_local_image(&dest_url) {
+                shown.push(Shown::Link);
+                return Event::Start(Tag::Link {
                     link_type,
                     dest_url,
                     title,
                     id,
-                })
-            } else {
-                Event::Start(Tag::Link {
-                    link_type,
-                    dest_url,
-                    title,
-                    id,
-                })
+                });
             }
-        }
-        Event::End(TagEnd::Image) => {
-            if image_is_link.pop().unwrap_or(false) {
-                Event::End(TagEnd::Link)
-            } else {
-                Event::End(TagEnd::Image)
+            if let Some(player) = player_for(&dest_url) {
+                shown.push(Shown::Player);
+                let src = naw_core::html::escape(&dest_url);
+                return Event::Html(
+                    format!(
+                        "<figure class=\"media-player\"><{player} controls preload=\"metadata\" src=\"{src}\"></{player}><figcaption>"
+                    )
+                    .into(),
+                );
             }
+            shown.push(Shown::Image);
+            Event::Start(Tag::Image {
+                link_type,
+                dest_url,
+                title,
+                id,
+            })
         }
+        Event::End(TagEnd::Image) => match shown.pop().unwrap_or(Shown::Image) {
+            Shown::Link => Event::End(TagEnd::Link),
+            Shown::Player => Event::Html("</figcaption></figure>".into()),
+            Shown::Image => Event::End(TagEnd::Image),
+        },
         other => other,
     });
 
@@ -116,6 +130,9 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
         .add_generic_attributes(["id", "class", "tabindex"])
         .add_tag_attributes("details", ["open"])
         .add_tag_attributes("img", ["loading", "decoding"])
+        .add_tags(["audio", "video"])
+        .add_tag_attributes("audio", ["controls", "preload", "src"])
+        .add_tag_attributes("video", ["controls", "preload", "src"])
         .clean(&anchored)
         .to_string()
 }
@@ -161,9 +178,55 @@ pub fn external_images(markdown: &str) -> Vec<(std::ops::Range<usize>, String)> 
     found
 }
 
-/// An image stored by this wiki: under `/media/`, with no way off the site.
+/// Images and links whose destination starts with one of `prefixes`, such as
+/// `![Ferris](image:ferris.png)` or `[notes](file:notes.pdf)`: the byte range
+/// of each destination in the source, the destination, and whether it is an
+/// image. Code is left alone, like [`external_images`].
+pub fn prefixed_destinations(
+    markdown: &str,
+    prefixes: &[&str],
+) -> Vec<(std::ops::Range<usize>, String, bool)> {
+    use pulldown_cmark::{Event, Parser, Tag};
+    let mut found = Vec::new();
+    for (event, range) in Parser::new_ext(markdown, parser_options()).into_offset_iter() {
+        let (dest_url, is_image) = match event {
+            Event::Start(Tag::Image { dest_url, .. }) => (dest_url, true),
+            Event::Start(Tag::Link { dest_url, .. }) => (dest_url, false),
+            _ => continue,
+        };
+        let lower = dest_url.to_ascii_lowercase();
+        if !prefixes.iter().any(|p| lower.starts_with(p)) {
+            continue;
+        }
+        let source = &markdown[range.clone()];
+        let at = source
+            .rfind("](")
+            .and_then(|open| source[open..].find(dest_url.as_ref()).map(|pos| open + pos));
+        if let Some(at) = at {
+            let start = range.start + at;
+            found.push((
+                start..start + dest_url.len(),
+                dest_url.to_string(),
+                is_image,
+            ));
+        }
+    }
+    found
+}
+
+/// A file stored by this wiki: under `/media/`, with no way off the site.
 fn is_local_image(url: &str) -> bool {
     url.starts_with("/media/") && !url.contains("//") && !url.contains('\\')
+}
+
+/// A local file that plays rather than shows: `audio` or `video`, by extension.
+fn player_for(url: &str) -> Option<&'static str> {
+    let ext = url.rsplit_once('.')?.1;
+    match ext {
+        "mp3" | "ogg" | "opus" | "flac" | "wav" | "m4a" => Some("audio"),
+        "mp4" | "webm" => Some("video"),
+        _ => None,
+    }
 }
 
 /// The only raw HTML the parser lets through.
@@ -1543,7 +1606,7 @@ fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 16;
+pub const RENDERER_VERSION: i32 = 17;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -1677,6 +1740,27 @@ mod tests {
         let html = render_html("### Ours {id=\"x\" status=\"new\"}\n");
         assert!(html.contains("<h3 id=\"x\">Ours</h3>"));
         assert!(!html.contains("status"));
+    }
+
+    #[test]
+    fn local_audio_and_video_play_with_their_alt_as_caption() {
+        let html = render_html("![Theme song](/media/ab/c.ogg)\n\n![Clip](/media/ab/d.webm)\n");
+        assert!(html.contains("<audio controls=\"\" preload=\"metadata\" src=\"/media/ab/c.ogg\"></audio><figcaption>Theme song</figcaption>"), "{html}");
+        assert!(html.contains("<video controls"), "{html}");
+        // An outside file never plays; it stays a link.
+        let outside = render_html("![x](https://evil.test/a.mp3)\n");
+        assert!(!outside.contains("<audio"), "{outside}");
+    }
+
+    #[test]
+    fn prefixed_destinations_are_found_in_images_and_links_but_not_code() {
+        let md = "![F](image:ferris.png) and [notes](file:notes.pdf) `![x](image:no.png)`";
+        let found = prefixed_destinations(md, &["image:", "file:"]);
+        assert_eq!(found.len(), 2);
+        assert_eq!(&md[found[0].0.clone()], "image:ferris.png");
+        assert!(found[0].2);
+        assert_eq!(&md[found[1].0.clone()], "file:notes.pdf");
+        assert!(!found[1].2);
     }
 
     #[test]

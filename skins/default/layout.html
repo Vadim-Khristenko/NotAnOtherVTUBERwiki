@@ -590,6 +590,22 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
 @media (max-width: 40rem) {
   .content aside.infobox { float: none; width: auto; margin: 0 0 var(--s4); }
 }
+/* File pages: the file first, then what it is and where it is used. */
+.file-preview { margin: var(--s4) 0; padding: var(--s4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-sunken); text-align: center; }
+.file-preview img, .file-preview video { max-width: 100%; max-height: 70vh; height: auto; border-radius: var(--radius-sm); }
+.file-preview audio { width: 100%; }
+.file-preview figcaption { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--s3); margin-top: var(--s3); }
+.file-doc-icon { width: 4rem; height: 4rem; color: var(--muted); }
+.file-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: var(--s4); }
+.file-card { padding: var(--s4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elevated); }
+.file-card h2, .file-description h2, .file-uses h2 { margin-top: 0; font-size: 1.05rem; }
+.file-hash { font-size: 0.75rem; overflow-wrap: anywhere; }
+.file-description, .file-uses { margin-top: var(--s5); }
+.page-actions.file-actions { justify-content: flex-start; margin: var(--s3) 0 0; }
+.content figure.media-player { margin: var(--s4) 0; }
+.content figure.media-player audio, .content figure.media-player video { display: block; width: 100%; max-width: 100%; }
+.content figure.media-player figcaption { font-size: 0.85rem; color: var(--muted); margin-top: var(--s1); }
+.content a.file-link { display: inline-block; }
 .template-info { clear: both; margin-top: var(--s6); padding: var(--s4); border: 1px dashed var(--border-strong); border-radius: var(--radius); background: var(--bg-elevated); }
 .template-info h2 { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s2); font-size: 1.05rem; }
 .template-info h3 { margin: var(--s4) 0 var(--s1); font-size: 0.95rem; }

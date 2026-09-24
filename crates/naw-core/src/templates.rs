@@ -28,6 +28,7 @@ const TEMPLATES: &[&str] = &[
     "relay.html",
     "message.html",
     "search.html",
+    "file.html",
     "history.html",
     "revision.html",
     "diff.html",

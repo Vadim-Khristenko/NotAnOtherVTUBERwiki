@@ -1,11 +1,11 @@
 {% extends "layout.html" %}
 {#
-  Uploading an image without the editor's script, and the uploader's recent
-  files with the Markdown for each.
+  Uploading a file without the editor's script, and the uploader's recent
+  files with the Markdown for each and a link to its page.
 
-  `uploaded`  the file just stored: url, markdown, name. Absent otherwise
+  `uploaded`  the file just stored: url, markdown, name, page, kind. Absent otherwise
   `error`     why the last upload was refused, already worded
-  `mine`      recent uploads: url, markdown, name, width, height, at
+  `mine`      recent uploads: url, markdown, name, page, kind, width, height, at
   `max_mb`    the per file limit
 #}
 {% block body %}
@@ -18,14 +18,14 @@
   <p>{{ t("media.uploaded") }}</p>
   <label class="visually-hidden" for="media-md-new">{{ uploaded.name }}</label>
   <input class="field-input media-md" id="media-md-new" readonly value="{{ uploaded.markdown }}" />
-  <p class="field-note">{{ t("media.copy_hint") }}</p>
+  <p class="field-note">{{ t("media.copy_hint") }} <a href="{{ uploaded.page }}">{{ t("media.open_page") }}</a></p>
 </div>
 {% endif %}
 
 <form method="post" action="/media/upload" enctype="multipart/form-data" class="settings-stack media-form">
   <label class="field">{{ t("media.choose") }}
     <input class="field-input" name="file" type="file" required
-           accept="image/png,image/jpeg,image/gif,image/webp,image/avif" />
+           accept="image/png,image/jpeg,image/gif,image/webp,image/avif,audio/mpeg,audio/ogg,audio/opus,audio/flac,audio/wav,audio/mp4,video/mp4,video/webm,application/pdf" />
     <span class="field-note">{{ t("media.types") }}</span>
   </label>
   <button class="button-save" type="submit">
@@ -45,8 +45,11 @@
 <ul class="media-grid">
   {% for m in mine %}
   <li class="media-item">
-    <a href="{{ m.url }}" target="_blank" rel="noopener"><img src="{{ m.url }}" alt="{{ m.name }}" loading="lazy" decoding="async"
-      {%- if m.width and m.height %} width="{{ m.width }}" height="{{ m.height }}"{% endif %} /></a>
+    <a href="{{ m.page }}">
+      {%- if m.kind == "image" %}<img src="{{ m.url }}" alt="{{ m.name }}" loading="lazy" decoding="async"
+      {%- if m.width and m.height %} width="{{ m.width }}" height="{{ m.height }}"{% endif %} />
+      {%- else %}<span class="media-kind"><svg class="icon" aria-hidden="true"><use href="#i-{% if m.kind == "audio" %}movie{% elif m.kind == "video" %}movie{% else %}file-info{% endif %}" /></svg>{{ m.name }}</span>{% endif -%}
+    </a>
     <label class="visually-hidden" for="media-md-{{ loop.index }}">{{ m.name }}</label>
     <input class="field-input media-md" id="media-md-{{ loop.index }}" readonly value="{{ m.markdown }}" />
     <span class="muted-cell">{{ m.name }} · {{ m.at }}</span>
