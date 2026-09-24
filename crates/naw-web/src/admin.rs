@@ -1290,7 +1290,8 @@ pub async fn audit_log(
         .map(str::to_lowercase);
     let is_root = ctx.actor.global == GlobalRole::Root;
 
-    // Install-wide rows (wiki_id NULL) are the auth events.
+    // Install-wide rows (wiki_id NULL) are the sign-in events of every wiki on
+    // the install. A wiki's staff see those of its own members only.
     let rows = sqlx::query!(
         r#"
         SELECT a.id, a.action, a.entity_type, a.entity_id, a.meta, a.created_at,
@@ -1299,7 +1300,11 @@ pub async fn audit_log(
                (SELECT u.username FROM users u
                  WHERE a.entity_type = 'user' AND u.id = a.entity_id) AS subject_user
         FROM audit_log a
-        WHERE (a.wiki_id = $1 OR a.wiki_id IS NULL OR $5)
+        WHERE (a.wiki_id = $1
+               OR (a.wiki_id IS NULL
+                   AND ($5 OR EXISTS (SELECT 1 FROM wiki_memberships m
+                                      WHERE m.wiki_id = $1
+                                        AND m.user_id = COALESCE(a.user_id, a.entity_id)))))
           AND ($2::text IS NULL OR lower(a.action) LIKE $2)
           AND ($6::text[] IS NULL OR a.action LIKE ANY($6))
           AND ($7::text IS NULL OR a.user_id = (SELECT u.id FROM users u WHERE lower(u.username) = $7))
@@ -1318,7 +1323,11 @@ pub async fn audit_log(
     .await?;
     let total = sqlx::query_scalar!(
         r#"SELECT count(*) AS "count!" FROM audit_log a
-           WHERE (a.wiki_id = $1 OR a.wiki_id IS NULL OR $3)
+           WHERE (a.wiki_id = $1
+                  OR (a.wiki_id IS NULL
+                      AND ($3 OR EXISTS (SELECT 1 FROM wiki_memberships m
+                                         WHERE m.wiki_id = $1
+                                           AND m.user_id = COALESCE(a.user_id, a.entity_id)))))
              AND ($2::text IS NULL OR lower(a.action) LIKE $2)
              AND ($4::text[] IS NULL OR a.action LIKE ANY($4))
              AND ($5::text IS NULL OR a.user_id = (SELECT u.id FROM users u WHERE lower(u.username) = $5))"#,

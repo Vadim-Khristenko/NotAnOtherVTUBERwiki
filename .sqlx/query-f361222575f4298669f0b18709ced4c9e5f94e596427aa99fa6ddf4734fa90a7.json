@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT a.id, a.action, a.entity_type, a.entity_id, a.meta, a.created_at,\n               (a.wiki_id IS NULL) AS \"install_wide!\",\n               (SELECT u.username FROM users u WHERE u.id = a.user_id) AS actor,\n               (SELECT u.username FROM users u\n                 WHERE a.entity_type = 'user' AND u.id = a.entity_id) AS subject_user\n        FROM audit_log a\n        WHERE (a.wiki_id = $1 OR a.wiki_id IS NULL OR $5)\n          AND ($2::text IS NULL OR lower(a.action) LIKE $2)\n          AND ($6::text[] IS NULL OR a.action LIKE ANY($6))\n          AND ($7::text IS NULL OR a.user_id = (SELECT u.id FROM users u WHERE lower(u.username) = $7))\n        ORDER BY a.created_at DESC\n        LIMIT $3 OFFSET $4\n        ",
+  "query": "\n        SELECT a.id, a.action, a.entity_type, a.entity_id, a.meta, a.created_at,\n               (a.wiki_id IS NULL) AS \"install_wide!\",\n               (SELECT u.username FROM users u WHERE u.id = a.user_id) AS actor,\n               (SELECT u.username FROM users u\n                 WHERE a.entity_type = 'user' AND u.id = a.entity_id) AS subject_user\n        FROM audit_log a\n        WHERE (a.wiki_id = $1\n               OR (a.wiki_id IS NULL\n                   AND ($5 OR EXISTS (SELECT 1 FROM wiki_memberships m\n                                      WHERE m.wiki_id = $1\n                                        AND m.user_id = COALESCE(a.user_id, a.entity_id)))))\n          AND ($2::text IS NULL OR lower(a.action) LIKE $2)\n          AND ($6::text[] IS NULL OR a.action LIKE ANY($6))\n          AND ($7::text IS NULL OR a.user_id = (SELECT u.id FROM users u WHERE lower(u.username) = $7))\n        ORDER BY a.created_at DESC\n        LIMIT $3 OFFSET $4\n        ",
   "describe": {
     "columns": [
       {
@@ -111,5 +111,5 @@
       null
     ]
   },
-  "hash": "38ee32e34b902da941d401a66b528d6b1f9f67fce520a6e9239f30444c9aa6c8"
+  "hash": "f361222575f4298669f0b18709ced4c9e5f94e596427aa99fa6ddf4734fa90a7"
 }

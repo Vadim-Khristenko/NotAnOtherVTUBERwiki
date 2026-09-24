@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"count!\" FROM audit_log a\n           WHERE (a.wiki_id = $1\n                  OR (a.wiki_id IS NULL\n                      AND ($3 OR EXISTS (SELECT 1 FROM wiki_memberships m\n                                         WHERE m.wiki_id = $1\n                                           AND m.user_id = COALESCE(a.user_id, a.entity_id)))))\n             AND ($2::text IS NULL OR lower(a.action) LIKE $2)\n             AND ($4::text[] IS NULL OR a.action LIKE ANY($4))\n             AND ($5::text IS NULL OR a.user_id = (SELECT u.id FROM users u WHERE lower(u.username) = $5))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bool",
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "758d2add033ddcd3cc2a661d1a3e895e8489ec824db55ca07335a0d9cdd64bbe"
+}
