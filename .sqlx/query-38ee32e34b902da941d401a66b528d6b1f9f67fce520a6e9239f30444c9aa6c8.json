@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT a.id, a.action, a.entity_type, a.entity_id, a.meta, a.created_at,\n               (a.wiki_id IS NULL) AS \"install_wide!\",\n               u.username AS \"actor?\"\n        FROM audit_log a\n        LEFT JOIN users u ON u.id = a.user_id\n        WHERE (a.wiki_id = $1 OR a.wiki_id IS NULL)\n          AND ($2::text IS NULL OR lower(a.action) LIKE $2)\n        ORDER BY a.created_at DESC\n        LIMIT $3 OFFSET $4\n        ",
+  "query": "\n        SELECT a.id, a.action, a.entity_type, a.entity_id, a.meta, a.created_at,\n               (a.wiki_id IS NULL) AS \"install_wide!\",\n               (SELECT u.username FROM users u WHERE u.id = a.user_id) AS actor,\n               (SELECT u.username FROM users u\n                 WHERE a.entity_type = 'user' AND u.id = a.entity_id) AS subject_user\n        FROM audit_log a\n        WHERE (a.wiki_id = $1 OR a.wiki_id IS NULL OR $5)\n          AND ($2::text IS NULL OR lower(a.action) LIKE $2)\n          AND ($6::text[] IS NULL OR a.action LIKE ANY($6))\n          AND ($7::text IS NULL OR a.user_id = (SELECT u.id FROM users u WHERE lower(u.username) = $7))\n        ORDER BY a.created_at DESC\n        LIMIT $3 OFFSET $4\n        ",
   "describe": {
     "columns": [
       {
@@ -77,14 +77,15 @@
       },
       {
         "ordinal": 7,
-        "name": "actor?",
+        "name": "actor",
         "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "users",
-            "name": "username"
-          }
-        }
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "subject_user",
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -92,7 +93,10 @@
         "Uuid",
         "Text",
         "Int8",
-        "Int8"
+        "Int8",
+        "Bool",
+        "TextArray",
+        "Text"
       ]
     },
     "nullable": [
@@ -103,8 +107,9 @@
       false,
       false,
       null,
-      false
+      null,
+      null
     ]
   },
-  "hash": "baeacb1eddf2f5cb4a1ae9ab7f8f083068b5fcf0d179cbea72fa69c5229632e2"
+  "hash": "38ee32e34b902da941d401a66b528d6b1f9f67fce520a6e9239f30444c9aa6c8"
 }

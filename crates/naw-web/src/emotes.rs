@@ -791,6 +791,18 @@ pub async fn resync(
     if exists.is_none() {
         return Ok(crate::errors::not_found());
     }
+    crate::audit::record_or_log(
+        &state.db,
+        crate::audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action: "emotes.source_sync",
+            entity_type: "emote_source",
+            entity_id: Some(id),
+            meta: serde_json::json!({}),
+        },
+    )
+    .await;
     spawn_sync(state.clone(), id);
     Ok(pages::see_other("/admin/emotes?done=syncing"))
 }

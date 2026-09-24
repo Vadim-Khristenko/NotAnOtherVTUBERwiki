@@ -271,7 +271,26 @@ pub async fn dev_login(
 /// POST /logout: delete the session row, clear the cookie, 303 to /.
 pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Some(session_id) = session::session_id_from_headers(&headers, secure_cookies(&state)) {
+        let owner = sqlx::query_scalar!("SELECT user_id FROM sessions WHERE id = $1", session_id)
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten();
         session::delete(&state, session_id).await;
+        if let Some(user_id) = owner {
+            crate::audit::record_or_log(
+                &state.db,
+                crate::audit::Entry {
+                    wiki_id: None,
+                    user_id: Some(user_id),
+                    action: "auth.logout",
+                    entity_type: "user",
+                    entity_id: Some(user_id),
+                    meta: serde_json::json!({}),
+                },
+            )
+            .await;
+        }
     }
     let mut response = Redirect::to("/").into_response();
     if let Ok(value) = header::HeaderValue::from_str(&session::clear_cookie(secure_cookies(&state)))

@@ -232,14 +232,14 @@
       <tr>
         <td><a class="admin-user-link" href="/admin/user/{{ u.username }}">{{ u.username }}</a>{% if u.is_me %} <span class="tag">{{ t("admin.you") }}</span>{% endif %}
           {%- if u.temporary %} <span class="tag" title="{{ t('admin.temporary_hint') }}">{{ t("admin.temporary") }}</span>{% endif %}</td>
-        <td>
+        <td data-label="{{ t('admin.role_here') }}">
           {%- if u.wiki_role %}{{ u.wiki_role }}
           {%- else %}<span class="muted-cell">{{ t("admin.registered_no_membership") }}</span>{% endif -%}
         </td>
-        <td>{% if u.global_role != "registered" %}<span class="tag tag-root">{{ u.global_role }}</span>{% else %}<span class="muted-cell">-</span>{% endif %}</td>
-        <td>{% if u.email_verified %}{{ t("admin.verified") }}{% else %}<span class="muted-cell">{{ t("admin.unverified") }}</span>{% endif %}</td>
-        <td>{{ u.identities }}</td>
-        <td>{{ u.created_at }}</td>
+        <td data-label="{{ t('admin.install_role') }}">{% if u.global_role != "registered" %}<span class="tag tag-root">{{ u.global_role }}</span>{% else %}<span class="muted-cell">-</span>{% endif %}</td>
+        <td data-label="{{ t('admin.email') }}">{% if u.email_verified %}{{ t("admin.verified") }}{% else %}<span class="muted-cell">{{ t("admin.unverified") }}</span>{% endif %}</td>
+        <td data-label="{{ t('admin.logins') }}">{{ u.identities }}</td>
+        <td data-label="{{ t('admin.joined') }}">{{ u.created_at }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -276,14 +276,14 @@
           {% if p.archived %}{{ p.title }}{% else %}<a href="/{{ p.slug }}">{{ p.title }}</a>{% endif %}
           <br /><code class="muted-cell">/{{ p.slug }}</code>
         </td>
-        <td>
+        <td data-label="{{ t('admin.state') }}">
           {%- if p.archived %}<span class="tag tag-archived">{{ t("admin.archived") }}</span>
           {%- elif p.locked %}<span class="tag tag-locked">{{ t("admin.locked") }}</span>
           {%- else %}{{ t("admin.live") }}{% endif -%}
           {%- if not p.indexed %} <span class="tag tag-warn" title="{{ t('admin.unindexed_title') }}">{{ t("admin.unindexed") }}</span>{% endif -%}
         </td>
-        <td><a href="/{{ p.slug }}/history">{{ p.revisions }}</a></td>
-        <td>{{ p.updated_at }}</td>
+        <td data-label="{{ t('admin.revisions') }}"><a href="/{{ p.slug }}/history">{{ p.revisions }}</a></td>
+        <td data-label="{{ t('admin.updated') }}">{{ p.updated_at }}</td>
         <td class="action-cell">
           {% if p.archived %}
             <form method="post" action="/admin/pages/restore" class="inline-form">
@@ -413,40 +413,50 @@
   </section>
 
 {% elif section == "audit" %}
-  <form class="filter-form" method="get" action="/admin/audit">
+  <nav class="filter-chips" aria-label="{{ t('audit.filter_group') }}">
+    {% for g in groups %}<a class="chip" href="/admin/audit?group={{ g.id }}&amp;who={{ who }}&amp;q={{ query }}" {% if g.current %}aria-current="true"{% endif %}>{{ g.label }}</a>{% endfor %}
+  </nav>
+  <form class="filter-form audit-filter" method="get" action="/admin/audit">
+    <input type="hidden" name="group" value="{{ group }}" />
     <div class="search-row">
+      <input class="field-input" name="who" type="search" value="{{ who }}"
+             placeholder="{{ t('audit.filter_who') }}" maxlength="64" aria-label="{{ t('audit.filter_who') }}" />
       <input class="field-input" name="q" type="search" value="{{ query }}"
-             placeholder="{{ t('admin.filter_actions') }}" maxlength="100" />
+             placeholder="{{ t('admin.filter_actions') }}" maxlength="100" aria-label="{{ t('admin.filter_actions') }}" />
       <button class="button-preview" type="submit">{{ t("admin.filter") }}</button>
     </div>
   </form>
-  <table class="admin-table">
-    <thead>
-      <tr>
-        <th scope="col">{{ t("admin.when") }}</th>
-        <th scope="col">{{ t("admin.action") }}</th>
-        <th scope="col">{{ t("admin.who_col") }}</th>
-        <th scope="col">{{ t("admin.subject") }}</th>
-        <th scope="col">{{ t("admin.detail") }}</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for e in events %}
-      <tr>
-        <td class="nowrap">{{ e.at }}</td>
-        <td><code>{{ e.action }}</code>{% if e.install_wide %} <span class="tag" title="{{ t('admin.install_scope_title') }}">{{ t("admin.install_scope") }}</span>{% endif %}</td>
-        <td>{% if e.actor %}{{ e.actor }}{% else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif %}</td>
-        <td>{{ e.entity_type }}</td>
-        <td><code class="audit-meta">{{ e.meta }}</code></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <p class="muted-cell">{{ tn("audit.count", total) }}{% if who or query or group %} · <a href="/admin/audit">{{ t("audit.clear") }}</a>{% endif %}</p>
+  {% if events %}
+  <ol class="audit-list" role="list">
+    {% for e in events %}
+    {% if loop.first or e.day != loop.previtem.day %}<li class="audit-day"><h2>{{ e.day }}</h2></li>{% endif %}
+    <li class="audit-row">
+      <time class="audit-time" datetime="{{ e.at }}" title="{{ e.at }}">{{ e.time }}</time>
+      <div class="audit-what">
+        <p class="audit-line">
+          {% if e.actor %}<a class="audit-actor" href="/admin/audit?who={{ e.actor }}" title="{{ t('audit.only_who', who=e.actor) }}"><bdi>{{ e.actor }}</bdi></a>{% elif e.action[:4] == "cli." or e.action[:6] == "grant." %}<span class="tag">{{ t("audit.console") }}</span>{% elif e.action[:5] != "auth." %}<span class="muted-cell">{{ t("audit.nobody") }}</span>{% endif %}
+          <span class="audit-verb">{% if e.label %}{{ e.label }}{% else %}<code>{{ e.action }}</code>{% endif %}</span>
+          {# Signing in names the account once, not as actor and subject. #}
+          {% if e.subject_label and e.subject_label != e.actor %}{% if e.subject_href %}<a href="{{ e.subject_href }}"><bdi>{{ e.subject_label }}</bdi></a>{% else %}<bdi>{{ e.subject_label }}</bdi>{% endif %}{% endif %}
+          {% if e.install_wide %}<span class="tag" title="{{ t('admin.install_scope_title') }}">{{ t("admin.install_scope") }}</span>{% endif %}
+        </p>
+        <details class="audit-detail">
+          <summary><code>{{ e.action }}</code></summary>
+          {% if e.meta %}<code class="audit-meta">{{ e.meta }}</code>{% endif %}
+        </details>
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
   <nav class="pager">
-    {% if has_prev %}<a href="/admin/audit?q={{ query }}&amp;page={{ prev_page }}">{{ t("admin.previous") }}</a>{% endif %}
+    {% if has_prev %}<a href="/admin/audit?group={{ group }}&amp;who={{ who }}&amp;q={{ query }}&amp;page={{ prev_page }}">{{ t("admin.previous") }}</a>{% endif %}
     <span class="muted-cell">{{ t("history.page_no", n=page_no) }}</span>
-    {% if has_next %}<a href="/admin/audit?q={{ query }}&amp;page={{ next_page }}">{{ t("admin.next") }}</a>{% endif %}
+    {% if has_next %}<a href="/admin/audit?group={{ group }}&amp;who={{ who }}&amp;q={{ query }}&amp;page={{ next_page }}">{{ t("admin.next") }}</a>{% endif %}
   </nav>
+  {% else %}
+  <p class="empty-state">{{ t("audit.empty") }}</p>
+  {% endif %}
 
 {% elif section == "wiki" %}
   <form method="post" action="/admin/wiki">
@@ -563,10 +573,10 @@
       <tr>
         <td><a href="{{ s.link }}" target="_blank" rel="noopener noreferrer">{{ s.label }}</a>
           <span class="muted-cell">{{ t("admin.emotes_kind_" ~ s.kind) }}</span></td>
-        <td>{{ t("admin.emotes_status_" ~ s.status) }}{% if s.error %}<br /><span class="muted-cell">{{ s.error }}</span>{% endif %}</td>
-        <td>{{ s.count }}{% if s.skipped %} <span class="muted-cell">{{ t("admin.emotes_skipped", count=s.skipped) }}</span>{% endif %}</td>
-        <td class="muted-cell">{{ s.synced or "-" }}</td>
-        <td class="admin-row-actions">
+        <td data-label="{{ t('admin.emotes_status') }}">{{ t("admin.emotes_status_" ~ s.status) }}{% if s.error %}<br /><span class="muted-cell">{{ s.error }}</span>{% endif %}</td>
+        <td data-label="{{ t('admin.emotes_count') }}">{{ s.count }}{% if s.skipped %} <span class="muted-cell">{{ t("admin.emotes_skipped", count=s.skipped) }}</span>{% endif %}</td>
+        <td class="muted-cell" data-label="{{ t('admin.emotes_synced') }}">{{ s.synced or "-" }}</td>
+        <td class="admin-row-actions action-cell">
           <form method="post" action="/admin/emotes/{{ s.id }}/sync"><button class="button-preview" type="submit">{{ t("admin.emotes_sync") }}</button></form>
           <form method="post" action="/admin/emotes/{{ s.id }}/remove"><button class="button-preview" type="submit">{{ t("admin.emotes_remove") }}</button></form>
         </td>

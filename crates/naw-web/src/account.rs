@@ -193,13 +193,20 @@ pub async fn password_login(
     // Always one full verification, so an unknown user and a wrong password
     // look and take the same.
     let verified = password::verify(form.password, stored).await;
+    let target = row.as_ref().map(|row| row.id);
     let Some(row) = row.filter(|_| verified) else {
         throttle::record_miss(&state.valkey, &username, ip).await;
+        // Only against an account that exists: a guess at a name nobody has
+        // would let anyone fill the log with invented names.
+        if let Some(target) = target {
+            sign_in_refused(&state, target, "wrong_password").await;
+        }
         return again(StatusCode::UNAUTHORIZED, "error_password");
     };
     throttle::clear_account(&state.valkey, &username).await;
     // The password was right, so saying the account is suspended reveals nothing.
     if session::install_banned(&state, row.id).await? {
+        sign_in_refused(&state, row.id, "suspended").await;
         return again(StatusCode::FORBIDDEN, "error_suspended");
     }
 
@@ -227,6 +234,27 @@ pub async fn password_login(
         next
     };
     Ok(routes::sign_in_response(&state, &session_id, &target))
+}
+
+/// A refused password sign-in, for the account's owner and the admins to see.
+/// No address and nothing typed is kept. Written off the response path, so a
+/// refusal for an account that exists takes no longer than for one that does not.
+async fn sign_in_refused(state: &AppState, user_id: uuid::Uuid, why: &'static str) {
+    let db = state.db.clone();
+    tokio::spawn(async move {
+        crate::audit::record_or_log(
+            &db,
+            crate::audit::Entry {
+                wiki_id: None,
+                user_id: None,
+                action: "auth.login_refused",
+                entity_type: "user",
+                entity_id: Some(user_id),
+                meta: serde_json::json!({ "provider": "password", "why": why }),
+            },
+        )
+        .await;
+    });
 }
 
 /// The change password page, carrying the destination along.

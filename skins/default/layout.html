@@ -930,6 +930,36 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
   .report-open { margin-left: 0; width: 100%; text-align: center; }
 }
 
+/* Audit log: a feed by day, readable first, the raw row one click away. */
+.audit-filter .search-row { flex-wrap: wrap; }
+.audit-filter .field-input { flex: 1 1 11rem; }
+.audit-filter { max-width: 40rem; }
+.audit-list { list-style: none; margin: 0 0 var(--s4); padding: 0; }
+.audit-day h2 { margin: var(--s5) 0 var(--s2); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.audit-day:first-child h2 { margin-top: var(--s2); }
+.audit-row { display: grid; grid-template-columns: 3.2rem minmax(0, 1fr); gap: var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--line); }
+.audit-time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.88rem; padding-top: 0.1rem; }
+.audit-line { margin: 0; overflow-wrap: anywhere; }
+.audit-actor { font-weight: 700; }
+.audit-verb { color: var(--ink-soft); }
+.audit-detail { margin-top: 0.15rem; font-size: 0.8rem; color: var(--faint); }
+.audit-detail summary { cursor: pointer; width: fit-content; }
+.audit-detail summary code { font-size: 0.78rem; }
+.audit-detail .audit-meta { display: block; margin-top: var(--s1); padding: var(--s2); border-radius: var(--radius-sm); background: var(--surface-sunken); }
+
+/* Admin tables become cards on a phone: each cell carries its column name. */
+@media (max-width: 40rem) {
+  .admin-main .admin-table { display: block; overflow: visible; }
+  .admin-table thead { display: none; }
+  .admin-table tbody, .admin-table tr, .admin-table td { display: block; }
+  .admin-table tr { margin: 0 0 var(--s3); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .admin-table td { display: flex; gap: var(--s3); padding: 0.2rem 0; border: none; }
+  .admin-table td[data-label]::before { content: attr(data-label); flex: 0 0 38%; color: var(--muted); font-size: 0.85rem; }
+  .admin-table td:first-child { font-size: 1.05rem; font-weight: 600; }
+  .admin-table td:first-child::before { content: none; }
+  .admin-table .action-cell { flex-wrap: wrap; padding-top: var(--s2); }
+}
+
 /* ---------------------------------------------------------------------------
  * Error page
  *

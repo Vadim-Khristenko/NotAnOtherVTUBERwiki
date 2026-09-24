@@ -1206,13 +1206,66 @@ pub async fn page_action(
 // Audit log
 // ---------------------------------------------------------------------------
 
+/// Groups the audit log can be narrowed to, each a set of action prefixes.
+const AUDIT_GROUPS: [(&str, &[&str]); 6] = [
+    ("pages", &["page.", "revision.", "profile."]),
+    (
+        "people",
+        &["admin.", "membership.", "user.", "cli.", "grant."],
+    ),
+    ("sign_in", &["auth."]),
+    ("files", &["media.", "emotes."]),
+    ("reports", &["report."]),
+    ("settings", &["wiki.", "install.", "skin.", "search."]),
+];
+
+#[derive(Debug, serde::Deserialize)]
+pub struct AuditQuery {
+    #[serde(default)]
+    q: Option<String>,
+    #[serde(default)]
+    group: Option<String>,
+    #[serde(default)]
+    who: Option<String>,
+    #[serde(default)]
+    page: Option<i64>,
+}
+
+/// Where an audit row's subject lives, when it still has a page.
+fn audit_subject(
+    ctx: &Ctx,
+    entity_type: &str,
+    meta: &Value,
+    subject_user: Option<&str>,
+) -> Option<(String, String)> {
+    let text = |key: &str| meta.get(key).and_then(Value::as_str);
+    if let Some(name) = subject_user {
+        return Some((format!("/user/{name}"), name.to_string()));
+    }
+    if let Some(name) = text("profile_of") {
+        return Some((format!("/user/{name}"), name.to_string()));
+    }
+    match entity_type {
+        "page" => text("slug").map(|slug| {
+            let href = match text("locale") {
+                Some(locale) => ctx.link_for(locale, &format!("/{slug}")),
+                None => ctx.link(&format!("/{slug}")),
+            };
+            (href, slug.to_string())
+        }),
+        "media" => text("name").map(|name| (format!("/image:{name}"), name.to_string())),
+        "report" => text("subject").map(|subject| (String::new(), subject.to_string())),
+        _ => None,
+    }
+}
+
 /// GET /admin/audit
 #[instrument(skip(state, user, headers))]
 pub async fn audit_log(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
-    Query(query): Query<ListQuery>,
+    Query(query): Query<AuditQuery>,
 ) -> Result<Response, AppError> {
     let ctx = or_respond!(gate_for(&state, &headers, user.as_ref(), Capability::AuditRead).await);
     let page_no = query.page.unwrap_or(1).max(1);
@@ -1223,52 +1276,99 @@ pub async fn audit_log(
         .map(str::trim)
         .filter(|q| !q.is_empty())
         .map(|q| format!("%{}%", q.to_lowercase()));
+    let group = query
+        .group
+        .as_deref()
+        .and_then(|g| AUDIT_GROUPS.iter().find(|(id, _)| *id == g));
+    let prefixes: Option<Vec<String>> =
+        group.map(|(_, list)| list.iter().map(|p| format!("{p}%")).collect());
+    let who = query
+        .who
+        .as_deref()
+        .map(str::trim)
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase);
+    let is_root = ctx.actor.global == GlobalRole::Root;
 
     // Install-wide rows (wiki_id NULL) are the auth events.
     let rows = sqlx::query!(
         r#"
         SELECT a.id, a.action, a.entity_type, a.entity_id, a.meta, a.created_at,
                (a.wiki_id IS NULL) AS "install_wide!",
-               u.username AS "actor?"
+               (SELECT u.username FROM users u WHERE u.id = a.user_id) AS actor,
+               (SELECT u.username FROM users u
+                 WHERE a.entity_type = 'user' AND u.id = a.entity_id) AS subject_user
         FROM audit_log a
-        LEFT JOIN users u ON u.id = a.user_id
-        WHERE (a.wiki_id = $1 OR a.wiki_id IS NULL)
+        WHERE (a.wiki_id = $1 OR a.wiki_id IS NULL OR $5)
           AND ($2::text IS NULL OR lower(a.action) LIKE $2)
+          AND ($6::text[] IS NULL OR a.action LIKE ANY($6))
+          AND ($7::text IS NULL OR a.user_id = (SELECT u.id FROM users u WHERE lower(u.username) = $7))
         ORDER BY a.created_at DESC
         LIMIT $3 OFFSET $4
         "#,
         ctx.wiki.id,
         filter,
         PER_PAGE,
-        offset
+        offset,
+        is_root,
+        prefixes.as_deref(),
+        who
     )
     .fetch_all(&state.db)
     .await?;
-    let total = sqlx::query!(
+    let total = sqlx::query_scalar!(
         r#"SELECT count(*) AS "count!" FROM audit_log a
-           WHERE (a.wiki_id = $1 OR a.wiki_id IS NULL)
-             AND ($2::text IS NULL OR lower(a.action) LIKE $2)"#,
+           WHERE (a.wiki_id = $1 OR a.wiki_id IS NULL OR $3)
+             AND ($2::text IS NULL OR lower(a.action) LIKE $2)
+             AND ($4::text[] IS NULL OR a.action LIKE ANY($4))
+             AND ($5::text IS NULL OR a.user_id = (SELECT u.id FROM users u WHERE lower(u.username) = $5))"#,
         ctx.wiki.id,
-        filter
+        filter,
+        is_root,
+        prefixes.as_deref(),
+        who
     )
     .fetch_one(&state.db)
-    .await?
-    .count;
+    .await?;
 
     let items: Vec<minijinja::Value> = rows
         .into_iter()
         .map(|row| {
+            let key = format!("audit.{}", row.action.replace('.', "_"));
+            let label = ctx.t(&key);
+            let subject = audit_subject(
+                &ctx,
+                &row.entity_type,
+                &row.meta,
+                row.subject_user.as_deref(),
+            );
             minijinja::context! {
-                action => row.action,
+                action => row.action.clone(),
+                // An action with no wording yet shows as it is spelled.
+                label => (label != key).then_some(label),
                 entity_type => row.entity_type,
-                entity_id => row.entity_id.map(|id| id.to_string()),
                 actor => row.actor,
                 install_wide => row.install_wide,
+                day => ctx.day(row.created_at),
+                time => row.created_at.format("%H:%M").to_string(),
                 at => row.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
-                meta => row.meta.to_string(),
+                subject_href => subject.as_ref().map(|s| s.0.clone()).filter(|h| !h.is_empty()),
+                subject_label => subject.map(|s| s.1),
+                meta => (row.meta != serde_json::json!({})).then(|| row.meta.to_string()),
             }
         })
         .collect();
+    let current_group = group.map(|(id, _)| *id).unwrap_or("");
+    let groups = std::iter::once("")
+        .chain(AUDIT_GROUPS.iter().map(|(id, _)| *id))
+        .map(|id| {
+            minijinja::context! {
+                id => id,
+                label => ctx.t(&format!("audit.group_{}", if id.is_empty() { "all" } else { id })),
+                current => id == current_group,
+            }
+        })
+        .collect::<Vec<_>>();
 
     render(
         &ctx,
@@ -1278,6 +1378,9 @@ pub async fn audit_log(
             events => items,
             total => total,
             query => query.q.clone().unwrap_or_default(),
+            who => query.who.clone().unwrap_or_default(),
+            group => current_group,
+            groups => groups,
             page_no => page_no,
             has_prev => page_no > 1,
             has_next => offset + PER_PAGE < total,
