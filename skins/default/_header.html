@@ -1,16 +1,19 @@
 {#
   Site chrome. Rendered per request, never cached: it carries who is signed in.
 
-  Wide screens: one row, brand, search, actions.
-  Narrow screens: brand on the left, then a search icon and a menu icon on the
-  right. Each icon opens its own panel, sliding down from under the header.
+  Wide screens:   [menu] [brand] [search.............] [+] [language] [account]
+  Narrow screens: [menu] [brand]                        [search] [account]
 
-  **Everything here works with JavaScript off.** The two narrow-screen panels
-  are driven by visually hidden checkboxes and their labels, so they open and
-  close by CSS alone, and the checkboxes stay keyboard focusable. The language
-  menu is a `<details>`, which is a native disclosure. The script at the bottom
-  only adds what a script is good for: Escape to close, focus moved into the
-  panel that opened, one panel at a time, and filtering the language list.
+  The menu is a drawer from the left with everything else: navigation, the
+  tools of the page on screen, taking part, the account, the theme, and on a
+  phone the languages and "new page" too.
+
+  **Everything here works with JavaScript off.** The drawer and the narrow
+  search panel run on visually hidden checkboxes and their labels, so they
+  open and close by CSS alone, and the checkboxes stay keyboard focusable. The
+  language menu is a `<details>`. The script at the bottom only adds what a
+  script is good for: Escape to close, focus moved into what opened, one panel
+  at a time, the theme button, and filtering a long language list.
 
   Capability flags come from the same `Actor` the handlers gate on, so this
   template cannot offer a control the server will refuse. Bind new links to the
@@ -19,100 +22,63 @@
 <a class="skip-link" href="#content">{{ t("nav.skip_to_content") }}</a>
 <header class="site-header">
   <div class="site-header-inner">
-    <a class="site-brand" href="{{ base or '/' }}">
-      {% include "_brand.html" %}
-      <span class="site-brand-name">{{ wiki_name }}</span>
-    </a>
-
-    {# The toggles must precede the panels they control: CSS can only reach
-       later siblings. #}
-    {% if show_search is not defined or show_search %}
-    <input class="panel-toggle" type="checkbox" id="search-toggle"
-           aria-controls="site-search" />
-    <label class="icon-button search-button" for="search-toggle"
-           title="{{ t('nav.search') }}">
-      <svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>
-      <span class="visually-hidden">{{ t("nav.search") }}</span>
-    </label>
-    {% endif %}
-
-    <input class="panel-toggle" type="checkbox" id="menu-toggle"
-           aria-controls="site-nav" />
-    <label class="icon-button menu-button" for="menu-toggle"
-           title="{{ t('nav.menu') }}">
+    {# The toggles must precede what they open: CSS can only reach later siblings. #}
+    <input class="panel-toggle" type="checkbox" id="menu-toggle" aria-controls="site-menu" />
+    <label class="icon-button menu-button" for="menu-toggle" title="{{ t('nav.menu') }}">
       <svg class="icon icon-open" aria-hidden="true"><use href="#i-menu-2" /></svg>
       <svg class="icon icon-close" aria-hidden="true"><use href="#i-x" /></svg>
       <span class="visually-hidden">{{ t("nav.menu") }}</span>
     </label>
 
+    <a class="site-brand" href="{{ base or '/' }}">
+      {% include "_brand.html" %}
+      <span class="site-brand-name">{{ wiki_name }}</span>
+    </a>
+
     {% if show_search is not defined or show_search %}
+    <input class="panel-toggle" type="checkbox" id="search-toggle" aria-controls="site-search" />
+    <label class="icon-button search-button" for="search-toggle" title="{{ t('nav.search') }}">
+      <svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>
+      <span class="visually-hidden">{{ t("nav.search") }}</span>
+    </label>
     <form class="header-search" id="site-search" method="get" action="{{ base }}/search" role="search">
       <label class="visually-hidden" for="header-q">{{ t("nav.search_this", wiki=wiki_name) }}</label>
       <svg class="icon header-search-icon" aria-hidden="true"><use href="#i-search" /></svg>
-      <input id="header-q" name="q" type="search" placeholder="{{ t('nav.search_placeholder') }}"
+      <input id="header-q" name="q" type="search" placeholder="{{ t('nav.search_this', wiki=wiki_name) }}"
              maxlength="200" autocomplete="off"
              value="{% if query is defined %}{{ query }}{% endif %}" />
       <button type="submit" class="header-search-go">{{ t("nav.search") }}</button>
     </form>
     {% endif %}
 
-    <nav class="site-nav" id="site-nav" aria-label="{{ t('nav.main') }}">
+    <div class="header-actions">
       {% if can_create is defined and can_create and (show_new_page is not defined or show_new_page) %}
-      <a class="nav-link" href="{{ base }}/new" title="{{ t('nav.new_page') }}" aria-label="{{ t('nav.new_page') }}">
+      <a class="nav-link header-wide" href="{{ base }}/new" title="{{ t('nav.new_page') }}" aria-label="{{ t('nav.new_page') }}">
         <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
-        <span>{{ t("nav.new_page") }}</span>
-      </a>
-      {% endif %}
-      {% if can_admin is defined and can_admin %}
-      <a class="nav-link" href="/admin" title="{{ t('nav.admin') }}" aria-label="{{ t('nav.admin') }}">
-        <svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>
-        <span>{{ t("nav.admin") }}</span>
-      </a>
-      {% endif %}
-      {% if show_emotes is not defined or show_emotes %}
-      <a class="nav-link" href="/emotes" title="{{ t('nav.emotes') }}" aria-label="{{ t('nav.emotes') }}">
-        <svg class="icon" aria-hidden="true"><use href="#i-mood-smile" /></svg>
-        <span>{{ t("nav.emotes") }}</span>
-      </a>
-      {% endif %}
-      {% if show_about is not defined or show_about %}
-      <a class="nav-link" href="{{ base }}/about" title="{{ t('nav.about') }}" aria-label="{{ t('nav.about') }}">
-        <svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>
-        <span>{{ t("nav.about") }}</span>
       </a>
       {% endif %}
 
       {% if language_options is defined and language_options | length > 1 and (show_languages is not defined or show_languages) %}
-      {#
-        Language menu. A dropdown rather than a row of codes, because a row of
-        codes stops working somewhere past five languages, and this engine is
-        meant to carry many more. Each entry links to this article in that
-        language (`/ru/about`, or a subdomain) with `?lang=` so the interface
-        follows, so a choice is one click and needs no script. With a script and enough
-        languages, a filter field appears at the top of the list.
-      #}
-      <details class="lang-menu">
+      {# One click per language: each entry links to this article in that language
+         with ?lang= so the interface follows. #}
+      <details class="lang-menu header-wide">
         <summary class="nav-link lang-summary" title="{{ t('nav.language') }}">
           <svg class="icon" aria-hidden="true"><use href="#i-world" /></svg>
-          {# The short code on the wide row, the full name in the drawer. #}
-          <b class="lang-code">{{ lang | upper }}</b><span>{{ lang_native }}</span>
+          <b class="lang-code">{{ lang | upper }}</b>
           <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron-down" /></svg>
         </summary>
         <div class="lang-panel">
           <input class="lang-filter field-input" type="search" hidden
-                 placeholder="{{ t('nav.language_filter') }}"
-                 aria-label="{{ t('nav.language_filter') }}" />
+                 placeholder="{{ t('nav.language_filter') }}" aria-label="{{ t('nav.language_filter') }}" />
           <ul class="lang-list" role="list">
             {% for option in language_options %}
             <li>
               {% if option.current %}
               <span class="lang-option lang-option-current" aria-current="true" lang="{{ option.code }}">
-                {{ option.native_name }}
-                <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                {{ option.native_name }}<svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
               </span>
               {% else %}
-              <a class="lang-option" href="{{ option.href }}" lang="{{ option.code }}"
-                 hreflang="{{ option.code }}" rel="nofollow">{{ option.native_name }}</a>
+              <a class="lang-option" href="{{ option.href }}" lang="{{ option.code }}" hreflang="{{ option.code }}" rel="nofollow">{{ option.native_name }}</a>
               {% endif %}
             </li>
             {% endfor %}
@@ -122,35 +88,101 @@
       </details>
       {% endif %}
 
-      {% if show_theme is not defined or show_theme %}
-      <button class="nav-link theme-toggle" id="theme-toggle" type="button"
-              title="{{ t('nav.toggle_theme') }}">
-        <svg class="icon icon-sun" aria-hidden="true"><use href="#i-sun" /></svg>
-        <svg class="icon icon-moon" aria-hidden="true"><use href="#i-moon" /></svg>
-        <span class="nav-drawer-label">{{ t("nav.toggle_theme") }}</span>
-      </button>
-      {% endif %}
-
       {% if signed_in is defined and signed_in %}
-      <div class="nav-account">
-        <a class="nav-link nav-user" href="/settings" title="{{ display_name }} · {{ t('settings.title') }}">
-          <b class="nav-avatar" aria-hidden="true">{% if avatar_url %}<img src="{{ avatar_url }}" alt="" width="28" height="28" />{% else %}{{ display_name[:1] | upper }}{% endif %}</b>
-          <span><bdi>{{ display_name }}</bdi></span>
-        </a>
-        {# Signing out changes state, so it is a POST, not a link. #}
-        <form class="inline-form" method="post" action="/logout">
-          <button class="nav-link nav-signout" type="submit" title="{{ t('nav.sign_out') }}">
-            <svg class="icon" aria-hidden="true"><use href="#i-logout" /></svg>
-            <span class="nav-drawer-label">{{ t("nav.sign_out") }}</span>
-          </button>
-        </form>
-      </div>
+      <a class="nav-link nav-user" href="/user/{{ username }}" title="{{ display_name }}">
+        <b class="nav-avatar" aria-hidden="true">{% if avatar_url %}<img src="{{ avatar_url }}" alt="" width="28" height="28" />{% else %}{{ display_name[:1] | upper }}{% endif %}</b>
+        <span class="visually-hidden"><bdi>{{ display_name }}</bdi></span>
+      </a>
       {% else %}
-      <a class="nav-link nav-signin nav-keep-label" href="/login">
+      <a class="nav-link nav-signin" href="/login">
         <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>
         <span>{{ t("nav.sign_in") }}</span>
       </a>
       {% endif %}
+    </div>
+
+    {# A click beside the open drawer closes it. #}
+    <label class="menu-scrim" for="menu-toggle" aria-hidden="true"></label>
+    <nav class="site-menu" id="site-menu" aria-label="{{ t('nav.main') }}">
+      <div class="menu-head">
+        <span class="menu-title">{{ wiki_name }}</span>
+        <label class="icon-button menu-close" for="menu-toggle" title="{{ t('nav.close') }}">
+          <svg class="icon" aria-hidden="true"><use href="#i-x" /></svg>
+          <span class="visually-hidden">{{ t("nav.close") }}</span>
+        </label>
+      </div>
+
+      <section class="menu-section">
+        <h2 class="menu-heading">{{ t("nav.section_navigate") }}</h2>
+        <a class="menu-link" href="{{ base or '/' }}"><svg class="icon" aria-hidden="true"><use href="#i-home" /></svg>{{ t("nav.home") }}</a>
+        <a class="menu-link" href="{{ base }}/system:recent-changes"><svg class="icon" aria-hidden="true"><use href="#i-activity" /></svg>{{ t("nav.recent_changes") }}</a>
+        <a class="menu-link" href="{{ base }}/system:all-pages"><svg class="icon" aria-hidden="true"><use href="#i-list" /></svg>{{ t("nav.all_pages") }}</a>
+        <a class="menu-link" href="{{ base }}/system:random" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-arrows-shuffle" /></svg>{{ t("nav.random") }}</a>
+        <a class="menu-link" href="{{ base }}/system:files"><svg class="icon" aria-hidden="true"><use href="#i-photo" /></svg>{{ t("nav.files") }}</a>
+        {% if show_emotes is not defined or show_emotes %}
+        <a class="menu-link" href="/emotes"><svg class="icon" aria-hidden="true"><use href="#i-mood-smile" /></svg>{{ t("nav.emotes") }}</a>
+        {% endif %}
+      </section>
+
+      {% if slug is defined and slug %}
+      <section class="menu-section">
+        <h2 class="menu-heading">{{ t("nav.section_page") }}</h2>
+        <a class="menu-link" href="{{ base }}/{{ slug }}"><svg class="icon" aria-hidden="true"><use href="#i-file-text" /></svg>{{ t("nav.read") }}</a>
+        {% if can_edit_this is defined and can_edit_this %}
+        <a class="menu-link" href="{{ base }}/{{ slug }}/edit"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("nav.edit") }}</a>
+        {% endif %}
+        <a class="menu-link" href="{{ base }}/{{ slug }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
+      </section>
+      {% endif %}
+
+      <section class="menu-section">
+        <h2 class="menu-heading">{{ t("nav.section_take_part") }}</h2>
+        {% if can_create is defined and can_create %}
+        <a class="menu-link" href="{{ base }}/new"><svg class="icon" aria-hidden="true"><use href="#i-file-plus" /></svg>{{ t("nav.new_page") }}</a>
+        <a class="menu-link" href="/media"><svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>{{ t("nav.upload") }}</a>
+        {% endif %}
+        <a class="menu-link" href="{{ base }}/system"><svg class="icon" aria-hidden="true"><use href="#i-layout-grid" /></svg>{{ t("nav.system_pages") }}</a>
+        {% if show_about is not defined or show_about %}
+        <a class="menu-link" href="{{ base }}/about"><svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>{{ t("nav.about") }}</a>
+        {% endif %}
+      </section>
+
+      {% if language_options is defined and language_options | length > 1 and (show_languages is not defined or show_languages) %}
+      <section class="menu-section menu-narrow">
+        <h2 class="menu-heading">{{ t("nav.language") }}</h2>
+        {% for option in language_options %}
+        {% if option.current %}
+        <span class="menu-link is-current" lang="{{ option.code }}"><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>{{ option.native_name }}</span>
+        {% else %}
+        <a class="menu-link" href="{{ option.href }}" lang="{{ option.code }}" hreflang="{{ option.code }}" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-world" /></svg>{{ option.native_name }}</a>
+        {% endif %}
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      <section class="menu-section">
+        <h2 class="menu-heading">{{ t("nav.section_account") }}</h2>
+        {% if signed_in is defined and signed_in %}
+        <a class="menu-link" href="/user/{{ username }}"><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg><bdi>{{ display_name }}</bdi></a>
+        <a class="menu-link" href="/settings"><svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg>{{ t("settings.title") }}</a>
+        {% if can_admin is defined and can_admin %}
+        <a class="menu-link" href="/admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>{{ t("nav.admin") }}</a>
+        {% endif %}
+        {# Signing out changes state, so it is a POST, not a link. #}
+        <form class="menu-form" method="post" action="/logout">
+          <button class="menu-link" type="submit"><svg class="icon" aria-hidden="true"><use href="#i-logout" /></svg>{{ t("nav.sign_out") }}</button>
+        </form>
+        {% else %}
+        <a class="menu-link" href="/login"><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>{{ t("nav.sign_in") }}</a>
+        {% endif %}
+        {% if show_theme is not defined or show_theme %}
+        <button class="menu-link theme-toggle" id="theme-toggle" type="button">
+          <svg class="icon icon-sun" aria-hidden="true"><use href="#i-sun" /></svg>
+          <svg class="icon icon-moon" aria-hidden="true"><use href="#i-moon" /></svg>
+          {{ t("nav.toggle_theme") }}
+        </button>
+        {% endif %}
+      </section>
     </nav>
   </div>
 </header>
@@ -173,8 +205,8 @@
     });
   }
 
-  // Narrow-screen panels. The checkboxes already open and close them; this only
-  // keeps one open at a time, moves focus in, and closes on Escape.
+  // The checkboxes already open and close the drawer and the search panel;
+  // this keeps one open at a time, moves focus in, and closes on Escape.
   var search = document.getElementById("search-toggle");
   var menu = document.getElementById("menu-toggle");
   function sync(box) {
@@ -187,16 +219,21 @@
       var other = box === search ? menu : search;
       if (box.checked && other && other.checked) { other.checked = false; sync(other); }
       sync(box);
+      root.classList.toggle("menu-open", !!(menu && menu.checked));
       if (box === search && box.checked) {
         var field = document.getElementById("header-q");
         if (field) setTimeout(function () { field.focus(); }, 60);
+      }
+      if (box === menu && box.checked) {
+        var first = document.querySelector("#site-menu .menu-link");
+        if (first) setTimeout(function () { first.focus(); }, 60);
       }
     });
   });
   document.addEventListener("keydown", function (ev) {
     if (ev.key !== "Escape") return;
     [search, menu].forEach(function (box) {
-      if (box && box.checked) { box.checked = false; sync(box); box.focus(); }
+      if (box && box.checked) { box.checked = false; sync(box); root.classList.remove("menu-open"); box.focus(); }
     });
     document.querySelectorAll("details.lang-menu[open]").forEach(function (d) {
       d.open = false;
