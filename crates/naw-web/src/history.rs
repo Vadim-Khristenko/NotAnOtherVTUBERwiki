@@ -461,6 +461,7 @@ pub async fn revert(
             &target.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
         )],
     );
+    let prepared = pages::prepare(&state, &ctx, &slug, &target.body_md).await?;
     let mut tx = state.db.begin().await?;
     sqlx::query!(
         "INSERT INTO revisions
@@ -489,17 +490,18 @@ pub async fn revert(
     if swapped.rows_affected() == 0 {
         return pages::edit_conflict(&ctx, &slug);
     }
-    naw_core::search::index_page(
+    pages::index(
         &mut tx,
+        &ctx,
         found.id,
         &locale,
         &found.title,
         Some(&summary),
-        &target.body_md,
+        &prepared,
     )
     .await?;
     tx.commit().await?;
-    pages::after_save(&state, &ctx, found.id, &slug, &target.body_md).await;
+    pages::after_save(&state, &ctx, found.id, &prepared).await;
 
     audit::record_or_log(
         &state.db,

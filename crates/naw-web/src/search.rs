@@ -52,6 +52,8 @@ pub async fn search_page(
             minijinja::context! {
                 slug => hit.slug.clone(),
                 title => hit.title.clone(),
+                section => hit.section.as_ref().map(|s| s.heading.clone()),
+                anchor => hit.section.as_ref().map(|s| s.anchor.clone()),
                 snippet => hit.snippet.clone(),
             }
         })

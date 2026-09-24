@@ -46,7 +46,7 @@ pub async fn run(pool: &PgPool, seed_dir: &str, opts: &SeedOptions) -> Result<()
         seed_files(pool, wiki_id, opts, &template_dir, "template").await?;
     }
     // Seeded pages must be searchable.
-    let indexed = naw_core::search::reindex(pool, Some(wiki_id)).await?;
+    let indexed = naw_web::indexing::reindex(pool, Some(wiki_id)).await?;
     tracing::info!(
         slug = %opts.slug,
         flavor = %opts.flavor,

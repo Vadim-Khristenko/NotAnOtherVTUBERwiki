@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO search_chunks (page_id, wiki_id, chunk_no, anchor, heading, body, text_hash, vector)\n            SELECT $1, $2, c.no, c.anchor, c.heading, c.body, c.hash,\n                   setweight(to_tsvector($3::text::regconfig, c.heading), 'A')\n                || setweight(to_tsvector($3::text::regconfig, c.body), 'C')\n            FROM unnest($4::int[], $5::text[], $6::text[], $7::text[], $8::bytea[])\n                 AS c(no, anchor, heading, body, hash)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4Array",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d7c610221841e965511ca66c0eae11833edcb3494c2c7f19b25eeafcf39e5302"
+}

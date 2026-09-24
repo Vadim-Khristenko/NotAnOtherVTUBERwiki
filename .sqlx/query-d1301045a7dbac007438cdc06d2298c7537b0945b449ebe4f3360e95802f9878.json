@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT chunk_no, text_hash FROM search_chunks WHERE page_id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chunk_no",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "search_chunks",
+            "name": "chunk_no"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "text_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "search_chunks",
+            "name": "text_hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d1301045a7dbac007438cdc06d2298c7537b0945b449ebe4f3360e95802f9878"
+}

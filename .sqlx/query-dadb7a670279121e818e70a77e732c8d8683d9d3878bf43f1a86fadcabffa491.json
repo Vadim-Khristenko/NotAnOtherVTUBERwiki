@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        -- Every $2 is cast from ::text so PostgreSQL infers one type for it.\n        UPDATE pages SET\n          search_lang = $2::text,\n          search_vector =\n              setweight(to_tsvector($2::text::regconfig, $3), 'A')\n           || setweight(to_tsvector($2::text::regconfig, coalesce($4, '')), 'B')\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dadb7a670279121e818e70a77e732c8d8683d9d3878bf43f1a86fadcabffa491"
+}

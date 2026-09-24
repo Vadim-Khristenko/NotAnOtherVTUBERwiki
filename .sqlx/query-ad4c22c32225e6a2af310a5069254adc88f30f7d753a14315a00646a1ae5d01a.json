@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE search_chunks SET chunk_no = -chunk_no - 1 WHERE page_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ad4c22c32225e6a2af310a5069254adc88f30f7d753a14315a00646a1ae5d01a"
+}

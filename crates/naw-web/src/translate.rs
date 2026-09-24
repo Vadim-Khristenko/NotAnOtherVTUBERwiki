@@ -340,6 +340,7 @@ pub async fn create(
         None => source.revision_id,
     };
     let locale = ctx.content_locale.clone();
+    let prepared = pages::prepare(&state, &ctx, &slug, &draft.body_md).await?;
     let page_id = Uuid::new_v4();
     let revision_id = Uuid::new_v4();
     let mut tx = state.db.begin().await?;
@@ -383,17 +384,18 @@ pub async fn create(
     )
     .execute(&mut *tx)
     .await?;
-    naw_core::search::index_page(
+    pages::index(
         &mut tx,
+        &ctx,
         page_id,
         &locale,
         &draft.title,
         draft.summary.as_deref(),
-        &draft.body_md,
+        &prepared,
     )
     .await?;
     tx.commit().await?;
-    pages::after_save(&state, &ctx, page_id, &slug, &draft.body_md).await;
+    pages::after_save(&state, &ctx, page_id, &prepared).await;
     crate::audit::record_or_log(
         &state.db,
         crate::audit::Entry {

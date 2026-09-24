@@ -293,7 +293,7 @@ async fn reindex_command(raw: Vec<String>) -> ExitCode {
         }
         None => None,
     };
-    match naw_core::search::reindex(&pool, wiki_id).await {
+    match naw_web::indexing::reindex(&pool, wiki_id).await {
         Ok(count) => {
             println!("reindexed {count} page(s)");
             ExitCode::SUCCESS

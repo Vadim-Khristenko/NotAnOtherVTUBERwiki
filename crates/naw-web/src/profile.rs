@@ -402,7 +402,10 @@ pub async fn save(
         return conflict(&ctx, &person);
     }
     tx.commit().await?;
-    pages::after_save(&state, &ctx, page_id, "", &draft.body_md).await;
+    match pages::prepare(&state, &ctx, "", &draft.body_md).await {
+        Ok(prepared) => pages::after_save(&state, &ctx, page_id, &prepared).await,
+        Err(err) => tracing::warn!(error = ?err, "could not warm the cache for a profile"),
+    }
     crate::audit::record_or_log(
         &state.db,
         crate::audit::Entry {

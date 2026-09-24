@@ -37,6 +37,9 @@
     {% for hit in results %}
     <li class="search-hit">
       <a class="search-hit-title" href="{{ base }}/{{ hit.slug }}">{{ hit.title }}</a>
+      {% if hit.section and hit.section != hit.title %}
+      <a class="search-hit-section" href="{{ base }}/{{ hit.slug }}#{{ hit.anchor }}"><span aria-hidden="true">§</span> {{ hit.section }}</a>
+      {% endif %}
       <p class="search-hit-snippet">{{ hit.snippet | safe }}</p>
       <p class="search-hit-slug">{{ base }}/{{ hit.slug }}</p>
     </li>

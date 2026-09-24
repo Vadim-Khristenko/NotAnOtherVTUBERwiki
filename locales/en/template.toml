@@ -15,6 +15,8 @@ how_to_call = "Put it in an article like this:"
 params_note = "Fields go after bars: {{Template name | field = value | other = value}}. An empty field is simply not shown."
 unused = "No page uses it yet."
 uses_more = "The first {shown} are shown."
+preview_on = "Show the edit on a page"
+preview_itself = "The template itself"
 
 
 [used_on]

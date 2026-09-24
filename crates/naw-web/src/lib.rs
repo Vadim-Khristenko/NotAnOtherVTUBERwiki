@@ -26,6 +26,7 @@ mod emotes;
 mod errors;
 mod fetch;
 mod history;
+pub mod indexing;
 mod lang;
 mod locale_path;
 mod media;

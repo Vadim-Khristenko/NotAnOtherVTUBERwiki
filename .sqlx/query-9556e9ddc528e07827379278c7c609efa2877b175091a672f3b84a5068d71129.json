@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            -- $1 is bound as text and cast: sqlx has no mapping for regconfig.\n            WITH q AS (\n              SELECT websearch_to_tsquery($1::text::regconfig, $2) AS tsq\n            ),\n            matched AS (\n              SELECT c.page_id, c.chunk_no, ts_rank_cd(c.vector, q.tsq) AS rank\n              FROM search_chunks c, q\n              WHERE c.wiki_id = $3 AND c.vector @@ q.tsq\n              LIMIT $6\n            ),\n            best AS (\n              SELECT DISTINCT ON (page_id) page_id, chunk_no, rank\n              FROM matched ORDER BY page_id, rank DESC\n            ),\n            titled AS (\n              SELECT p.id FROM pages p, q\n              WHERE p.wiki_id = $3 AND p.namespace = 'main' AND p.deleted_at IS NULL\n                AND COALESCE(p.locale, '') = $5\n                AND (p.search_vector @@ q.tsq OR p.title % $2)\n              LIMIT $7\n            ),\n            ranked AS (\n              SELECT p.id, p.slug, p.title, p.updated_at, b.chunk_no,\n                     ts_rank_cd(p.search_vector, q.tsq) * 10\n                       + COALESCE(b.rank, 0) * 4\n                       + similarity(p.title, $2) AS score\n              FROM (SELECT page_id AS id FROM best UNION SELECT id FROM titled) cand\n              JOIN pages p ON p.id = cand.id\n              CROSS JOIN q\n              LEFT JOIN best b ON b.page_id = p.id\n              WHERE p.namespace = 'main' AND p.deleted_at IS NULL\n                AND COALESCE(p.locale, '') = $5\n              ORDER BY score DESC, p.updated_at DESC\n              LIMIT $4\n            )\n            SELECT r.slug AS \"slug!\", r.title AS \"title!\", c.anchor AS \"anchor?\", c.heading AS \"heading?\",\n                   ts_headline(\n                     $1::text::regconfig, c.body, q.tsq,\n                     'MaxWords=34, MinWords=14, ShortWord=3, MaxFragments=2,\n                      FragmentDelimiter= … , StartSel=' || chr(57344) || ', StopSel=' || chr(57345)\n                   ) AS \"snippet?\"\n            FROM ranked r\n            CROSS JOIN q\n            -- The best piece, or the opening one for a match on the title alone.\n            LEFT JOIN LATERAL (\n              SELECT s.anchor, s.heading, s.body FROM search_chunks s\n              WHERE s.page_id = r.id AND s.chunk_no = COALESCE(r.chunk_no, 1)\n            ) c ON true\n            ORDER BY r.score DESC, r.updated_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "anchor?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "search_chunks",
+            "name": "anchor"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "heading?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "search_chunks",
+            "name": "heading"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "snippet?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Uuid",
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "9556e9ddc528e07827379278c7c609efa2877b175091a672f3b84a5068d71129"
+}

@@ -305,7 +305,7 @@ pub(crate) async fn cached_body(
         let html = crate::emotes::expand(state, wiki_id, row.html).await?;
         return Ok((html, None));
     }
-    let rendered = naw_markdown::render_body(body_md);
+    let rendered = render_prepared(expanded).await?.rendered;
     sqlx::query!(
         "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html)
          VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
@@ -320,25 +320,79 @@ pub(crate) async fn cached_body(
     Ok((html, Some(rendered.render_ms)))
 }
 
-/// After a save: records the templates the page uses, and caches the body so
-/// the author's redirect is a cache hit.
-pub(crate) async fn after_save(
+/// A body about to be saved, with its templates expanded and rendered once:
+/// the search index reads it inside the save's transaction, the render cache
+/// after it.
+pub(crate) struct Prepared {
+    pub rendered: naw_markdown::RenderedBody,
+    /// Templates the body uses.
+    pub used: Vec<String>,
+}
+
+/// Expands and renders `body_md` for a save. The render runs on a blocking
+/// thread: a 5 MB article takes seconds and must not stall other requests.
+pub(crate) async fn prepare(
     state: &AppState,
     ctx: &Ctx,
-    page_id: Uuid,
     path: &str,
     body_md: &str,
-) {
+) -> Result<Prepared, AppError> {
+    let expanded = crate::templates::expand(state, ctx, path, body_md).await?;
+    render_prepared(expanded).await
+}
+
+pub(crate) async fn render_prepared(
+    expanded: crate::templates::Expanded,
+) -> Result<Prepared, AppError> {
+    let text = expanded.text;
+    let rendered = tokio::task::spawn_blocking(move || naw_markdown::render_body(&text))
+        .await
+        .map_err(|err| {
+            tracing::error!(error = %err, "render task failed");
+            AppError::Internal
+        })?;
+    Ok(Prepared {
+        rendered,
+        used: expanded.used,
+    })
+}
+
+/// Writes the search index for a prepared body, inside the save.
+pub(crate) async fn index(
+    conn: &mut sqlx::PgConnection,
+    ctx: &Ctx,
+    page_id: Uuid,
+    locale: &str,
+    title: &str,
+    summary: Option<&str>,
+    prepared: &Prepared,
+) -> Result<(), AppError> {
+    let stats = naw_core::search::index_page(
+        conn,
+        &naw_core::search::Document {
+            page_id,
+            wiki_id: ctx.wiki.id,
+            locale,
+            title,
+            summary,
+            html: &prepared.rendered.html,
+        },
+    )
+    .await?;
+    tracing::debug!(
+        kept = stats.kept,
+        written = stats.written,
+        "search index updated"
+    );
+    Ok(())
+}
+
+/// After a save: records the templates the page uses, and caches the body so
+/// the author's redirect is a cache hit.
+pub(crate) async fn after_save(state: &AppState, ctx: &Ctx, page_id: Uuid, prepared: &Prepared) {
     let wiki_id = ctx.wiki.id;
-    let expanded = match crate::templates::expand(state, ctx, path, body_md).await {
-        Ok(expanded) => expanded,
-        Err(err) => {
-            tracing::warn!(error = ?err, "could not expand templates after a save");
-            return;
-        }
-    };
-    crate::templates::record_uses(state, wiki_id, page_id, &expanded.used).await;
-    let rendered = naw_markdown::render_body(&expanded.text);
+    crate::templates::record_uses(state, wiki_id, page_id, &prepared.used).await;
+    let rendered = &prepared.rendered;
     let result = sqlx::query!(
         "INSERT INTO render_cache (wiki_id, content_hash, renderer_version, html)
          VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
@@ -884,6 +938,7 @@ pub async fn create_page(
         return slug_taken(&ctx, &slug, row.deleted_at.is_some());
     }
 
+    let prepared = prepare(&state, &ctx, &slug, &draft.body_md).await?;
     let page_id = Uuid::new_v4();
     let revision_id = Uuid::new_v4();
     let mut tx = state.db.begin().await?;
@@ -922,18 +977,19 @@ pub async fn create_page(
     )
     .execute(&mut *tx)
     .await?;
-    naw_core::search::index_page(
+    index(
         &mut tx,
+        &ctx,
         page_id,
         &locale,
         &draft.title,
         draft.summary.as_deref(),
-        &draft.body_md,
+        &prepared,
     )
     .await?;
     tx.commit().await?;
 
-    after_save(&state, &ctx, page_id, &slug, &draft.body_md).await;
+    after_save(&state, &ctx, page_id, &prepared).await;
     audit::record_or_log(
         &state.db,
         audit::Entry {
@@ -989,7 +1045,18 @@ pub async fn edit_page(
         .translation_source_locale
         .as_deref()
         .map(|l| crate::translate::native_name(&ctx, l));
-    render_form(
+    // A template's editor can preview the draft on a page that uses it.
+    let preview_pages = match split_path(&slug) {
+        ("template", bare) => crate::templates::uses(&state, &ctx, bare)
+            .await?
+            .1
+            .into_iter()
+            .filter(|u| !u.path.is_empty())
+            .map(|u| minijinja::context! { title => u.title, path => u.path })
+            .collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
+    render_form_with(
         &ctx,
         &FormView {
             heading: &ctx.t_with("editor.editing", &[("page", &found.title)]),
@@ -1006,6 +1073,7 @@ pub async fn edit_page(
             translation_of: source_name.as_deref(),
             form_locale: Some(&ctx.content_locale),
         },
+        minijinja::context! { preview_pages => preview_pages },
     )
 }
 
@@ -1072,6 +1140,7 @@ pub async fn save_page(
         if taken > 0 {
             return locale_taken(&ctx, &slug, &target_locale);
         }
+        let unchanged = prepare(&state, &ctx, &slug, &found.body_md).await?;
         let mut tx = state.db.begin().await?;
         // Only from the revision this request loaded, like the text below.
         let relocated = match sqlx::query!(
@@ -1092,13 +1161,14 @@ pub async fn save_page(
         if relocated.rows_affected() == 0 {
             return edit_conflict(&ctx, &slug);
         }
-        naw_core::search::index_page(
+        index(
             &mut tx,
+            &ctx,
             found.id,
             &target_locale,
             &found.title,
             found.summary.as_deref(),
-            &found.body_md,
+            &unchanged,
         )
         .await?;
         tx.commit().await?;
@@ -1146,6 +1216,7 @@ pub async fn save_page(
         return Ok(see_other(&ctx.link_for(&locale, &format!("/{slug}"))));
     }
 
+    let prepared = prepare(&state, &ctx, &slug, &draft.body_md).await?;
     let revision_id = Uuid::new_v4();
     let mut tx = state.db.begin().await?;
     sqlx::query!(
@@ -1175,18 +1246,23 @@ pub async fn save_page(
     if swapped.rows_affected() == 0 {
         return edit_conflict(&ctx, &slug);
     }
-    naw_core::search::index_page(
+    index(
         &mut tx,
+        &ctx,
         found.id,
         &locale,
         &draft.title,
         draft.summary.as_deref(),
-        &draft.body_md,
+        &prepared,
     )
     .await?;
     tx.commit().await?;
 
-    after_save(&state, &ctx, found.id, &slug, &draft.body_md).await;
+    after_save(&state, &ctx, found.id, &prepared).await;
+    // Pages that use this template carry its text in their index.
+    if let ("template", bare) = split_path(&slug) {
+        crate::indexing::refresh_users_of(&state, &ctx, bare);
+    }
     audit::record_or_log(
         &state.db,
         audit::Entry {
@@ -1284,6 +1360,9 @@ pub struct PreviewForm {
     /// The page's path, when the editor knows it.
     #[serde(default)]
     slug: String,
+    /// For a template: a page that uses it, to preview the draft there.
+    #[serde(default)]
+    on_page: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1313,13 +1392,30 @@ pub async fn preview(
     if form.body_md.len() > BODY_MAX {
         return Ok((StatusCode::PAYLOAD_TOO_LARGE, "body: up to 5 MB of text").into_response());
     }
-    // A template previews as its own page shows it.
+    // A template previews as its own page shows it, or, with `on_page`, as
+    // the draft would change a page that uses it.
     let path = if slug_is_valid(form.slug.trim()) {
         form.slug.trim()
     } else {
         ""
     };
-    let expanded = crate::templates::expand(&state, &ctx, path, &form.body_md).await?;
+    let on_page = form.on_page.trim();
+    let expanded = match split_path(path) {
+        ("template", template) if slug_is_valid(on_page) => {
+            let Some(page) =
+                find_page(&state.db, ctx.wiki.id, on_page, &ctx.content_locale).await?
+            else {
+                return Ok(crate::errors::not_found());
+            };
+            let given =
+                std::collections::HashMap::from([(template.to_string(), form.body_md.clone())]);
+            let wiki = crate::templates::Wiki::of(&ctx);
+            let notes = crate::templates::notes(&ctx);
+            crate::templates::expand_with(&state.db, &wiki, &notes, on_page, &page.body_md, given)
+                .await?
+        }
+        _ => crate::templates::expand(&state, &ctx, path, &form.body_md).await?,
+    };
     if query.fragment.unwrap_or(0) == 1 {
         let body_html = naw_markdown::render_html(&expanded.text);
         let body_html = crate::emotes::expand(&state, ctx.wiki.id, body_html).await?;

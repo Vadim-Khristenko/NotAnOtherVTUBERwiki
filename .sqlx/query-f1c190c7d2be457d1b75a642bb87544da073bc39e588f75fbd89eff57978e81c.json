@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE search_chunks c SET chunk_no = k.new_no\n             FROM unnest($2::int[], $3::int[]) AS k(old_no, new_no)\n             WHERE c.page_id = $1 AND c.chunk_no = k.old_no",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4Array",
+        "Int4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f1c190c7d2be457d1b75a642bb87544da073bc39e588f75fbd89eff57978e81c"
+}

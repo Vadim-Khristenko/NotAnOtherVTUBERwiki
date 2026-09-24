@@ -113,6 +113,15 @@
 </div>
 <div class="live-preview">
 <h2>{{ t("editor.live_preview") }}</h2>
+{% if preview_pages is defined and preview_pages %}
+{# A template edit shown on a page that uses it, before it is saved. #}
+<label class="field preview-on">{{ t("template.preview_on") }}
+<select class="field-input" id="preview-on">
+  <option value="">{{ t("template.preview_itself") }}</option>
+  {% for p in preview_pages %}<option value="{{ p.path }}">{{ p.title }}</option>{% endfor %}
+</select>
+</label>
+{% endif %}
 <div id="live-preview" class="preview-body"><p>{{ t("editor.live_preview_hint") }}</p></div>
 </div>
 <details class="syntax-help">
@@ -345,6 +354,8 @@
     body.set("body_md", area.value);
     var slugField = area.form && area.form.elements.namedItem("slug");
     if (slugField && slugField.value) body.set("slug", slugField.value);
+    var onPage = document.getElementById("preview-on");
+    if (onPage && onPage.value) body.set("on_page", onPage.value);
     fetch("/preview?fragment=1", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -355,6 +366,8 @@
       preview.innerHTML = html;
     }).catch(function () {});
   }
+  var onPageSelect = document.getElementById("preview-on");
+  if (onPageSelect) onPageSelect.addEventListener("change", livePreview);
   area.addEventListener("input", function () {
     if (timer) clearTimeout(timer);
     timer = setTimeout(livePreview, 400);

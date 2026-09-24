@@ -1406,7 +1406,7 @@ pub async fn save_wiki_settings(
 
     // The stemmer is baked into every tsvector, so a locale change reindexes.
     let reindexed = if locale_changed {
-        naw_core::search::reindex(&state.db, Some(ctx.wiki.id)).await?
+        crate::indexing::reindex(&state.db, Some(ctx.wiki.id)).await?
     } else {
         0
     };
@@ -1469,7 +1469,7 @@ pub async fn reindex(
     if form.confirm.is_none() {
         return Ok(pages::see_other("/admin/wiki"));
     }
-    let count = naw_core::search::reindex(&state.db, Some(ctx.wiki.id)).await?;
+    let count = crate::indexing::reindex(&state.db, Some(ctx.wiki.id)).await?;
     audit::record_or_log(
         &state.db,
         audit::Entry {

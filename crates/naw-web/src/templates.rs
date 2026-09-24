@@ -36,6 +36,57 @@ pub(crate) async fn expand(
     path: &str,
     body: &str,
 ) -> Result<Expanded, AppError> {
+    expand_in(&state.db, &Wiki::of(ctx), &notes(ctx), path, body).await
+}
+
+/// The failure notes in the reader's language, and the page language.
+pub(crate) fn notes(ctx: &Ctx) -> transclude::Notes {
+    transclude::Notes {
+        missing: ctx.t_with("template.missing", &[("name", "{name}")]),
+        looped: ctx.t_with("template.looped", &[("name", "{name}")]),
+        limit: ctx.t("template.limit"),
+        language: ctx.content_locale.clone(),
+    }
+}
+
+/// Where templates are looked up: the wiki, and the languages to prefer.
+pub(crate) struct Wiki<'a> {
+    pub id: Uuid,
+    pub locale: &'a str,
+    pub default_locale: &'a str,
+}
+
+impl<'a> Wiki<'a> {
+    pub(crate) fn of(ctx: &'a Ctx) -> Self {
+        Self {
+            id: ctx.wiki.id,
+            locale: &ctx.content_locale,
+            default_locale: &ctx.wiki.default_locale,
+        }
+    }
+}
+
+/// [`expand`] without a request, for indexing from the command line.
+pub(crate) async fn expand_in(
+    db: &sqlx::PgPool,
+    wiki: &Wiki<'_>,
+    notes: &transclude::Notes,
+    path: &str,
+    body: &str,
+) -> Result<Expanded, AppError> {
+    expand_with(db, wiki, notes, path, body, HashMap::new()).await
+}
+
+/// [`expand_in`] with some templates given rather than loaded: an edit of a
+/// template previewed on a page that uses it.
+pub(crate) async fn expand_with(
+    db: &sqlx::PgPool,
+    wiki: &Wiki<'_>,
+    notes: &transclude::Notes,
+    path: &str,
+    body: &str,
+    given: HashMap<String, String>,
+) -> Result<Expanded, AppError> {
     let source = if crate::pages::split_path(path).0 == "template" {
         transclude::template_view(body)
     } else {
@@ -47,16 +98,11 @@ pub(crate) async fn expand(
             used: Vec::new(),
         });
     }
-    let notes = transclude::Notes {
-        missing: ctx.t_with("template.missing", &[("name", "{name}")]),
-        looped: ctx.t_with("template.looped", &[("name", "{name}")]),
-        limit: ctx.t("template.limit"),
-    };
-    let mut loaded: HashMap<String, String> = HashMap::new();
-    let mut tried: HashSet<String> = HashSet::new();
+    let mut tried: HashSet<String> = given.keys().cloned().collect();
+    let mut loaded = given;
     // Each round loads what the templates of the last round call.
     for _ in 0..transclude::DEPTH_MAX {
-        let run = transclude::expand(&source, &loaded, &notes);
+        let run = transclude::expand(&source, &loaded, notes);
         let room = TEMPLATES_MAX.saturating_sub(tried.len());
         let wanted: Vec<String> = run
             .missing
@@ -71,9 +117,9 @@ pub(crate) async fn expand(
             });
         }
         tried.extend(wanted.iter().cloned());
-        loaded.extend(load(state, ctx, &wanted).await?);
+        loaded.extend(load(db, wiki, &wanted).await?);
     }
-    let run = transclude::expand(&source, &loaded, &notes);
+    let run = transclude::expand(&source, &loaded, notes);
     Ok(Expanded {
         text: run.text,
         used: run.used.into_iter().collect(),
@@ -83,8 +129,8 @@ pub(crate) async fn expand(
 /// The live source of each template, in the reader's language when there is
 /// one, else the wiki's own, else any.
 async fn load(
-    state: &AppState,
-    ctx: &Ctx,
+    db: &sqlx::PgPool,
+    wiki: &Wiki<'_>,
     slugs: &[String],
 ) -> Result<HashMap<String, String>, AppError> {
     let rows = sqlx::query!(
@@ -93,12 +139,12 @@ async fn load(
            WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.slug = ANY($2)
              AND p.deleted_at IS NULL
            ORDER BY p.slug, (COALESCE(p.locale, '') = $3) DESC, (COALESCE(p.locale, '') = $4) DESC"#,
-        ctx.wiki.id,
+        wiki.id,
         slugs,
-        ctx.content_locale,
-        ctx.wiki.default_locale
+        wiki.locale,
+        wiki.default_locale
     )
-    .fetch_all(&state.db)
+    .fetch_all(db)
     .await?;
     Ok(rows.into_iter().map(|row| (row.slug, row.body)).collect())
 }
@@ -134,6 +180,8 @@ pub(crate) async fn record_uses(state: &AppState, wiki_id: Uuid, page_id: Uuid, 
 pub(crate) struct Use {
     pub title: String,
     pub href: String,
+    /// The page path for an article or a template; empty for a profile.
+    pub path: String,
 }
 
 /// How many pages use `slug`, and the first of them by title.
@@ -163,13 +211,21 @@ pub(crate) async fn uses(
     .await?;
     let shown = rows
         .into_iter()
-        .map(|row| Use {
-            href: match row.namespace.as_str() {
-                "user" => format!("/user/{}", row.slug),
-                "template" => ctx.link(&format!("/template:{}", row.slug)),
-                _ => ctx.link(&format!("/{}", row.slug)),
-            },
-            title: row.title,
+        .map(|row| {
+            let path = match row.namespace.as_str() {
+                "template" => format!("{}{}", crate::pages::TEMPLATE_PREFIX, row.slug),
+                "main" => row.slug.clone(),
+                _ => String::new(),
+            };
+            Use {
+                href: if path.is_empty() {
+                    format!("/user/{}", row.slug)
+                } else {
+                    ctx.link(&format!("/{path}"))
+                },
+                title: row.title,
+                path,
+            }
         })
         .collect();
     Ok((total, shown))

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM page_search_chunks WHERE page_id = $1",
+  "query": "DELETE FROM search_chunks WHERE page_id = $1 AND chunk_no < 0",
   "describe": {
     "columns": [],
     "parameters": {
@@ -10,5 +10,5 @@
     },
     "nullable": []
   },
-  "hash": "5c73e19ed31197bc77432a429e90b6cbabc9bb3d9208ea76fa311b0a047de7de"
+  "hash": "1030c558280987f78d1846f97af6385c35ca8560109f73124ccf8269356e15d3"
 }

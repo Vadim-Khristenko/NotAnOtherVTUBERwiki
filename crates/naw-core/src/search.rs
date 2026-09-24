@@ -1,11 +1,20 @@
 //! Full text search over PostgreSQL, behind a backend trait.
 //!
+//! What is indexed is the article as a reader sees it: the rendered HTML,
+//! templates expanded, turned back into plain text and cut at its headings
+//! into pieces of a few thousand characters. Each piece has its own vector and
+//! a hash of its text, so a save rewrites only the pieces that changed: one
+//! edited paragraph in a 5 MB article costs one small vector, not five
+//! megabytes of them. A query ranks pieces through a GIN index and builds its
+//! snippet from the one best piece, and a result links to that section.
+//!
 //! Queries go through `websearch_to_tsquery`, which never raises on visitor
 //! input. The text search configuration comes from the locale on both the
 //! write and the read side, since a vector stemmed as `russian` does not match
 //! a query stemmed as `english`.
 
 use async_trait::async_trait;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -15,9 +24,18 @@ use crate::error::AppError;
 pub struct Hit {
     pub slug: String,
     pub title: String,
-    /// The matching part of the body, escaped, with matches in `<mark>`. Built by
+    /// The section the best match is in, when it has a heading.
+    pub section: Option<Section>,
+    /// The matching text, escaped, with matches in `<mark>`. Built by
     /// [`clean_snippet`]; the only field safe to render unescaped.
     pub snippet: String,
+}
+
+/// A heading of an article: its text and the anchor the page gives it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Section {
+    pub heading: String,
+    pub anchor: String,
 }
 
 /// One search request, backend independent.
@@ -98,8 +116,8 @@ const MATCH_CLOSE: char = '\u{E001}';
 
 /// Turns a `ts_headline` result into safe HTML.
 ///
-/// `ts_headline` escapes nothing and runs over raw Markdown, so the snippet
-/// is escaped as text first and only then gains balanced `<mark>` tags.
+/// `ts_headline` escapes nothing, so the snippet is escaped as text first and
+/// only then gains balanced `<mark>` tags.
 pub fn clean_snippet(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len() + 32);
     let mut open = false;
@@ -131,6 +149,13 @@ pub fn clean_snippet(raw: &str) -> String {
     out
 }
 
+/// Matching pieces ranked per query, at most. A word on every page of a
+/// huge wiki must not make one query rank the whole index.
+const MATCHED_MAX: i64 = 5000;
+
+/// Pages matched by title, at most, before ranking.
+const TITLED_MAX: i64 = 500;
+
 /// The PostgreSQL backend.
 pub struct Postgres {
     db: sqlx::PgPool,
@@ -146,52 +171,69 @@ impl Postgres {
 impl SearchBackend for Postgres {
     async fn search(&self, request: Request<'_>) -> Result<Vec<Hit>, AppError> {
         let config = regconfig_for(request.locale);
-        // Full text finds stemmed words anywhere; trigram similarity on the title
-        // catches typos and fragments. Full text weighs far more in the score.
+        // Pieces find stemmed words anywhere and rank the section; the page
+        // vector ranks title and summary; trigram similarity on the title
+        // catches typos and fragments. ts_headline runs last, on the one best
+        // piece of each page that made the cut, never on a whole article.
         let rows = sqlx::query!(
             r#"
             -- $1 is bound as text and cast: sqlx has no mapping for regconfig.
-            WITH parsed AS (
+            WITH q AS (
               SELECT websearch_to_tsquery($1::text::regconfig, $2) AS tsq
+            ),
+            matched AS (
+              SELECT c.page_id, c.chunk_no, ts_rank_cd(c.vector, q.tsq) AS rank
+              FROM search_chunks c, q
+              WHERE c.wiki_id = $3 AND c.vector @@ q.tsq
+              LIMIT $6
+            ),
+            best AS (
+              SELECT DISTINCT ON (page_id) page_id, chunk_no, rank
+              FROM matched ORDER BY page_id, rank DESC
+            ),
+            titled AS (
+              SELECT p.id FROM pages p, q
+              WHERE p.wiki_id = $3 AND p.namespace = 'main' AND p.deleted_at IS NULL
+                AND COALESCE(p.locale, '') = $5
+                AND (p.search_vector @@ q.tsq OR p.title % $2)
+              LIMIT $7
+            ),
+            ranked AS (
+              SELECT p.id, p.slug, p.title, p.updated_at, b.chunk_no,
+                     ts_rank_cd(p.search_vector, q.tsq) * 10
+                       + COALESCE(b.rank, 0) * 4
+                       + similarity(p.title, $2) AS score
+              FROM (SELECT page_id AS id FROM best UNION SELECT id FROM titled) cand
+              JOIN pages p ON p.id = cand.id
+              CROSS JOIN q
+              LEFT JOIN best b ON b.page_id = p.id
+              WHERE p.namespace = 'main' AND p.deleted_at IS NULL
+                AND COALESCE(p.locale, '') = $5
+              ORDER BY score DESC, p.updated_at DESC
+              LIMIT $4
             )
-            SELECT p.slug,
-                   p.title,
-                   -- From the head when it matches, otherwise from the best chunk.
+            SELECT r.slug AS "slug!", r.title AS "title!", c.anchor AS "anchor?", c.heading AS "heading?",
                    ts_headline(
-                     $1::text::regconfig,
-                     CASE WHEN hit.start_char IS NOT NULL
-                               AND NOT (p.search_vector @@ parsed.tsq)
-                          THEN substr(r.body_md, hit.start_char + 1, hit.len_chars)
-                          ELSE left(r.body_md, 200000) END,
-                     parsed.tsq,
+                     $1::text::regconfig, c.body, q.tsq,
                      'MaxWords=34, MinWords=14, ShortWord=3, MaxFragments=2,
                       FragmentDelimiter= … , StartSel=' || chr(57344) || ', StopSel=' || chr(57345)
-                   ) AS "snippet!",
-                   GREATEST(ts_rank_cd(p.search_vector, parsed.tsq), COALESCE(hit.rank, 0)) * 8
-                     + similarity(p.title, $2) AS "score!"
-            FROM pages p
-            JOIN revisions r ON r.id = p.current_revision_id
-            CROSS JOIN parsed
+                   ) AS "snippet?"
+            FROM ranked r
+            CROSS JOIN q
+            -- The best piece, or the opening one for a match on the title alone.
             LEFT JOIN LATERAL (
-              SELECT c.start_char, c.len_chars, ts_rank_cd(c.vector, parsed.tsq) AS rank
-              FROM page_search_chunks c
-              WHERE c.page_id = p.id AND c.vector @@ parsed.tsq
-              ORDER BY rank DESC
-              LIMIT 1
-            ) hit ON true
-            WHERE p.wiki_id = $3
-              AND p.namespace = 'main'
-              AND p.deleted_at IS NULL
-              AND COALESCE(p.locale, '') = $5
-              AND (p.search_vector @@ parsed.tsq OR p.title % $2 OR hit.start_char IS NOT NULL)
-            ORDER BY "score!" DESC, p.updated_at DESC
-            LIMIT $4
+              SELECT s.anchor, s.heading, s.body FROM search_chunks s
+              WHERE s.page_id = r.id AND s.chunk_no = COALESCE(r.chunk_no, 1)
+            ) c ON true
+            ORDER BY r.score DESC, r.updated_at DESC
             "#,
             config,
             request.text,
             request.wiki_id,
             request.limit,
-            request.locale
+            request.locale,
+            MATCHED_MAX,
+            TITLED_MAX
         )
         .fetch_all(&self.db)
         .await?;
@@ -200,29 +242,243 @@ impl SearchBackend for Postgres {
             .map(|row| Hit {
                 slug: row.slug,
                 title: row.title,
-                snippet: clean_snippet(&row.snippet),
+                section: match (row.anchor, row.heading) {
+                    (Some(anchor), Some(heading)) if !anchor.is_empty() && !heading.is_empty() => {
+                        Some(Section { heading, anchor })
+                    }
+                    _ => None,
+                },
+                snippet: clean_snippet(row.snippet.as_deref().unwrap_or("")),
             })
             .collect())
     }
 }
 
-/// Rebuilds the search vectors of one page, inside the caller's transaction
-/// so a save and its index never disagree.
-///
-/// Weights rank title over summary over body. A tsvector may not pass 1 MB,
-/// so the page vector holds the title, the summary and the first piece of the
-/// body, and further pieces go to `page_search_chunks` (see [`split_for_index`]).
+// ---------------------------------------------------------------------------
+// From rendered HTML to indexed pieces
+// ---------------------------------------------------------------------------
+
+/// Text of one part of an article, between two headings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Part {
+    /// The heading's id on the page; empty before the first heading.
+    pub anchor: String,
+    pub heading: String,
+    pub text: String,
+}
+
+/// The rendered article as plain text, cut at `<h1>` to `<h3>`. Tags go,
+/// block ends become line breaks, entities are decoded, and the table of
+/// contents is skipped since it only repeats the headings.
+pub fn parts_from_html(html: &str) -> Vec<Part> {
+    let mut parts = vec![Part {
+        anchor: String::new(),
+        heading: String::new(),
+        text: String::new(),
+    }];
+    let mut in_heading = false;
+    let mut skip_depth = 0usize;
+    let mut rest = html;
+    while !rest.is_empty() {
+        let Some(open) = rest.find('<') else {
+            push_text(&mut parts, in_heading, skip_depth, rest);
+            break;
+        };
+        push_text(&mut parts, in_heading, skip_depth, &rest[..open]);
+        let Some(close) = rest[open..].find('>') else {
+            break;
+        };
+        let tag = &rest[open + 1..open + close];
+        rest = &rest[open + close + 1..];
+        let closing = tag.starts_with('/');
+        let name: String = tag
+            .trim_start_matches('/')
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        match (name.as_str(), closing) {
+            ("nav", false) if tag.contains("toc") => skip_depth += 1,
+            ("nav", true) if skip_depth > 0 => skip_depth -= 1,
+            ("h1" | "h2" | "h3", false) if skip_depth == 0 => {
+                parts.push(Part {
+                    anchor: attribute(tag, "id").unwrap_or_default(),
+                    heading: String::new(),
+                    text: String::new(),
+                });
+                in_heading = true;
+            }
+            ("h1" | "h2" | "h3", true) => in_heading = false,
+            (
+                "p" | "li" | "br" | "div" | "tr" | "dt" | "dd" | "pre" | "blockquote" | "aside"
+                | "table" | "h4" | "h5" | "h6" | "summary" | "figcaption",
+                _,
+            ) => push_text(&mut parts, in_heading, skip_depth, "\n"),
+            ("td" | "th", _) => push_text(&mut parts, in_heading, skip_depth, " "),
+            _ => {}
+        }
+    }
+    parts
+        .into_iter()
+        .map(|part| Part {
+            anchor: part.anchor,
+            heading: squash(&part.heading),
+            text: squash(&part.text),
+        })
+        .filter(|part| !part.text.is_empty() || !part.heading.is_empty())
+        .collect()
+}
+
+fn push_text(parts: &mut [Part], in_heading: bool, skip_depth: usize, raw: &str) {
+    if skip_depth > 0 || raw.is_empty() {
+        return;
+    }
+    let Some(part) = parts.last_mut() else {
+        return;
+    };
+    let target = if in_heading {
+        &mut part.heading
+    } else {
+        &mut part.text
+    };
+    decode_entities_into(raw, target);
+}
+
+/// The value of `name="..."` in a start tag.
+fn attribute(tag: &str, name: &str) -> Option<String> {
+    let key = format!(" {name}=\"");
+    let start = tag.find(&key)? + key.len();
+    let end = tag[start..].find('"')?;
+    let mut value = String::new();
+    decode_entities_into(&tag[start..start + end], &mut value);
+    Some(value)
+}
+
+fn decode_entities_into(raw: &str, out: &mut String) {
+    let mut rest = raw;
+    while let Some(at) = rest.find('&') {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at..];
+        let end = tail[..tail.len().min(12)].find(';');
+        let decoded = end.and_then(|end| {
+            let entity = &tail[1..end];
+            let c = match entity {
+                "amp" => Some('&'),
+                "lt" => Some('<'),
+                "gt" => Some('>'),
+                "quot" => Some('"'),
+                "apos" => Some('\''),
+                "nbsp" => Some(' '),
+                _ => entity
+                    .strip_prefix("#x")
+                    .or_else(|| entity.strip_prefix("#X"))
+                    .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+                    .or_else(|| entity.strip_prefix('#').and_then(|dec| dec.parse().ok()))
+                    .and_then(char::from_u32),
+            };
+            c.map(|c| (c, end + 1))
+        });
+        match decoded {
+            Some((c, len)) => {
+                out.push(c);
+                rest = &tail[len..];
+            }
+            None => {
+                out.push('&');
+                rest = &tail[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+}
+
+/// Runs of spaces become one space and runs of blank lines one line break.
+fn squash(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if words.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&words.join(" "));
+    }
+    out
+}
+
+/// Characters in one indexed piece. Small enough that a snippet built from
+/// it is cheap, large enough that a long article stays a few hundred rows.
+pub const CHUNK_CHARS: usize = 6000;
+
+/// One indexed piece of an article.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chunk {
+    pub anchor: String,
+    pub heading: String,
+    pub body: String,
+    /// Identifies the text and how it is stemmed, so an unchanged piece keeps
+    /// its vector.
+    pub hash: Vec<u8>,
+}
+
+/// The parts of an article as pieces of at most [`CHUNK_CHARS`], each hashed
+/// with the search configuration that will stem it.
+pub fn chunks(parts: &[Part], config: &str) -> Vec<Chunk> {
+    let mut out = Vec::new();
+    for part in parts {
+        let pieces = split_for_index(&part.text, CHUNK_CHARS);
+        for piece in pieces {
+            let body = piece.text.trim().to_string();
+            if body.is_empty() && !out.is_empty() && part.heading.is_empty() {
+                continue;
+            }
+            let mut hasher = Sha256::new();
+            for field in [config, &part.anchor, &part.heading, &body] {
+                hasher.update((field.len() as u64).to_le_bytes());
+                hasher.update(field.as_bytes());
+            }
+            out.push(Chunk {
+                anchor: part.anchor.clone(),
+                heading: part.heading.clone(),
+                body,
+                hash: hasher.finalize()[..16].to_vec(),
+            });
+        }
+    }
+    out
+}
+
+/// What one save changed in the index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct IndexStats {
+    /// Pieces whose vector was kept.
+    pub kept: usize,
+    /// Pieces stemmed and written.
+    pub written: usize,
+}
+
+/// One page to index.
+pub struct Document<'a> {
+    pub page_id: Uuid,
+    pub wiki_id: Uuid,
+    pub locale: &'a str,
+    pub title: &'a str,
+    pub summary: Option<&'a str>,
+    /// The page as rendered, templates expanded.
+    pub html: &'a str,
+}
+
+/// Rebuilds one page's index inside the caller's transaction, so a save and
+/// its index never disagree. The page vector holds the title and summary;
+/// each piece of the body is a row of `search_chunks`, rewritten only when
+/// its text or its stemming changed.
 pub async fn index_page(
     conn: &mut sqlx::PgConnection,
-    page_id: Uuid,
-    locale: &str,
-    title: &str,
-    summary: Option<&str>,
-    body_md: &str,
-) -> Result<(), AppError> {
-    let config = regconfig_for(locale);
-    let pieces = split_for_index(body_md, PIECE_CHARS);
-    let head = pieces.first().map_or("", |piece| piece.text);
+    doc: &Document<'_>,
+) -> Result<IndexStats, AppError> {
+    let config = regconfig_for(doc.locale);
     sqlx::query!(
         r#"
         -- Every $2 is cast from ::text so PostgreSQL infers one type for it.
@@ -231,61 +487,115 @@ pub async fn index_page(
           search_vector =
               setweight(to_tsvector($2::text::regconfig, $3), 'A')
            || setweight(to_tsvector($2::text::regconfig, coalesce($4, '')), 'B')
-           || setweight(to_tsvector($2::text::regconfig, $5), 'C')
         WHERE id = $1
         "#,
-        page_id,
+        doc.page_id,
         config,
-        title,
-        summary,
-        head
+        doc.title,
+        doc.summary
     )
     .execute(&mut *conn)
     .await?;
-    sqlx::query!("DELETE FROM page_search_chunks WHERE page_id = $1", page_id)
-        .execute(&mut *conn)
-        .await?;
-    if pieces.len() > 1 {
-        let rest = &pieces[1..];
-        let numbers: Vec<i32> = (1..=rest.len() as i32).collect();
-        let starts: Vec<i32> = rest.iter().map(|p| p.start_char as i32).collect();
-        let lens: Vec<i32> = rest.iter().map(|p| p.len_chars as i32).collect();
-        let texts: Vec<String> = rest.iter().map(|p| p.text.to_string()).collect();
+
+    let wanted = chunks(&parts_from_html(doc.html), config);
+    let existing = sqlx::query!(
+        "SELECT chunk_no, text_hash FROM search_chunks WHERE page_id = $1 FOR UPDATE",
+        doc.page_id
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+    let mut by_hash: std::collections::HashMap<&[u8], Vec<i32>> = std::collections::HashMap::new();
+    for row in &existing {
+        by_hash
+            .entry(row.text_hash.as_slice())
+            .or_default()
+            .push(row.chunk_no);
+    }
+
+    // Kept pieces are renumbered in place; the rest are stemmed and inserted.
+    let (mut keep_old, mut keep_new) = (Vec::new(), Vec::new());
+    let (mut add_no, mut add_anchor, mut add_heading, mut add_body, mut add_hash) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for (i, chunk) in wanted.iter().enumerate() {
+        let no = i as i32 + 1;
+        match by_hash.get_mut(chunk.hash.as_slice()).and_then(Vec::pop) {
+            Some(old) => {
+                keep_old.push(-old - 1);
+                keep_new.push(no);
+            }
+            None => {
+                add_no.push(no);
+                add_anchor.push(chunk.anchor.clone());
+                add_heading.push(chunk.heading.clone());
+                add_body.push(chunk.body.clone());
+                add_hash.push(chunk.hash.clone());
+            }
+        }
+    }
+
+    // Out of the way first, so no renumbering collides with the key.
+    sqlx::query!(
+        "UPDATE search_chunks SET chunk_no = -chunk_no - 1 WHERE page_id = $1",
+        doc.page_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    if !keep_old.is_empty() {
         sqlx::query!(
-            r#"
-            INSERT INTO page_search_chunks (page_id, chunk_no, start_char, len_chars, vector)
-            SELECT $1, c.no, c.start_char, c.len_chars,
-                   setweight(to_tsvector($2::text::regconfig, c.body), 'C')
-            FROM unnest($3::int[], $4::int[], $5::int[], $6::text[])
-                 AS c(no, start_char, len_chars, body)
-            "#,
-            page_id,
-            config,
-            &numbers,
-            &starts,
-            &lens,
-            &texts
+            "UPDATE search_chunks c SET chunk_no = k.new_no
+             FROM unnest($2::int[], $3::int[]) AS k(old_no, new_no)
+             WHERE c.page_id = $1 AND c.chunk_no = k.old_no",
+            doc.page_id,
+            &keep_old,
+            &keep_new
         )
         .execute(&mut *conn)
         .await?;
     }
-    Ok(())
+    sqlx::query!(
+        "DELETE FROM search_chunks WHERE page_id = $1 AND chunk_no < 0",
+        doc.page_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    if !add_no.is_empty() {
+        sqlx::query!(
+            r#"
+            INSERT INTO search_chunks (page_id, wiki_id, chunk_no, anchor, heading, body, text_hash, vector)
+            SELECT $1, $2, c.no, c.anchor, c.heading, c.body, c.hash,
+                   setweight(to_tsvector($3::text::regconfig, c.heading), 'A')
+                || setweight(to_tsvector($3::text::regconfig, c.body), 'C')
+            FROM unnest($4::int[], $5::text[], $6::text[], $7::text[], $8::bytea[])
+                 AS c(no, anchor, heading, body, hash)
+            "#,
+            doc.page_id,
+            doc.wiki_id,
+            config,
+            &add_no,
+            &add_anchor,
+            &add_heading,
+            &add_body,
+            &add_hash
+        )
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(IndexStats {
+        kept: keep_new.len(),
+        written: add_no.len(),
+    })
 }
 
-/// Characters per indexed piece. At most about three bytes of tsvector per
-/// character, so a piece stays well under the 1 MB limit.
-pub const PIECE_CHARS: usize = 200_000;
-
-/// One indexed piece of a body.
+/// One piece of a text cut by [`split_for_index`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Piece<'a> {
     pub text: &'a str,
-    /// Offset in characters from the start of the body.
+    /// Offset in characters from the start of the text.
     pub start_char: usize,
     pub len_chars: usize,
 }
 
-/// Cuts a body into pieces of at most `size` characters, on the last line
+/// Cuts a text into pieces of at most `size` characters, on the last line
 /// break or whitespace in the final tenth of each piece so no word is split.
 /// Always returns at least one piece.
 pub fn split_for_index(body: &str, size: usize) -> Vec<Piece<'_>> {
@@ -325,53 +635,6 @@ pub fn split_for_index(body: &str, size: usize) -> Vec<Piece<'_>> {
         start_char += len_chars;
         rest = &rest[cut..];
     }
-}
-
-/// Rebuilds every live page's vectors in one wiki, or everywhere when
-/// `wiki_id` is `None`, through [`index_page`] in batches of one transaction
-/// each. Returns how many pages were indexed.
-pub async fn reindex(db: &sqlx::PgPool, wiki_id: Option<Uuid>) -> Result<u64, AppError> {
-    const BATCH: usize = 50;
-    let ids = sqlx::query_scalar!(
-        "SELECT id FROM pages
-         WHERE deleted_at IS NULL AND current_revision_id IS NOT NULL
-           AND ($1::uuid IS NULL OR wiki_id = $1)
-         ORDER BY id",
-        wiki_id
-    )
-    .fetch_all(db)
-    .await?;
-    let mut done = 0;
-    for batch in ids.chunks(BATCH) {
-        let mut tx = db.begin().await?;
-        let pages = sqlx::query!(
-            r#"
-            SELECT p.id, COALESCE(NULLIF(p.locale, ''), w.default_locale) AS "locale!",
-                   p.title, r.summary, r.body_md
-            FROM pages p
-            JOIN revisions r ON r.id = p.current_revision_id
-            JOIN wikis w ON w.id = p.wiki_id
-            WHERE p.id = ANY($1)
-            "#,
-            batch
-        )
-        .fetch_all(&mut *tx)
-        .await?;
-        for page in pages {
-            index_page(
-                &mut tx,
-                page.id,
-                &page.locale,
-                &page.title,
-                page.summary.as_deref(),
-                &page.body_md,
-            )
-            .await?;
-            done += 1;
-        }
-        tx.commit().await?;
-    }
-    Ok(done)
 }
 
 #[cfg(test)]
@@ -548,5 +811,78 @@ mod tests {
             clean,
             "<mark>zxq</mark> tail &lt;img src=x onerror=alert(1)"
         );
+    }
+
+    #[test]
+    fn rendered_html_becomes_text_cut_at_its_headings() {
+        let html = "<h1 id=\"filian\">Filian</h1>\n<p>Intro &amp; <strong>bold</strong> text.</p>\
+                    <nav class=\"toc\"><ul><li><a href=\"#lore\">Lore</a></li></ul></nav>\
+                    <h2 id=\"lore\">Lore <em>now</em></h2><p>Line one.</p><ul><li>a</li><li>b &lt;c&gt;</li></ul>\
+                    <aside class=\"infobox\"><dl><div><dt>Debut</dt><dd>2021</dd></div></dl></aside>";
+        let parts = parts_from_html(html);
+        assert_eq!(parts.len(), 2, "{parts:?}");
+        assert_eq!(parts[0].anchor, "filian");
+        assert_eq!(parts[0].heading, "Filian");
+        assert_eq!(parts[0].text, "Intro & bold text.");
+        assert_eq!(parts[1].anchor, "lore");
+        assert_eq!(parts[1].heading, "Lore now");
+        assert_eq!(parts[1].text, "Line one.\na\nb <c>\nDebut\n2021");
+    }
+
+    #[test]
+    fn text_before_the_first_heading_has_no_anchor() {
+        let parts = parts_from_html("<p>Just text &#x2f; &#39;quoted&#39;</p>");
+        assert_eq!(
+            parts,
+            vec![Part {
+                anchor: String::new(),
+                heading: String::new(),
+                text: "Just text / 'quoted'".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn a_long_section_becomes_several_pieces_with_its_anchor() {
+        let body = format!("<h2 id=\"big\">Big</h2><p>{}</p>", "word ".repeat(5000));
+        let pieces = chunks(&parts_from_html(&body), "english");
+        assert!(pieces.len() >= 4, "{}", pieces.len());
+        assert!(
+            pieces
+                .iter()
+                .all(|c| c.anchor == "big" && c.body.chars().count() <= CHUNK_CHARS)
+        );
+    }
+
+    #[test]
+    fn a_piece_hash_follows_its_text_and_its_stemming() {
+        let parts = parts_from_html("<h2 id=\"a\">A</h2><p>one</p><h2 id=\"b\">B</h2><p>two</p>");
+        let first = chunks(&parts, "english");
+        let again = chunks(&parts, "english");
+        assert_eq!(first, again);
+        let edited = chunks(
+            &parts_from_html("<h2 id=\"a\">A</h2><p>one</p><h2 id=\"b\">B</h2><p>three</p>"),
+            "english",
+        );
+        assert_eq!(
+            first[0].hash, edited[0].hash,
+            "the untouched section keeps its vector"
+        );
+        assert_ne!(first[1].hash, edited[1].hash);
+        assert_ne!(chunks(&parts, "russian")[0].hash, first[0].hash);
+    }
+
+    #[test]
+    fn five_megabytes_of_article_cut_quickly() {
+        let section = format!(
+            "<h2 id=\"s\">S</h2><p>{}</p>",
+            "Filian streams tonight. ".repeat(2000)
+        );
+        let html = section.repeat(110);
+        assert!(html.len() > 5 * 1024 * 1024);
+        let started = std::time::Instant::now();
+        let pieces = chunks(&parts_from_html(&html), "english");
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert!(pieces.len() > 110);
     }
 }
