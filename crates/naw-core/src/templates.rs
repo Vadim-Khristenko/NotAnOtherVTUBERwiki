@@ -13,6 +13,7 @@ const TEMPLATES: &[&str] = &[
     "_theme.html",
     "_header.html",
     "_footer.html",
+    "_brand.html",
     // Inlined into pages, so a skin can ship its own icon set.
     "icons.svg",
     "page.html",

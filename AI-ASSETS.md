@@ -29,6 +29,7 @@ That is the whole document. The rest is the precise wording.
 | `.github/assets/filian-ascii.txt` | ASCII art | Human made |
 | All `.rs`, `.ts`, `.vue`, `.sql`, `.toml` files | The engine | Humans |
 | `skins/snackers/favicon/` icon pack (ico, png, svg, manifest) | FilianWIKI brand icons | AI generated |
+| `skins/snackers/_brand.html` header mark | FilianWIKI brand mark in the header | Human made by just.call.me.l |
 
 If an asset is AI generated, assisted, or human made, its entry says so. If we add assets later, they go in this
 table with the same honesty, including when a human made them.

@@ -20,7 +20,7 @@
 <header class="site-header">
   <div class="site-header-inner">
     <a class="site-brand" href="{{ base or '/' }}">
-      <span class="site-brand-mark" aria-hidden="true"></span>
+      {% include "_brand.html" %}
       <span class="site-brand-name">{{ wiki_name }}</span>
     </a>
 
