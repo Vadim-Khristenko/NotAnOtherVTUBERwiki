@@ -1,0 +1,37 @@
+# English interface messages: about.
+#
+# Keys here are asked for as about.<key>. The file name is the prefix.
+
+numbers = "The wiki in numbers"
+articles = "Articles"
+edits = "Edits"
+authors = "Authors"
+files = "Files"
+templates = "Templates"
+emotes = "Emotes"
+languages = "Languages"
+since = "First edit: {when}."
+more_numbers = "More statistics"
+team = "Who looks after the wiki"
+team_note = "Found a mistake, or want to complain? The links at the bottom of every article send a report to the moderators."
+addresses = "Our addresses"
+addresses_note = "The real wiki lives only here. A site at any other address that passes itself off as us is not ours."
+engine = "Engine"
+engine_note = "The wiki runs on the open NotAnotherWiki engine, version {version}."
+source = "Source code"
+
+[role_owner]
+one = "Owner"
+other = "Owners"
+
+[role_admin]
+one = "Admin"
+other = "Admins"
+
+[role_moderator]
+one = "Moderator"
+other = "Moderators"
+
+[role_curator]
+one = "Curator"
+other = "Curators"

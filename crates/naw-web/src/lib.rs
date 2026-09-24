@@ -11,6 +11,7 @@ macro_rules! or_respond {
     };
 }
 
+mod about;
 mod account;
 mod admin;
 mod admin_user;

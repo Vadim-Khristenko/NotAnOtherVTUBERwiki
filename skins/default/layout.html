@@ -934,6 +934,16 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
   .report-open { margin-left: 0; width: 100%; text-align: center; }
 }
 
+/* About: the numbers, the team, the addresses. */
+.about-facts { margin-top: var(--s6); padding-top: var(--s4); border-top: 1px solid var(--line); }
+.about-stats { margin: var(--s3) 0; }
+.about-team { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--s3); margin: var(--s3) 0; }
+.about-team-group { padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.about-team-group h3 { margin: 0 0 var(--s2); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.about-team-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
+.about-domains { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+.about-domains code { font-size: 0.95rem; padding: 0.25rem 0.6rem; }
+
 /* Audit log: a feed by day, readable first, the raw row one click away. */
 .audit-filter .search-row { flex-wrap: wrap; }
 .audit-filter .field-input { flex: 1 1 11rem; }

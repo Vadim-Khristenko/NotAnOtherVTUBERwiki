@@ -683,6 +683,12 @@ pub async fn page(
         _ => None,
     };
     let versions = crate::translate::versions(&state, &ctx, &slug).await?;
+    // The About page carries what the database knows about the wiki.
+    let about = if slug == crate::about::slug(&ctx) {
+        Some(crate::about::facts(&state, &ctx).await?)
+    } else {
+        None
+    };
     let stale = crate::translate::staleness(
         &state,
         &ctx,
@@ -712,6 +718,7 @@ pub async fn page(
             extra: minijinja::context! {
                 slug => slug.clone(),
                 template => template,
+                about => about,
                 locked => found.locked,
                 updated_at => found.updated_at.format("%Y-%m-%d %H:%M UTC").to_string(),
                 can_edit_this => ctx.actor.can_edit_page(found.protection),

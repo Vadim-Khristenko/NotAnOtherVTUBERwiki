@@ -1,0 +1,47 @@
+{#
+  Under the About page's own text: the wiki in numbers, who looks after it,
+  its real addresses and the engine. Counted by the server on every view, so
+  it cannot go stale the way a hand-written paragraph does.
+
+  about: articles, templates, edits, authors, files, emotes, languages, since,
+  team (label, people: username, name), domains, version, source_url
+#}
+<section class="about-facts" aria-labelledby="about-numbers">
+  <h2 id="about-numbers">{{ t("about.numbers") }}</h2>
+  <dl class="stat-grid about-stats">
+    <div class="stat"><dt>{{ t("about.articles") }}</dt><dd>{{ about.articles }}</dd></div>
+    <div class="stat"><dt>{{ t("about.edits") }}</dt><dd>{{ about.edits }}</dd></div>
+    <div class="stat"><dt>{{ t("about.authors") }}</dt><dd>{{ about.authors }}</dd></div>
+    <div class="stat"><dt>{{ t("about.files") }}</dt><dd>{{ about.files }}</dd></div>
+    <div class="stat"><dt>{{ t("about.templates") }}</dt><dd>{{ about.templates }}</dd></div>
+    <div class="stat"><dt>{{ t("about.emotes") }}</dt><dd>{{ about.emotes }}</dd></div>
+    <div class="stat"><dt>{{ t("about.languages") }}</dt><dd>{{ about.languages }}</dd></div>
+  </dl>
+  {% if about.since %}<p class="muted-cell">{{ t("about.since", when=about.since) }} <a href="{{ base }}/system:statistics">{{ t("about.more_numbers") }}</a></p>{% endif %}
+
+  {% if about.team %}
+  <h2>{{ t("about.team") }}</h2>
+  <div class="about-team">
+    {% for group in about.team %}
+    <div class="about-team-group">
+      <h3>{{ group.label }}</h3>
+      <ul role="list">
+        {% for p in group.people %}<li><a href="/user/{{ p.username }}"><bdi>{{ p.name }}</bdi></a>{% if p.name != p.username %} <span class="muted-cell">@{{ p.username }}</span>{% endif %}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="field-note">{{ t("about.team_note") }}</p>
+  {% endif %}
+
+  {% if about.domains %}
+  <h2>{{ t("about.addresses") }}</h2>
+  <p>{{ t("about.addresses_note") }}</p>
+  <ul class="about-domains" role="list">
+    {% for d in about.domains %}<li><code>{{ d }}</code></li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  <h2>{{ t("about.engine") }}</h2>
+  <p>{{ t("about.engine_note", version=about.version) }} <a href="{{ about.source_url }}" rel="noopener">{{ t("about.source") }}</a></p>
+</section>

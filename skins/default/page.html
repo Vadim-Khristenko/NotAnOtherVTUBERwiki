@@ -65,6 +65,7 @@
 {% else %}
 {{ body | safe }}
 {% endif %}
+{% if about is defined and about %}{% include "_about_facts.html" %}{% endif %}
 {% if template is defined and template %}
 {# A template's own page: how to call it and which pages it would change. #}
 <section class="template-info" aria-labelledby="template-info-title">

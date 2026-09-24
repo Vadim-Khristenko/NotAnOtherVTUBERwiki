@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL) AS \"articles!\",\n             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'template' AND deleted_at IS NULL) AS \"templates!\",\n             (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id WHERE p.wiki_id = $1) AS \"edits!\",\n             (SELECT count(DISTINCT r.author_id) FROM revisions r JOIN pages p ON p.id = r.page_id\n                WHERE p.wiki_id = $1 AND r.author_id IS NOT NULL) AS \"authors!\",\n             (SELECT count(*) FROM media WHERE wiki_id = $1) AS \"files!\",\n             (SELECT count(*) FROM emotes WHERE wiki_id = $1) AS \"emotes!\",\n             (SELECT count(DISTINCT COALESCE(locale, '')) FROM pages\n                WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL) AS \"languages!\",\n             (SELECT min(r.created_at) FROM revisions r JOIN pages p ON p.id = r.page_id\n                WHERE p.wiki_id = $1) AS since",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "articles!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "templates!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "edits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "authors!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "files!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "emotes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "languages!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "since",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "dff00b2c0b38946d7b726c9d9713bb7ab67b5ff44c674e5bc539899173d52e0f"
+}

@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.username, u.display_name, m.role::text AS \"role!\"\n           FROM wiki_memberships m JOIN users u ON u.id = m.user_id\n           WHERE m.wiki_id = $1 AND m.role IN ('owner', 'admin', 'moderator', 'curator')\n           ORDER BY m.role DESC, lower(u.username)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "role!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "5e71f2b8c4dd0545aec75ac636fd604b2de7845743644d8f5277b82ef3186ec7"
+}

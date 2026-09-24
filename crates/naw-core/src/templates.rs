@@ -33,6 +33,7 @@ const TEMPLATES: &[&str] = &[
     "landing.html",
     "_landing_hero.html",
     "_landing_tiles.html",
+    "_about_facts.html",
     "history.html",
     "revision.html",
     "diff.html",

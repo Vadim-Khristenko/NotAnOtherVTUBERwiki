@@ -1,0 +1,41 @@
+# Russian interface messages: about.
+#
+# Keys here are asked for as about.<key>. The file name is the prefix.
+
+numbers = "Вики в цифрах"
+articles = "Статей"
+edits = "Правок"
+authors = "Авторов"
+files = "Файлов"
+templates = "Шаблонов"
+emotes = "Эмоутов"
+languages = "Языков"
+since = "Первая правка: {when}."
+more_numbers = "Подробная статистика"
+team = "Кто следит за вики"
+team_note = "Нашли ошибку или хотите пожаловаться? Кнопки внизу каждой статьи отправят сообщение модераторам."
+addresses = "Наши адреса"
+addresses_note = "Настоящая вики живёт только здесь. Сайт по другому адресу, который выдаёт себя за нас, нам не принадлежит."
+engine = "Движок"
+engine_note = "Вики работает на открытом движке NotAnotherWiki, версия {version}."
+source = "Исходный код"
+
+[role_owner]
+one = "Владелец"
+few = "Владельцы"
+many = "Владельцы"
+
+[role_admin]
+one = "Администратор"
+few = "Администраторы"
+many = "Администраторы"
+
+[role_moderator]
+one = "Модератор"
+few = "Модераторы"
+many = "Модераторы"
+
+[role_curator]
+one = "Куратор"
+few = "Кураторы"
+many = "Кураторы"
