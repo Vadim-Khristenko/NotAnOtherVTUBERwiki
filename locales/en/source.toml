@@ -1,0 +1,35 @@
+# English interface messages: source.
+#
+# Keys here are asked for as source.<key>. The file name is the prefix.
+
+title = "Source of \"{page}\""
+crumb = "Source"
+why_title = "You cannot edit this page"
+why_protected = "This page is protected. Who may edit it: {level}."
+why_sign_in = "Only people with an account may edit."
+why_closed = "This wiki does not take edits from new people right now."
+why_verify_email = "Confirm your email address to edit."
+why_no_edit = "This wiki does not take edits from your account."
+why_banned = "Your account is blocked on this wiki."
+why_muted = "Your account cannot publish edits on this wiki right now."
+what_next = "You can read and copy the text. If something in it is wrong, or you know how to make it better, suggest a change and the moderators will see it."
+suggest = "Suggest a change"
+back = "Back to the page"
+text_title = "Page text"
+copy = "Copy"
+copied = "Copied"
+log_title = "Protection log"
+level_now = "Who may edit now: {level}."
+log_empty = "Nobody has changed this page's protection yet."
+
+[why_template]
+one = "This is a template. It is used on {n} page, and an edit changes it at once. Who may edit templates: {level}."
+other = "This is a template. It is used on {n} pages, and an edit changes them all at once. Who may edit templates: {level}."
+
+[templates]
+one = "{n} template on this page"
+other = "{n} templates on this page"
+
+[lines]
+one = "{n} line"
+other = "{n} lines"

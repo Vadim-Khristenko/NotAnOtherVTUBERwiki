@@ -16,10 +16,11 @@
 {# Actions sit above the article, where a reader who spots a mistake looks
    for them. The bottom row keeps only the date, which is reference, not action. #}
 <nav class="page-actions" aria-label="{{ t('page.tools') }}">
-  {% if can_edit_this is defined and can_edit_this %}
+  {% if (can_edit_this is defined and can_edit_this) or (edit_after_sign_in is defined and edit_after_sign_in) %}
     <a class="page-action" href="{{ base }}/{{ slug }}/edit"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("page.edit") }}</a>
-  {% elif locked is defined and locked %}
-    <span class="page-action is-static" title="{{ t('page.locked_hint') }}"><svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg>{{ t("page.locked") }}</span>
+  {% else %}
+    {# Wikipedia's "View source": why the reader cannot edit, and what they can do. #}
+    <a class="page-action" href="{{ base }}/{{ slug }}/edit" rel="nofollow" {% if protection %}title="{{ t('page.locked_hint') }}"{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-{% if protection %}lock{% else %}code{% endif %}" /></svg>{{ t("nav.view_source") }}</a>
   {% endif %}
   <a class="page-action" href="{{ base }}/{{ slug }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
   {% if protect_choices %}
@@ -89,8 +90,12 @@
   {% for v in other_languages %}<a href="{{ v.href }}" hreflang="{{ v.code }}" lang="{{ v.code }}" title="{{ v.title }}">{{ v.name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
 </nav>
 {% endif %}
-{% if updated_at is defined %}
-<p class="page-meta">{{ t("page.last_edited", when=updated_at) }}</p>
-{% endif %}
+<p class="page-meta">
+  {% if updated_at is defined %}<span>{{ t("page.last_edited", when=updated_at) }}</span>{% endif %}
+  <span class="page-meta-report">
+    <a href="{{ base }}/{{ slug }}/report?kind=mistake" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-flag" /></svg>{{ t("nav.report_mistake") }}</a>
+    <a href="{{ base }}/{{ slug }}/report?kind=complaint" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-message-report" /></svg>{{ t("nav.complain") }}</a>
+  </span>
+</p>
 {% endif %}
 {% endblock %}

@@ -33,6 +33,10 @@ pub enum Capability {
     UserRoleManage,
     /// Change a wiki's name, locale, home page and switches.
     WikiSettings,
+    /// Tell the wiki's staff about a mistake, a problem or a wanted change.
+    ReportSend,
+    /// Work the queue of reports.
+    ReportHandle,
 }
 
 impl Capability {
@@ -48,10 +52,12 @@ impl Capability {
             Self::AdminPanel => "admin.panel",
             Self::UserRoleManage => "user.role",
             Self::WikiSettings => "wiki.settings",
+            Self::ReportSend => "report.send",
+            Self::ReportHandle => "report.handle",
         }
     }
 
-    pub const ALL: [Capability; 9] = [
+    pub const ALL: [Capability; 11] = [
         Self::PageCreate,
         Self::PageEdit,
         Self::PageDelete,
@@ -61,6 +67,8 @@ impl Capability {
         Self::AdminPanel,
         Self::UserRoleManage,
         Self::WikiSettings,
+        Self::ReportSend,
+        Self::ReportHandle,
     ];
 
     pub fn parse(raw: &str) -> Option<Self> {
@@ -76,6 +84,7 @@ impl Capability {
                 | Self::PageDelete
                 | Self::PageLock
                 | Self::RevisionPatrol
+                | Self::ReportHandle
         )
     }
 
@@ -322,7 +331,11 @@ impl Actor {
             }
             // How high a curator may protect is limited in `may_protect`.
             Capability::PageLock | Capability::RevisionPatrol => self.at_least(WikiRole::Curator),
-            Capability::PageDelete | Capability::AuditRead => self.at_least(WikiRole::Moderator),
+            // A mute keeps it: a muted reader may still point at a problem.
+            Capability::ReportSend => self.is_signed_in(),
+            Capability::PageDelete | Capability::AuditRead | Capability::ReportHandle => {
+                self.at_least(WikiRole::Moderator)
+            }
             Capability::AdminPanel | Capability::WikiSettings | Capability::UserRoleManage => {
                 self.at_least(WikiRole::Admin)
             }

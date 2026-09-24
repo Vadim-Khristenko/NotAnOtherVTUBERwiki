@@ -36,6 +36,9 @@ const TEMPLATES: &[&str] = &[
     "history.html",
     "revision.html",
     "diff.html",
+    "_diff_table.html",
+    "source.html",
+    "report.html",
     "admin.html",
 ];
 

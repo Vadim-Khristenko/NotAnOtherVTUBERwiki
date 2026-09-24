@@ -19,10 +19,11 @@
   of plain links, so it works with no script; under 52rem it turns into a row
   that scrolls sideways above the content.
 #}
-{% macro nav_item(href, id, icon, label) %}
-  <a class="admin-nav-item" href="{{ href }}" {% if section == id or (id == "users" and section in ["user_new", "password_issued", "user"]) %}aria-current="page"{% endif %}>
+{% macro nav_item(href, id, icon, label, badge=0) %}
+  <a class="admin-nav-item" href="{{ href }}" {% if section == id or (id == "users" and section in ["user_new", "password_issued", "user"]) or (id == "reports" and section == "report") %}aria-current="page"{% endif %}>
     <svg class="icon" aria-hidden="true"><use href="#i-{{ icon }}" /></svg>
     <span>{{ label }}</span>
+    {% if badge %}<span class="admin-badge">{{ badge }}</span>{% endif %}
   </a>
 {% endmacro %}
 <div class="admin-shell">
@@ -36,9 +37,11 @@
     </div>
     <nav class="admin-nav">
       <p class="admin-nav-group">{{ t("admin.group_wiki") }}</p>
-      {{ nav_item("/admin", "overview", "clipboard-check", t("admin.overview")) }}
-      {{ nav_item("/admin/pages", "pages", "file-text", t("admin.pages")) }}
-      {{ nav_item("/admin/audit", "audit", "history", t("admin.audit")) }}
+      {% if can_panel %}{{ nav_item("/admin", "overview", "clipboard-check", t("admin.overview")) }}{% endif %}
+      {% if can_reports %}{{ nav_item("/admin/reports", "reports", "flag", t("admin.reports"), open_reports | default(0)) }}{% endif %}
+      {% if can_panel %}{{ nav_item("/admin/pages", "pages", "file-text", t("admin.pages")) }}{% endif %}
+      {% if can_audit %}{{ nav_item("/admin/audit", "audit", "history", t("admin.audit")) }}{% endif %}
+      {% if can_panel %}
       <p class="admin-nav-group">{{ t("admin.group_people") }}</p>
       {{ nav_item("/admin/users", "users", "users", t("admin.accounts")) }}
       <p class="admin-nav-group">{{ t("admin.group_look") }}</p>
@@ -49,6 +52,7 @@
       <p class="admin-nav-group">{{ t("admin.group_setup") }}</p>
       {{ nav_item("/admin/wiki", "wiki", "settings", t("admin.settings")) }}
       {% if is_root %}{{ nav_item("/admin/accounts", "accounts", "users", t("admin.accounts_rules")) }}{% endif %}
+      {% endif %}
     </nav>
     <script nonce="{{ csp_nonce() }}">
       /* On narrow screens the list is a scrolling row; keep the current section in view. */
@@ -306,6 +310,107 @@
     <span class="muted-cell">{{ t("history.page_no", n=page_no) }}</span>
     {% if has_next %}<a href="/admin/pages?q={{ query }}&amp;page={{ next_page }}">{{ t("admin.next") }}</a>{% endif %}
   </nav>
+
+{% elif section == "reports" %}
+  <nav class="filter-chips" aria-label="{{ t('report.filter_status') }}">
+    {% for f in status_filters %}<a class="chip" href="/admin/reports?status={{ f.id }}&amp;kind={{ kind }}" {% if f.current %}aria-current="true"{% endif %}>{{ f.label }}{% if f.id == "open" and open_reports %} <span class="admin-badge">{{ open_reports }}</span>{% endif %}</a>{% endfor %}
+  </nav>
+  <nav class="filter-chips" aria-label="{{ t('report.filter_kind') }}">
+    {% for f in kind_filters %}<a class="chip" href="/admin/reports?status={{ status }}&amp;kind={{ f.id }}" {% if f.current %}aria-current="true"{% endif %}>{{ f.label }}</a>{% endfor %}
+  </nav>
+  <p class="muted-cell">{{ tn("report.count", total) }}</p>
+  {% if reports %}
+  <ul class="report-cards" role="list">
+    {% for r in reports %}
+    <li class="report-card is-{{ r.status }}">
+      <div class="report-card-head">
+        <span class="tag tag-{{ r.kind }}">{{ r.kind_label }}</span>
+        {% if r.reason %}<span class="tag">{{ r.reason }}</span>{% endif %}
+        <span class="tag tag-status">{{ r.status_label }}</span>
+        <span class="muted-cell">{{ r.at }}</span>
+      </div>
+      <p class="report-card-subject"><a href="{{ r.subject_href }}">{{ r.subject_title }}</a>
+        {% if r.subject != r.subject_title %} <code class="muted-cell">{{ r.subject }}</code>{% endif %}</p>
+      <p class="report-card-message">{{ r.message }}</p>
+      <p class="report-card-foot">
+        {% if r.reporter %}<span>{{ t("report.from") }} <a href="/user/{{ r.reporter }}"><bdi>{{ r.reporter }}</bdi></a></span>{% endif %}
+        {% if r.has_proposed %}<span class="tag">{{ t("report.has_text") }}</span>{% endif %}
+        {% if r.handler %}<span class="muted-cell">{{ t("report.handled_by", who=r.handler, when=r.handled_at) }}</span>{% endif %}
+        <a class="button-preview report-open" href="/admin/reports/{{ r.id }}">{{ t("report.open_card") }}</a>
+      </p>
+    </li>
+    {% endfor %}
+  </ul>
+  <nav class="pager">
+    {% if has_prev %}<a href="/admin/reports?status={{ status }}&amp;kind={{ kind }}&amp;page={{ prev_page }}">{{ t("admin.previous") }}</a>{% endif %}
+    <span class="muted-cell">{{ t("history.page_no", n=page_no) }}</span>
+    {% if has_next %}<a href="/admin/reports?status={{ status }}&amp;kind={{ kind }}&amp;page={{ next_page }}">{{ t("admin.next") }}</a>{% endif %}
+  </nav>
+  {% else %}
+  <p class="empty-state">{% if status == "open" %}{{ t("report.queue_empty") }}{% else %}{{ t("report.none_here") }}{% endif %}</p>
+  {% endif %}
+
+{% elif section == "report" %}
+  <p><a href="/admin/reports">{{ t("report.back_to_queue") }}</a></p>
+  <article class="report-card is-{{ report.status }} report-detail">
+    <div class="report-card-head">
+      <span class="tag tag-{{ report.kind }}">{{ t("report.short_" ~ report.kind) }}</span>
+      {% if report.reason %}<span class="tag">{{ report.reason }}</span>{% endif %}
+      <span class="tag tag-status">{{ report.status_label }}</span>
+      <span class="muted-cell">{{ report.at }}</span>
+    </div>
+    <dl class="kv">
+      <dt>{{ t("report.subject") }}</dt><dd><a href="{{ report.subject_href }}">{{ report.subject_title }}</a></dd>
+      <dt>{{ t("report.from") }}</dt><dd>{% if report.reporter %}<a href="/user/{{ report.reporter }}"><bdi>{{ report.reporter }}</bdi></a>{% else %}<span class="muted-cell">{{ t("report.gone") }}</span>{% endif %}</dd>
+      {% if report.handler %}<dt>{{ t("report.handled") }}</dt><dd>{{ t("report.handled_by", who=report.handler, when=report.handled_at) }}</dd>{% endif %}
+    </dl>
+    <h2>{{ t("report.message_label") }}</h2>
+    <p class="report-message">{{ report.message }}</p>
+  </article>
+
+  {% if report.proposed %}
+  <section class="settings-section">
+    <h2>{{ t("report.proposed_diff") }}</h2>
+    {% if diff %}
+    {% if diff.stale %}<p class="notice notice-warn" role="note">{{ t("report.stale") }}</p>{% endif %}
+    {% if diff.added + diff.removed == 0 %}
+    <p class="notice" role="status">{{ t("diff.identical") }}</p>
+    {% else %}
+    <div class="diff-summary" role="status">
+      <span class="diff-plus">+{{ diff.added }}</span>
+      <span class="diff-minus">&minus;{{ diff.removed }}</span>
+    </div>
+    {% if diff.truncated %}<p class="notice notice-warn" role="status">{{ t("diff.too_large") }}</p>{% endif %}
+    {% with rows = diff.rows %}{% include "_diff_table.html" %}{% endwith %}
+    {% endif %}
+    {% endif %}
+    <details class="report-proposed">
+      <summary>{{ t("report.proposed_raw") }}</summary>
+      <textarea class="field-input source-body" rows="14" readonly>{{ report.proposed }}</textarea>
+    </details>
+    {% if report.edit_href %}<p class="field-note">{{ t("report.apply_note") }} <a href="{{ report.edit_href }}">{{ t("report.open_editor") }}</a></p>{% endif %}
+  </section>
+  {% endif %}
+
+  <section class="settings-section">
+    <h2>{{ t("report.decide") }}</h2>
+    <form method="post" action="/admin/reports/{{ report.id }}/status" class="report-decide">
+      <div class="field">
+        <label class="field-label" for="report-response">{{ t("report.response_label") }}</label>
+        <textarea id="report-response" class="field-input" name="response" rows="3" maxlength="2000">{{ report.response or "" }}</textarea>
+        <p class="field-note">{{ t("report.response_note") }}</p>
+      </div>
+      <p class="form-actions">
+        {% if report.status == "open" %}
+        <button class="button-save" type="submit" name="status" value="resolved"><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>{{ t("report.resolve") }}</button>
+        <button class="button-preview" type="submit" name="status" value="dismissed"><svg class="icon" aria-hidden="true"><use href="#i-x" /></svg>{{ t("report.dismiss") }}</button>
+        {% else %}
+        <button class="button-preview" type="submit" name="status" value="open"><svg class="icon" aria-hidden="true"><use href="#i-arrow-back-up" /></svg>{{ t("report.reopen") }}</button>
+        <button class="button-preview" type="submit" name="status" value="{{ report.status }}">{{ t("report.save_answer") }}</button>
+        {% endif %}
+      </p>
+    </form>
+  </section>
 
 {% elif section == "audit" %}
   <form class="filter-form" method="get" action="/admin/audit">

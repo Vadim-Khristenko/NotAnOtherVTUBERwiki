@@ -298,7 +298,7 @@ fn side_value(side: &Option<Side>) -> Option<minijinja::Value> {
     })
 }
 
-fn row_value(row: &Row) -> minijinja::Value {
+pub(crate) fn row_value(row: &Row) -> minijinja::Value {
     match row {
         Row::Context {
             old_line,

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM reports r\n           WHERE r.wiki_id = $1\n             AND ($2::text IS NULL OR r.status = $2)\n             AND ($3::text IS NULL OR r.kind = $3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9d5fb359da3c091486d7ead7da012534079e3006cb913589cad9b61a2b988e90"
+}

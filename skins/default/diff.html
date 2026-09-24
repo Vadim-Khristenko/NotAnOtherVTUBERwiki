@@ -10,13 +10,6 @@
 
   Every cell is escaped. The diff text is page source written by anybody.
 #}
-{% macro side(s, cls, mark) -%}
-{%- if s -%}
-<td class="d-num {{ cls }}">{{ s.line }}</td><td class="d-text {{ cls }}">{% for seg in s.segments %}{% if seg.changed %}<{{ mark }}>{{ seg.text }}</{{ mark }}>{% else %}{{ seg.text }}{% endif %}{% endfor %}</td>
-{%- else -%}
-<td class="d-num d-none"></td><td class="d-text d-none"></td>
-{%- endif -%}
-{%- endmacro %}
 {% macro head(rev, label, current) %}
 <div class="diff-head">
   <p class="diff-head-label">{{ label }}{% if current %}{{ t("diff.current_suffix") }}{% endif %}</p>
@@ -62,25 +55,7 @@
   {% if truncated %}
     <p class="notice notice-warn" role="status">{{ t("diff.too_large") }}</p>
   {% endif %}
-  <div class="diff-scroll">
-  <table class="diff">
-    <colgroup><col class="d-num-col" /><col /><col class="d-num-col" /><col /></colgroup>
-    <thead>
-      <tr><th scope="colgroup" colspan="2">{{ t("diff.old") }}</th><th scope="colgroup" colspan="2">{{ t("diff.new") }}</th></tr>
-    </thead>
-    <tbody>
-      {% for row in rows %}
-      {% if row.kind == "ctx" %}
-      <tr class="d-ctx"><td class="d-num d-old">{{ row.old_line }}</td><td class="d-text d-old">{{ row.text }}</td><td class="d-num">{{ row.new_line }}</td><td class="d-text">{{ row.text }}</td></tr>
-      {% elif row.kind == "chg" %}
-      <tr class="d-chg"{% if row.hunk %} id="change-{{ row.hunk }}"{% endif %}>{{ side(row.old, "d-del", "del") }}{{ side(row.new, "d-add", "ins") }}</tr>
-      {% else %}
-      <tr class="d-gap"><td colspan="4">{{ tn("diff.unchanged_lines", row.hidden) }}</td></tr>
-      {% endif %}
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
+  {% include "_diff_table.html" %}
 {% endif %}
 
 <p class="form-actions">

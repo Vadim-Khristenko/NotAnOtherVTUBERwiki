@@ -4,7 +4,7 @@
 
 edit = "Edit"
 locked = "Locked"
-locked_hint = "Only moderators can edit this page"
+locked_hint = "This page is protected and not everybody may edit it. You can read its source and suggest a change."
 last_edited = "Last edited {when}"
 tools = "Page tools"
 summary_label = "Summary"

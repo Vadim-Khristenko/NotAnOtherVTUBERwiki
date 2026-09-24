@@ -1,0 +1,80 @@
+{% extends "layout.html" %}
+{#
+  Telling the wiki's staff about something: a mistake, a complaint, or a
+  change to a page the reader may not edit. The kinds are radio buttons that
+  work without script; the script only hides the fields a kind does not use.
+
+  subject_title, subject_href, about_user, action, kinds (id, label, note,
+  current), reasons (id, label, current), message, proposed, revision,
+  problem, message_max
+#}
+{% block main_class %}content content-wide report-page{% endblock %}
+{% block body %}
+<nav class="crumbs"><a href="{{ subject_href }}">{{ subject_title }}</a> / {{ t("report.crumb") }}</nav>
+<h1>{{ t("report.title", subject=subject_title) }}</h1>
+<p class="lede">{% if about_user %}{{ t("report.lede_user") }}{% else %}{{ t("report.lede") }}{% endif %}</p>
+
+{% if problem %}<p class="notice notice-error" role="alert">{{ problem }}</p>{% endif %}
+
+<form class="report-form" method="post" action="{{ action }}">
+  <input type="hidden" name="revision" value="{{ revision }}" />
+  {% if kinds | length > 1 %}
+  <fieldset class="report-kinds">
+    <legend>{{ t("report.kind_legend") }}</legend>
+    {% for k in kinds %}
+    <label class="report-kind">
+      <input type="radio" name="kind" value="{{ k.id }}" {% if k.current %}checked{% endif %} />
+      <span class="report-kind-text"><strong>{{ k.label }}</strong><span class="field-note">{{ k.note }}</span></span>
+    </label>
+    {% endfor %}
+  </fieldset>
+  {% else %}
+  {% for k in kinds %}<input type="hidden" name="kind" value="{{ k.id }}" />{% endfor %}
+  {% endif %}
+
+  <fieldset class="report-reasons" data-for="complaint">
+    <legend>{{ t("report.reason_legend") }}</legend>
+    {% for r in reasons %}
+    <label class="check"><input type="radio" name="reason" value="{{ r.id }}" {% if r.current %}checked{% endif %} /> {{ r.label }}</label>
+    {% endfor %}
+  </fieldset>
+
+  <div class="field">
+    <label class="field-label" for="report-message">{{ t("report.message_label") }}</label>
+    <textarea id="report-message" class="field-input" name="message" rows="5" maxlength="{{ message_max }}" required>{{ message }}</textarea>
+    <p class="field-note">{{ t("report.message_note") }}</p>
+  </div>
+
+  {% if proposed is not none %}
+  <div class="field" data-for="suggestion">
+    <label class="field-label" for="report-proposed">{{ t("report.proposed_label") }}</label>
+    <textarea id="report-proposed" class="field-input source-body" name="proposed" rows="16" spellcheck="true">{{ proposed }}</textarea>
+    <p class="field-note">{{ t("report.proposed_note") }}</p>
+  </div>
+  {% endif %}
+
+  <p class="form-actions">
+    <button class="button-save" type="submit"><svg class="icon" aria-hidden="true"><use href="#i-flag" /></svg>{{ t("report.send") }}</button>
+    <a class="button-preview" href="{{ subject_href }}">{{ t("report.cancel") }}</a>
+  </p>
+  <p class="field-note">{{ t("report.privacy_note") }}</p>
+</form>
+
+<script nonce="{{ csp_nonce() }}">
+  /* Show only the fields the chosen kind uses. Hidden fields still post, and
+     the server ignores what a kind does not use. */
+  (function () {
+    var form = document.querySelector(".report-form");
+    if (!form) return;
+    function sync() {
+      var chosen = form.querySelector("input[name=kind]:checked") || form.querySelector("input[name=kind]");
+      var kind = chosen ? chosen.value : "";
+      form.querySelectorAll("[data-for]").forEach(function (el) {
+        el.hidden = el.getAttribute("data-for") !== kind;
+      });
+    }
+    form.addEventListener("change", sync);
+    sync();
+  })();
+</script>
+{% endblock %}

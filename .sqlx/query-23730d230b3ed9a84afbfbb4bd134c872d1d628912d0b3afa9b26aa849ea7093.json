@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO reports (id, wiki_id, kind, reason, subject, page_id, locale, revision_id,\n                              message, proposed, reporter_id)\n         VALUES ($1, $2, $3, $4, $5, $6, $7,\n                 (SELECT r.id FROM revisions r WHERE r.id = $8 AND r.page_id = $6),\n                 $9, $10, $11)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "23730d230b3ed9a84afbfbb4bd134c872d1d628912d0b3afa9b26aa849ea7093"
+}

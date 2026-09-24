@@ -130,8 +130,11 @@
         <a class="menu-link" href="{{ base }}/{{ slug }}"><svg class="icon" aria-hidden="true"><use href="#i-file-text" /></svg>{{ t("nav.read") }}</a>
         {% if can_edit_this is defined and can_edit_this %}
         <a class="menu-link" href="{{ base }}/{{ slug }}/edit"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("nav.edit") }}</a>
+        {% else %}
+        <a class="menu-link" href="{{ base }}/{{ slug }}/edit" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-code" /></svg>{{ t("nav.view_source") }}</a>
         {% endif %}
         <a class="menu-link" href="{{ base }}/{{ slug }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
+        <a class="menu-link" href="{{ base }}/{{ slug }}/report?kind=mistake" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-flag" /></svg>{{ t("nav.report_mistake") }}</a>
       </section>
       {% endif %}
 
@@ -167,6 +170,9 @@
         <a class="menu-link" href="/settings"><svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg>{{ t("settings.title") }}</a>
         {% if can_admin is defined and can_admin %}
         <a class="menu-link" href="/admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>{{ t("nav.admin") }}</a>
+        {% endif %}
+        {% if can_reports is defined and can_reports %}
+        <a class="menu-link" href="/admin/reports"><svg class="icon" aria-hidden="true"><use href="#i-flag" /></svg>{{ t("nav.reports") }}</a>
         {% endif %}
         {# Signing out changes state, so it is a POST, not a link. #}
         <form class="menu-form" method="post" action="/logout">

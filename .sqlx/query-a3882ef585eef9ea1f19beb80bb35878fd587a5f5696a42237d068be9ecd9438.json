@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH old AS (\n             SELECT id, status FROM reports WHERE id = $1 AND wiki_id = $2 FOR UPDATE\n           )\n           UPDATE reports r SET status = $3,\n                  handled_by = CASE WHEN $4 THEN NULL ELSE $5::uuid END,\n                  handled_at = CASE WHEN $4 THEN NULL ELSE now() END,\n                  response = CASE WHEN $6 = '' THEN r.response ELSE $6 END\n           FROM old WHERE r.id = old.id\n           RETURNING old.status AS was, r.kind",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "was",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "kind"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Bool",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "a3882ef585eef9ea1f19beb80bb35878fd587a5f5696a42237d068be9ecd9438"
+}

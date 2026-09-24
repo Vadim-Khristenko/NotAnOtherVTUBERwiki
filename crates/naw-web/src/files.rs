@@ -325,7 +325,7 @@ pub(crate) async fn record_uses(
 }
 
 /// Bytes as a reader counts them.
-fn human_size(ctx: &Ctx, bytes: i64) -> String {
+pub(crate) fn human_size(ctx: &Ctx, bytes: i64) -> String {
     let b = bytes as f64;
     if b >= 1024.0 * 1024.0 {
         ctx.t_with(

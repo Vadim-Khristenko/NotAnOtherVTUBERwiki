@@ -27,6 +27,9 @@
     {% if is_me %}
     <a class="icon-action" href="/settings" title="{{ t('settings.title') }}" aria-label="{{ t('settings.title') }}">
       <svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg></a>
+    {% else %}
+    <a class="icon-action" href="/user/{{ person_username }}/report" rel="nofollow" title="{{ t('nav.complain') }}" aria-label="{{ t('nav.complain') }}">
+      <svg class="icon" aria-hidden="true"><use href="#i-message-report" /></svg></a>
     {% endif %}
   </div>
 </header>

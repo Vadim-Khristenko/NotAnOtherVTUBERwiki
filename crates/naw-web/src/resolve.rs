@@ -108,6 +108,17 @@ impl Ctx {
         self.skin.messages.render(&self.lang, key, &owned)
     }
 
+    /// A message that counts something, in the plural form `n` takes.
+    pub fn tn_with(&self, key: &str, n: i64, args: &[(&str, &str)]) -> String {
+        let owned: Vec<(String, String)> = args
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        self.skin
+            .messages
+            .render_plural(&self.lang, key, n.max(0) as u64, &owned)
+    }
+
     /// A calendar day in words, "23 сентября 2026" or "September 23, 2026".
     pub fn day(&self, at: chrono::DateTime<chrono::Utc>) -> String {
         use chrono::Datelike;
@@ -317,6 +328,7 @@ impl Ctx {
             can_edit => self.actor.can(Capability::PageEdit),
             can_moderate => self.actor.can(Capability::PageDelete),
             can_admin => self.actor.can(Capability::AdminPanel),
+            can_reports => self.actor.can(Capability::ReportHandle),
         }
     }
 }

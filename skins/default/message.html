@@ -8,6 +8,6 @@
 #}
 {% block body %}
 <h1>{{ heading }}</h1>
-<p class="notice notice-{{ tone }}" role="alert">{{ message }}</p>
+<p class="notice notice-{{ tone }}" role="{% if tone == "ok" %}status{% else %}alert{% endif %}">{{ message }}</p>
 <p><a href="{{ back_href }}">{{ back_label }}</a></p>
 {% endblock %}

@@ -60,6 +60,39 @@ pub(crate) fn notice(
     back_href: &str,
     back_label: &str,
 ) -> Result<Response, AppError> {
+    message_page(
+        ctx, status, "error", heading, message, back_href, back_label,
+    )
+}
+
+/// `message.html` for something that went well: a report sent.
+pub(crate) fn notice_ok(
+    ctx: &Ctx,
+    heading: &str,
+    message: &str,
+    back_href: &str,
+    back_label: &str,
+) -> Result<Response, AppError> {
+    message_page(
+        ctx,
+        StatusCode::OK,
+        "ok",
+        heading,
+        message,
+        back_href,
+        back_label,
+    )
+}
+
+fn message_page(
+    ctx: &Ctx,
+    status: StatusCode,
+    tone: &str,
+    heading: &str,
+    message: &str,
+    back_href: &str,
+    back_label: &str,
+) -> Result<Response, AppError> {
     let template = ctx
         .skin
         .env
@@ -72,7 +105,7 @@ pub(crate) fn notice(
                 title => heading,
                 version => ENGINE_VERSION,
                 heading => heading,
-                tone => "error",
+                tone => tone,
                 message => message,
                 back_href => back_href,
                 back_label => back_label,
@@ -148,7 +181,7 @@ pub(crate) fn is_unique_violation(err: &sqlx::Error) -> bool {
 }
 
 /// "You may not do this": a guest is sent to sign in, anyone else gets a 403.
-fn refuse(
+pub(crate) fn refuse(
     ctx: &Ctx,
     return_to: &str,
     refused: Capability,
@@ -178,7 +211,7 @@ fn refuse(
 }
 
 /// Percent-encodes one query parameter value.
-fn urlencode(value: &str) -> String {
+pub(crate) fn urlencode(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
         match byte {
@@ -682,6 +715,10 @@ pub async fn page(
                 locked => found.locked,
                 updated_at => found.updated_at.format("%Y-%m-%d %H:%M UTC").to_string(),
                 can_edit_this => ctx.actor.can_edit_page(found.protection),
+                // A guest whom signing in would let edit sees Edit, not the source.
+                edit_after_sign_in => !ctx.actor.is_signed_in()
+                    && found.protection.is_none()
+                    && ctx.actor.rules.registered_edit,
                 protection => found.protection.map(crate::perm::WikiRole::as_str),
                 protect_choices => crate::protect::choices(&ctx, found.protection),
                 other_languages => crate::translate::others(&ctx, &slug, &versions),
@@ -858,7 +895,7 @@ pub struct NewQuery {
 }
 
 /// The creation form, blank or begun from a starter template; needs `PageCreate`.
-#[instrument(skip(state, user, headers, form))]
+#[instrument(skip(state, user, headers))]
 pub async fn new_page(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -928,7 +965,7 @@ pub async fn new_page(
 }
 
 /// Creates the page, its first revision and its search index entry.
-#[instrument(skip(state, user, headers))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn create_page(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1070,7 +1107,7 @@ pub(crate) fn see_other(target: &str) -> Response {
 }
 
 /// Edit form prefilled with the current revision.
-#[instrument(skip(state, user, headers, form))]
+#[instrument(skip(state, user, headers))]
 pub async fn edit_page(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -1087,17 +1124,20 @@ pub async fn edit_page(
         return Ok(crate::errors::not_found());
     };
     if !ctx.actor.can_edit_page(found.protection) {
-        let explanation = ctx.t(if found.locked {
-            "error.page_locked"
-        } else {
-            "error.no_edit"
-        });
-        return refuse(
-            &ctx,
-            &ctx.link(&format!("/{slug}/edit")),
-            Capability::PageEdit,
-            &explanation,
-        );
+        // A guest whom signing in would let through goes to sign in; anybody
+        // else reads the source and why they cannot change it.
+        if !ctx.actor.is_signed_in()
+            && found.protection.is_none()
+            && ctx.actor.rules.registered_edit
+        {
+            return refuse(
+                &ctx,
+                &ctx.link(&format!("/{slug}/edit")),
+                Capability::PageEdit,
+                &ctx.t("error.no_edit"),
+            );
+        }
+        return crate::source::page(&state, &ctx, &headers, &slug, &found).await;
     }
     let source_name = found
         .translation_source_locale
@@ -1136,7 +1176,7 @@ pub async fn edit_page(
 }
 
 /// Saves a new revision over an existing page.
-#[instrument(skip(state, user, headers))]
+#[instrument(skip(state, user, headers, form))]
 pub async fn save_page(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,

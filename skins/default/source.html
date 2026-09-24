@@ -1,0 +1,96 @@
+{% extends "layout.html" %}
+{#
+  The source of a page the reader may not edit, after Wikipedia's "View
+  source": why they cannot, what they can do instead, the text to read and
+  copy, the templates it uses and who protected it. The server answers 403.
+
+  page_title, slug, reasons (text, href, link_label), level, source, rows,
+  size, lines, templates (name, href), log (who, day, was, now),
+  can_suggest, page_href
+#}
+{% block main_class %}content content-wide source-page{% endblock %}
+{% block body %}
+<nav class="crumbs"><a href="{{ page_href }}">{{ page_title }}</a> / {{ t("source.crumb") }}</nav>
+<h1>{{ t("source.title", page=page_title) }}</h1>
+
+<section class="source-why" aria-labelledby="source-why-title">
+  <svg class="icon source-why-icon" aria-hidden="true"><use href="#i-lock" /></svg>
+  <div>
+    <h2 id="source-why-title">{{ t("source.why_title") }}</h2>
+    {% if reasons | length > 1 %}
+    <ul>
+      {% for r in reasons %}<li>{{ r.text }}{% if r.href %} <a href="{{ r.href }}">{{ r.link_label }}</a>{% endif %}</li>{% endfor %}
+    </ul>
+    {% else %}
+    {% for r in reasons %}<p>{{ r.text }}{% if r.href %} <a href="{{ r.href }}">{{ r.link_label }}</a>{% endif %}</p>{% endfor %}
+    {% endif %}
+    <p class="source-why-next">{{ t("source.what_next") }}</p>
+  </div>
+</section>
+
+<p class="source-actions">
+  {% if can_suggest %}
+  <a class="button-save" href="{{ page_href }}/report?kind=suggestion"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("source.suggest") }}</a>
+  <a class="button-preview" href="{{ page_href }}/report?kind=mistake"><svg class="icon" aria-hidden="true"><use href="#i-flag" /></svg>{{ t("report.kind_mistake") }}</a>
+  {% endif %}
+  <a class="button-preview" href="{{ page_href }}"><svg class="icon" aria-hidden="true"><use href="#i-file-text" /></svg>{{ t("source.back") }}</a>
+  <a class="button-preview" href="{{ page_href }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
+</p>
+
+<section class="source-text" aria-labelledby="source-text-title">
+  <div class="source-text-head">
+    <h2 id="source-text-title">{{ t("source.text_title") }}</h2>
+    <span class="muted-cell">{{ tn("source.lines", lines) }} · {{ size }}</span>
+    <button class="button-preview source-copy" type="button" data-copy="source-body" data-done="{{ t('source.copied') }}" hidden>
+      <svg class="icon" aria-hidden="true"><use href="#i-copy" /></svg><span data-label>{{ t("source.copy") }}</span>
+    </button>
+  </div>
+  <label class="visually-hidden" for="source-body">{{ t("source.text_title") }}</label>
+  <textarea id="source-body" class="field-input source-body" rows="{{ rows }}" readonly spellcheck="false">{{ source }}</textarea>
+</section>
+
+{% if templates %}
+<section class="source-templates" aria-labelledby="source-templates-title">
+  <h2 id="source-templates-title">{{ tn("source.templates", templates | length) }}</h2>
+  <ul>
+    {% for tpl in templates %}<li><a href="{{ tpl.href }}"><code>{{ "{{" }}{{ tpl.name }}{{ "}}" }}</code></a></li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="source-log" aria-labelledby="source-log-title">
+  <h2 id="source-log-title">{{ t("source.log_title") }}</h2>
+  {% if level %}<p>{{ t("source.level_now", level=level) }}</p>{% endif %}
+  {% if log %}
+  <ul class="event-list">
+    {% for e in log %}
+    <li>
+      <span class="muted-cell">{{ e.day }}</span>
+      {% if e.who %}<a href="/user/{{ e.who }}"><bdi>{{ e.who }}</bdi></a>{% else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif %}:
+      {% if e.was %}{{ e.was }} → {% endif %}{{ e.now }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted-cell">{{ t("source.log_empty") }}</p>
+  {% endif %}
+</section>
+
+<script nonce="{{ csp_nonce() }}">
+  /* Copy the source in one press; without script the text is still selectable. */
+  (function () {
+    var button = document.querySelector("[data-copy]");
+    var area = button && document.getElementById(button.getAttribute("data-copy"));
+    if (!area || !navigator.clipboard) return;
+    button.hidden = false;
+    var label = button.querySelector("[data-label]");
+    var idle = label.textContent;
+    button.addEventListener("click", function () {
+      navigator.clipboard.writeText(area.value).then(function () {
+        label.textContent = button.getAttribute("data-done");
+        setTimeout(function () { label.textContent = idle; }, 2000);
+      });
+    });
+  })();
+</script>
+{% endblock %}

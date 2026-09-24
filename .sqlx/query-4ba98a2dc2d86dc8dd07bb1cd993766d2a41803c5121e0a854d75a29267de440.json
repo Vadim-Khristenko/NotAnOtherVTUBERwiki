@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT template_slug FROM template_uses WHERE page_id = $1 ORDER BY template_slug",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "template_slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "template_uses",
+            "name": "template_slug"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4ba98a2dc2d86dc8dd07bb1cd993766d2a41803c5121e0a854d75a29267de440"
+}

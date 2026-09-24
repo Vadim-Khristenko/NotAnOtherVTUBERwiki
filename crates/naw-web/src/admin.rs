@@ -30,6 +30,18 @@ pub(crate) async fn gate(
     headers: &HeaderMap,
     user: Option<&CurrentUser>,
 ) -> Result<Ctx, Response> {
+    gate_for(state, headers, user, Capability::AdminPanel).await
+}
+
+/// As [`gate`], for a section that needs `cap` rather than the whole panel:
+/// moderators reach the report queue without reaching the settings.
+#[allow(clippy::result_large_err)]
+pub(crate) async fn gate_for(
+    state: &AppState,
+    headers: &HeaderMap,
+    user: Option<&CurrentUser>,
+    cap: Capability,
+) -> Result<Ctx, Response> {
     let ctx = match context(state, headers, user).await {
         Ok(Some(ctx)) => ctx,
         Ok(None) => {
@@ -37,7 +49,7 @@ pub(crate) async fn gate(
         }
         Err(err) => return Err(err.into_response()),
     };
-    if !ctx.actor.can(Capability::AdminPanel) {
+    if !ctx.actor.can(cap) {
         // A guest is sent to sign in; anyone else is told no.
         if !ctx.actor.is_signed_in() {
             return Err(
@@ -71,6 +83,9 @@ pub(crate) fn render(
                 section => section,
                 heading => heading,
                 is_root => ctx.actor.global == GlobalRole::Root,
+                can_panel => ctx.actor.can(Capability::AdminPanel),
+                can_reports => ctx.actor.can(Capability::ReportHandle),
+                can_audit => ctx.actor.can(Capability::AuditRead),
                 my_role => ctx.actor.effective_role().map(WikiRole::as_str),
             },
             ..extra
@@ -1199,10 +1214,7 @@ pub async fn audit_log(
     headers: HeaderMap,
     Query(query): Query<ListQuery>,
 ) -> Result<Response, AppError> {
-    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
-    if !ctx.actor.can(Capability::AuditRead) {
-        return Ok((StatusCode::FORBIDDEN, "not allowed").into_response());
-    }
+    let ctx = or_respond!(gate_for(&state, &headers, user.as_ref(), Capability::AuditRead).await);
     let page_no = query.page.unwrap_or(1).max(1);
     let offset = (page_no - 1) * PER_PAGE;
     let filter = query

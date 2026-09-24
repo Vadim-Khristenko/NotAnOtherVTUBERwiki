@@ -867,6 +867,69 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
 .error-card-title { margin: var(--s2) 0 var(--s1); font-weight: 600; }
 .error-card-links { margin: var(--s2) 0 0; font-size: 0.88rem; }
 
+/* View source: the page a reader who may not edit gets from Edit. */
+.source-why { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s3); margin: var(--s4) 0; padding: var(--s4); border: 1px solid var(--accent); border-radius: var(--radius); background: var(--accent-soft); }
+.source-why-icon { width: 1.6rem; height: 1.6rem; color: var(--accent); margin-top: 0.15rem; }
+.source-why h2 { margin: 0 0 var(--s2); font-size: 1.1rem; }
+.source-why p, .source-why ul { margin: 0 0 var(--s2); }
+.source-why ul { padding-left: 1.2rem; }
+.source-why-next { color: var(--ink-soft); font-size: 0.95rem; }
+.source-why .source-why-next { margin-bottom: 0; }
+.source-actions, .page-meta-report { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.source-actions { margin: 0 0 var(--s5); }
+.source-actions a { display: inline-flex; align-items: center; gap: var(--s2); text-decoration: none; }
+.source-text-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s3); }
+.source-text-head h2 { margin: 0; }
+.source-copy { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s2); padding: 0.4rem 0.9rem; }
+.source-body { font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.5; tab-size: 4; resize: vertical; background: var(--surface-sunken); }
+.source-templates ul { columns: 16rem; padding-left: 1.2rem; }
+.page-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s2) var(--s4); }
+.page-meta-report { gap: var(--s3); }
+.page-meta-report a { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--muted); }
+.page-meta-report a:hover { color: var(--accent); }
+
+/* Reports: the form, and the queue as cards, which read on a phone too. */
+.lede { font-size: 1.05rem; color: var(--ink-soft); max-width: 44rem; }
+.report-form { max-width: 48rem; }
+.report-form fieldset { margin: 0 0 var(--s4); padding: 0; border: none; }
+.report-form legend { font-weight: 700; margin-bottom: var(--s2); }
+.report-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--s2); }
+.report-kinds legend { grid-column: 1 / -1; }
+.report-kind { display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s3); border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); cursor: pointer; transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease); }
+.report-kind:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.report-kind input { margin-top: 0.3rem; accent-color: var(--accent); }
+.report-kind-text { display: grid; gap: 0.15rem; }
+.report-kind-text .field-note { margin: 0; }
+.report-reasons { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); }
+.report-reasons legend { width: 100%; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: var(--s2); margin: 0 0 var(--s3); }
+.content .chip { display: inline-flex; align-items: center; gap: var(--s1); padding: 0.3rem 0.8rem; border: 1px solid var(--border-strong); border-radius: 999px; color: var(--ink-soft); text-decoration: none; font-size: 0.88rem; }
+.content .chip:hover { border-color: var(--accent); color: var(--ink); }
+.content .chip[aria-current] { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.admin-badge { display: inline-grid; place-items: center; min-width: 1.35rem; height: 1.35rem; margin-left: auto; padding: 0 0.35rem; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 0.72rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.chip .admin-badge { margin-left: 0; background: var(--accent-ink); color: var(--accent); }
+.report-cards { list-style: none; padding: 0; margin: 0 0 var(--s4); display: grid; gap: var(--s3); }
+.report-card { padding: var(--s3) var(--s4); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--radius); background: var(--surface); }
+.report-card.is-resolved, .report-card.is-dismissed { border-left-color: var(--line); }
+.report-card.is-dismissed { opacity: 0.75; }
+.report-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.report-card-subject { margin: var(--s2) 0 var(--s1); font-weight: 600; overflow-wrap: anywhere; }
+.report-card-message { margin: 0 0 var(--s2); color: var(--ink-soft); white-space: pre-line; overflow-wrap: anywhere; }
+.report-card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); margin: 0; font-size: 0.88rem; }
+.report-open { margin-left: auto; padding: 0.35rem 1rem; text-decoration: none; }
+.report-detail .kv { margin: var(--s3) 0; }
+.report-detail h2 { font-size: 1rem; margin: var(--s3) 0 var(--s1); }
+.report-message { white-space: pre-line; overflow-wrap: anywhere; margin: 0; }
+.report-proposed { margin: var(--s3) 0; }
+.report-proposed summary { cursor: pointer; }
+.tag-mistake { color: var(--ink); background: var(--accent-soft); border-color: var(--accent); }
+.tag-complaint { color: var(--diff-minus); border-color: currentColor; background: transparent; }
+.tag-suggestion { color: var(--diff-plus); border-color: currentColor; background: transparent; }
+.empty-state { padding: var(--s5) var(--s4); text-align: center; color: var(--muted); border: 1px dashed var(--border-strong); border-radius: var(--radius); }
+@media (max-width: 40rem) {
+  .report-open { margin-left: 0; width: 100%; text-align: center; }
+}
+
 /* ---------------------------------------------------------------------------
  * Error page
  *

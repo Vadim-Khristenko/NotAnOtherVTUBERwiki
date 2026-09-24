@@ -40,9 +40,11 @@ mod policy;
 mod profile;
 mod protect;
 mod relay;
+mod reports;
 mod resolve;
 mod search;
 mod settings;
+mod source;
 mod system;
 mod templates;
 mod translate;
@@ -157,6 +159,9 @@ fn routes(state: AppState) -> Router {
         .route("/admin/pages", get(admin::pages_list))
         .route("/admin/pages/{action}", post(admin::page_action))
         .route("/admin/audit", get(admin::audit_log))
+        .route("/admin/reports", get(reports::queue))
+        .route("/admin/reports/{id}", get(reports::show))
+        .route("/admin/reports/{id}/status", post(reports::set_status))
         .route(
             "/admin/wiki",
             get(admin::wiki_settings).post(admin::save_wiki_settings),
@@ -197,6 +202,10 @@ fn routes(state: AppState) -> Router {
         .route(
             "/user/{name}/edit",
             get(profile::edit).post(profile::save).layer(text_form()),
+        )
+        .route(
+            "/user/{name}/report",
+            get(reports::user_form).post(reports::user_send),
         )
         .route("/lang", post(pages::set_language))
         .route("/", get(pages::home))
@@ -239,6 +248,12 @@ fn routes(state: AppState) -> Router {
         .route("/{slug}/revert", post(history::revert))
         .route("/{slug}/patrol", post(history::patrol))
         .route("/{slug}/protect", post(protect::set))
+        .route(
+            "/{slug}/report",
+            get(reports::page_form)
+                .post(reports::page_send)
+                .layer(text_form()),
+        )
         // Before `.layer`: a fallback added after would skip every middleware.
         .fallback(pages::fallback)
         .layer(

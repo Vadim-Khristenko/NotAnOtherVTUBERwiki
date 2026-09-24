@@ -52,6 +52,7 @@
   <p class="page-actions landing-home-edit">
     {% if home_edit %}<a class="page-action" href="{{ home_edit }}"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("landing.edit_home") }}</a>{% endif %}
     <a class="page-action" href="{{ home_history }}"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
+    <a class="page-action" href="{{ home_href }}/report?kind=mistake" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-flag" /></svg>{{ t("nav.report_mistake") }}</a>
   </p>
 </section>
 {% endif %}
