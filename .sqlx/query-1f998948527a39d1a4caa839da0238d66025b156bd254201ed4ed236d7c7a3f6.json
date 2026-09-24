@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT title AS \"title!\", slug AS \"slug!\", at AS \"at!\" FROM (\n             SELECT DISTINCT ON (p.id) p.title, p.slug, r.created_at AS at\n             FROM revisions r JOIN pages p ON p.id = r.page_id\n             WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL\n               AND COALESCE(p.locale, '') = $2\n             ORDER BY p.id, r.created_at DESC\n           ) latest\n           ORDER BY at DESC LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "slug!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1f998948527a39d1a4caa839da0238d66025b156bd254201ed4ed236d7c7a3f6"
+}

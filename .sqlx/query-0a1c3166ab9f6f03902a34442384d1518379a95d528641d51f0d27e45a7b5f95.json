@@ -1,0 +1,86 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL) AS \"articles!\",\n             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'template' AND deleted_at IS NULL) AS \"templates!\",\n             (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id WHERE p.wiki_id = $1) AS \"edits!\",\n             (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id\n                WHERE p.wiki_id = $1 AND r.created_at > now() - interval '7 days') AS \"edits_week!\",\n             (SELECT count(DISTINCT r.author_id) FROM revisions r JOIN pages p ON p.id = r.page_id\n                WHERE p.wiki_id = $1 AND r.created_at > now() - interval '30 days') AS \"editors_month!\",\n             (SELECT count(*) FROM wiki_memberships WHERE wiki_id = $1) AS \"members!\",\n             (SELECT count(*) FROM media WHERE wiki_id = $1) AS \"files!\",\n             (SELECT COALESCE(sum(size_bytes), 0)::bigint FROM media WHERE wiki_id = $1) AS \"file_bytes!\",\n             (SELECT count(*) FROM emotes WHERE wiki_id = $1) AS \"emotes!\",\n             (SELECT COALESCE(sum(octet_length(r.body_md)), 0)::bigint FROM pages p\n                JOIN revisions r ON r.id = p.current_revision_id\n                WHERE p.wiki_id = $1 AND p.deleted_at IS NULL) AS \"text_bytes!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "articles!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "templates!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "edits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "edits_week!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "editors_month!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "members!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "files!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "file_bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "emotes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "text_bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "0a1c3166ab9f6f03902a34442384d1518379a95d528641d51f0d27e45a7b5f95"
+}

@@ -1,0 +1,8 @@
+{# The landing's section tiles. The default skin points at the wiki's own lists;
+   a skin with art replaces this file with the wiki's sections. #}
+<nav class="landing-tiles" aria-label="{{ t('landing.sections') }}">
+  <a class="landing-tile" href="{{ base }}/system:recent-changes"><svg class="icon" aria-hidden="true"><use href="#i-activity" /></svg><span>{{ t("nav.recent_changes") }}</span></a>
+  <a class="landing-tile" href="{{ base }}/system:all-pages"><svg class="icon" aria-hidden="true"><use href="#i-list" /></svg><span>{{ t("nav.all_pages") }}</span></a>
+  <a class="landing-tile" href="{{ base }}/system:files"><svg class="icon" aria-hidden="true"><use href="#i-photo" /></svg><span>{{ t("nav.files") }}</span></a>
+  <a class="landing-tile" href="{{ base }}/system:statistics"><svg class="icon" aria-hidden="true"><use href="#i-chart-bar" /></svg><span>{{ t("system.statistics") }}</span></a>
+</nav>

@@ -1,0 +1,101 @@
+{% extends "layout.html" %}
+{#
+  Special pages, one template: `view` picks the part.
+
+  index           entries: href, icon, title, about, path
+  recent-changes  changes: title, href, diff, history, author, summary, is_minor,
+                  is_new, delta, delta_big, locale, day, time
+  all-pages       pages: title, href, letter; total, all_pages_max
+  files           files: url, page, name, kind, width, height
+  statistics      figures: label, value
+#}
+{% block body %}
+<nav class="crumbs"><a href="{{ base }}/system">{{ t("system.index") }}</a>{% if view != "index" %} / {{ heading }}{% endif %}</nav>
+<h1>{{ heading }}</h1>
+
+{% if view == "index" %}
+<p class="muted-cell">{{ t("system.index_about") }}</p>
+<ul class="system-grid" role="list">
+  {% for e in entries %}
+  <li><a class="system-card" href="{{ e.href }}">
+    <svg class="icon" aria-hidden="true"><use href="#i-{{ e.icon }}" /></svg>
+    <span class="system-card-title">{{ e.title }}</span>
+    <span class="system-card-about">{{ e.about }}</span>
+    <code class="system-card-path">{{ e.path }}</code>
+  </a></li>
+  {% endfor %}
+</ul>
+
+{% elif view == "recent-changes" %}
+<p class="muted-cell">{{ t("system.recent_changes_about") }}</p>
+{% if changes %}
+{% for c in changes %}
+{% if loop.first or c.day != loop.previtem.day %}
+{% if not loop.first %}</ol>{% endif %}
+<h2 class="history-day">{{ c.day }}</h2>
+<ol class="history-list" role="list">
+{% endif %}
+  <li class="history-item">
+    <span class="history-links">(
+      {%- if c.diff %}<a href="{{ c.diff }}">{{ t("history.prev") }}</a>{% else %}<span class="muted-cell">{{ t("history.prev") }}</span>{% endif %}
+      <span aria-hidden="true"> | </span>
+      {%- if c.history %}<a href="{{ c.history }}">{{ t("history.crumb") }}</a>{% else %}<span class="muted-cell">{{ t("history.crumb") }}</span>{% endif -%}
+    )</span>
+    <span class="history-time">{{ c.time }}</span>
+    <a class="recent-title" href="{{ c.href }}">{{ c.title }}</a>
+    {% if c.locale %}<span class="tag">{{ c.locale }}</span>{% endif %}
+    <span class="history-delta {% if c.delta > 0 %}is-plus{% elif c.delta < 0 %}is-minus{% else %}is-zero{% endif %}{% if c.delta_big %} is-big{% endif %}">
+      {%- if c.delta > 0 %}+{{ c.delta }}{% elif c.delta < 0 %}&minus;{{ c.delta | abs }}{% else %}0{% endif -%}
+    </span>
+    <span class="history-who">{% if c.author %}<a href="/user/{{ c.author }}"><bdi>{{ c.author }}</bdi></a>{% else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif %}</span>
+    <span class="history-summary">
+      {%- if c.is_new %}<span class="tag tag-new">{{ t("history.first") }}</span> {% endif -%}
+      {%- if c.is_minor %}<abbr class="tag tag-minor" title="{{ t('history.minor_title') }}">{{ t("history.minor") }}</abbr> {% endif -%}
+      {%- if c.summary %}{{ c.summary }}{% endif -%}
+    </span>
+  </li>
+{% if loop.last %}</ol>{% endif %}
+{% endfor %}
+<p class="muted-cell">{{ t("system.recent_changes_limit", n=recent_max) }}</p>
+{% else %}
+<p class="notice">{{ t("system.nothing_yet") }}</p>
+{% endif %}
+
+{% elif view == "all-pages" %}
+<p class="muted-cell">{{ tn("system.pages_count", total) }}{% if total >= all_pages_max %} {{ t("system.first_only", n=all_pages_max) }}{% endif %}</p>
+{% for p in pages %}
+{% if loop.first or p.letter != loop.previtem.letter %}
+{% if not loop.first %}</ul>{% endif %}
+<h2 class="history-day" id="letter-{{ loop.index }}">{{ p.letter }}</h2>
+<ul class="template-uses">
+{% endif %}
+  <li><a href="{{ p.href }}">{{ p.title }}</a></li>
+{% if loop.last %}</ul>{% endif %}
+{% else %}
+<p class="notice">{{ t("system.nothing_yet") }}</p>
+{% endfor %}
+
+{% elif view == "files" %}
+<p class="muted-cell">{{ t("system.files_about") }}</p>
+{% if files %}
+<ul class="media-grid" role="list">
+  {% for f in files %}
+  <li class="media-item">
+    <a href="{{ f.page }}">
+      {%- if f.kind == "image" %}<img src="{{ f.url }}" alt="{{ f.name }}" loading="lazy" decoding="async"{% if f.width and f.height %} width="{{ f.width }}" height="{{ f.height }}"{% endif %} />
+      {%- else %}<span class="media-kind"><svg class="icon" aria-hidden="true"><use href="#i-{% if f.kind == "document" %}file-info{% else %}movie{% endif %}" /></svg></span>{% endif -%}
+    </a>
+    <a class="muted-cell" href="{{ f.page }}">{{ f.name }}</a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="notice">{{ t("system.nothing_yet") }}</p>
+{% endif %}
+
+{% elif view == "statistics" %}
+<dl class="stat-grid">
+  {% for f in figures %}<div class="stat"><dt>{{ f.label }}</dt><dd>{{ f.value }}</dd></div>{% endfor %}
+</dl>
+{% endif %}
+{% endblock %}

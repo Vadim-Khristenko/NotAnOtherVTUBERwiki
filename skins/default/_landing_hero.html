@@ -1,0 +1,17 @@
+{# The landing's hero: the wiki's name, its lede, search and the way in. A skin
+   with art replaces this file (see skins/snackers). #}
+<div class="landing-hero-text">
+  <h1 class="landing-title" id="landing-title">{{ wiki_name }}</h1>
+  {% if lede %}<p class="landing-lede">{{ lede | safe }}</p>{% endif %}
+  <form class="landing-search" method="get" action="{{ base }}/search" role="search">
+    <label class="visually-hidden" for="landing-q">{{ t("nav.search_this", wiki=wiki_name) }}</label>
+    <svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>
+    <input id="landing-q" name="q" type="search" maxlength="200" placeholder="{{ t('nav.search_this', wiki=wiki_name) }}" />
+    <button class="button-save" type="submit">{{ t("nav.search") }}</button>
+  </form>
+  <p class="landing-ctas">
+    <a class="button-preview" href="{{ base }}/system:random" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-arrows-shuffle" /></svg>{{ t("nav.random") }}</a>
+    <a class="button-preview" href="{{ home_href }}"><svg class="icon" aria-hidden="true"><use href="#i-book" /></svg>{{ t("landing.read_more") }}</a>
+  </p>
+  <p class="landing-stats">{{ tn("landing.articles", articles) }} · {{ tn("landing.edits", edits) }} · {{ tn("landing.files", files) }}</p>
+</div>

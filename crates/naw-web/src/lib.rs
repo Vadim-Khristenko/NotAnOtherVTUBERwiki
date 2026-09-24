@@ -28,6 +28,7 @@ mod fetch;
 mod files;
 mod history;
 pub mod indexing;
+mod landing;
 mod lang;
 mod locale_path;
 mod media;
@@ -42,6 +43,7 @@ mod relay;
 mod resolve;
 mod search;
 mod settings;
+mod system;
 mod templates;
 mod translate;
 
@@ -205,6 +207,7 @@ fn routes(state: AppState) -> Router {
                 .layer(text_form()),
         )
         .route("/preview", post(pages::preview).layer(text_form()))
+        .route("/skin/{file}", get(pages::skin_static))
         .route("/favicon.ico", get(pages::favicon_ico))
         .route("/favicon-96x96.png", get(pages::favicon_png))
         .route("/apple-touch-icon.png", get(pages::apple_touch_icon))

@@ -534,6 +534,22 @@ pub(crate) fn protection_of(locked: bool, level: Option<&str>) -> Option<crate::
     }
 }
 
+/// A page that does not exist yet: a 404 that says so, and to anyone who
+/// may create pages, the link to start it.
+fn missing_page(ctx: &Ctx, slug: &str) -> Result<Response, AppError> {
+    if !ctx.actor.can(Capability::PageCreate) || split_path(slug).0 == "file" {
+        return Ok(crate::errors::not_found());
+    }
+    notice(
+        ctx,
+        StatusCode::NOT_FOUND,
+        &ctx.t("page.missing_title"),
+        &ctx.t_with("page.missing_body", &[("slug", slug)]),
+        &ctx.link(&format!("/new?slug={slug}")),
+        &ctx.t("page.missing_create"),
+    )
+}
+
 /// `?jump_to=` as a redirect to the heading anchor.
 fn jump_target(slug: &str, query: &PageQuery) -> Option<String> {
     let frag = query.jump_to.as_deref()?;
@@ -558,7 +574,7 @@ pub struct PageQuery {
 // Reading
 // ---------------------------------------------------------------------------
 
-/// Redirects `/` to the wiki home page.
+/// The front page, a landing around the home article.
 #[instrument(skip(state, user))]
 pub async fn home(
     State(state): State<AppState>,
@@ -566,21 +582,7 @@ pub async fn home(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
-    let slug = ctx
-        .wiki
-        .settings
-        .get("home_slug")
-        .and_then(|v| v.as_str())
-        .unwrap_or("home");
-    // A broken home_slug must not become a 500 through an invalid Location.
-    if !slug_is_valid(slug) {
-        return Ok(crate::errors::not_found());
-    }
-    let target = ctx.link(&format!("/{slug}"));
-    match redirect_response(StatusCode::PERMANENT_REDIRECT, &target) {
-        Some(response) => Ok(response),
-        None => Ok(crate::errors::not_found()),
-    }
+    crate::landing::page(&state, &ctx, &headers).await
 }
 
 /// Serves one page in the main namespace.
@@ -593,11 +595,27 @@ pub async fn page(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let slug = slug.trim().to_lowercase();
+    // Special pages: /system and /system:name.
+    if let Some(name) = slug
+        .strip_prefix("system")
+        .map(|rest| rest.trim_start_matches(':'))
+        && (slug == "system" || slug.starts_with("system:"))
+        && name.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+    {
+        let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
+        return Ok(crate::system::page(&state, &ctx, &headers, name)
+            .await?
+            .unwrap_or_else(crate::errors::not_found));
+    }
     // Before the query: an embedded NUL in a text parameter is a 500.
     if !slug_is_valid(&slug) {
         return Ok(crate::errors::not_found());
     }
     let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
+    // The home article is the landing, wherever it is opened from.
+    if slug == crate::landing::home_slug(&ctx) && query.jump_to.is_none() {
+        return crate::landing::page(&state, &ctx, &headers).await;
+    }
     // A file's page shows the file first and its description under it.
     if let Some((prefix, name)) = crate::files::split(&slug) {
         return crate::files::page(&state, &ctx, &headers, prefix, name).await;
@@ -608,7 +626,7 @@ pub async fn page(
         return Ok(
             match crate::translate::missing(&state, &ctx, &slug).await? {
                 Some(response) => response,
-                None => crate::errors::not_found(),
+                None => missing_page(&ctx, &slug)?,
             },
         );
     };
@@ -1492,6 +1510,46 @@ const SKIN_ASSETS: &[(&str, &str)] = &[
     ("web-app-manifest-192x192.png", "image/png"),
     ("web-app-manifest-512x512.png", "image/png"),
 ];
+
+/// GET /skin/{file}: pictures a skin ships in `{skin_dir}/static/`, such as
+/// the landing art. Only plain lowercase names with a picture extension, so
+/// no request value can walk the filesystem or serve anything but a picture.
+pub async fn skin_static(
+    State(state): State<AppState>,
+    Path(file): Path<String>,
+) -> Result<Response, AppError> {
+    let Some((stem, ext)) = file.rsplit_once('.') else {
+        return Ok(crate::errors::not_found());
+    };
+    let content_type = match ext {
+        "webp" => "image/webp",
+        "png" => "image/png",
+        "jpg" => "image/jpeg",
+        "avif" => "image/avif",
+        _ => return Ok(crate::errors::not_found()),
+    };
+    let plain = !stem.is_empty()
+        && stem.len() <= 64
+        && stem
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    if !plain {
+        return Ok(crate::errors::not_found());
+    }
+    let path = format!("{}/static/{file}", state.config.skin_dir);
+    let Ok(bytes) = tokio::fs::read(&path).await else {
+        return Ok(crate::errors::not_found());
+    };
+    Ok((
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        bytes,
+    )
+        .into_response())
+}
 
 async fn skin_asset(state: &AppState, file: &str) -> Result<Response, AppError> {
     let Some((_, content_type)) = SKIN_ASSETS.iter().find(|(name, _)| *name == file) else {

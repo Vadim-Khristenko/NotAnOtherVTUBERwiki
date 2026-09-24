@@ -97,4 +97,17 @@ html[data-theme="dark"] .content mark.mark-red { background: #7c2440; color: #ff
 html[data-theme="dark"] .content mark.mark-pink { background: #8a2a5c; color: #ffe6f3; }
 html[data-theme="dark"] .content mark.mark-violet { background: #53308f; color: #ece4ff; }
 html[data-theme="dark"] .content mark.mark-gray { background: #4a2d55; color: #f0e2f0; }
+
+/* The landing wears the banner: its panel colour and glow behind Filian. */
+.landing-hero { background: #7c57a5; border-color: #4c367d; color: #ffffff; }
+.landing-hero .landing-lede, .landing-hero .landing-stats { color: #f3e8ff; }
+.landing-hero .landing-lede a { color: #ffffff; }
+.landing-hero .button-preview { color: #ffffff; border-color: rgba(255, 255, 255, 0.55); background: rgba(76, 54, 125, 0.35); }
+.landing-hero .landing-search input { border-color: #4c367d; }
+.landing-art { margin: calc(var(--s6) * -1) calc(var(--s6) * -1) calc(var(--s6) * -1) 0; align-self: end; }
+.landing-tiles-art a.landing-tile { background: #7c57a5; border-color: #4c367d; color: #ffffff; }
+.landing-tiles-art a.landing-tile:hover { border-color: #ffffff; }
+@media (max-width: 46rem) {
+  .landing-art { margin: calc(var(--s4) * -1) auto 0; }
+}
 </style>

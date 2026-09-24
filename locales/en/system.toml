@@ -1,0 +1,34 @@
+# English interface messages: special pages.
+#
+# Keys here are asked for as system.<key>. The file name is the prefix.
+
+index = "Special pages"
+index_about = "Pages the wiki keeps about itself: lists, recent changes and figures."
+recent_changes = "Recent changes"
+recent_changes_about = "The latest edits to every page of the wiki, newest first."
+recent_changes_limit = "The last {n} edits are shown."
+all_pages = "All pages"
+all_pages_about = "Every article in this language, from A to Z."
+first_only = "The first {n} are shown."
+files = "Files"
+files_about = "Every uploaded file, newest first. Each has its own page."
+statistics = "Statistics"
+statistics_about = "How many articles, edits, members and files there are."
+random = "Random page"
+random_about = "Open an article at random."
+nothing_yet = "Nothing here yet."
+stat_articles = "Articles"
+stat_templates = "Templates"
+stat_edits = "Edits in all"
+stat_edits_week = "Edits this week"
+stat_editors_month = "Editors this month"
+stat_members = "Members"
+stat_files = "Files"
+stat_file_mb = "Files, MB"
+stat_text_mb = "Article text, MB"
+stat_emotes = "Emotes"
+
+
+[pages_count]
+one = "{n} page"
+other = "{n} pages"

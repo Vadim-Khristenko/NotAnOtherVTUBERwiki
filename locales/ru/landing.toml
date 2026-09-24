@@ -1,0 +1,36 @@
+# Russian interface messages: the front page.
+#
+# Keys here are asked for as landing.<key>. The file name is the prefix.
+
+read_more = "О вики"
+sections = "Разделы"
+recent = "Недавно обновлены"
+all_changes = "Все свежие правки"
+nothing_yet = "Пока здесь тихо."
+help = "Как помочь"
+help_find = "Найдите страницу через поиск или меню. Нет нужной? Создайте её."
+help_edit = "Нажмите «Править»: текст пишется в Markdown, предпросмотр виден сразу."
+help_media = "Добавьте картинки, клипы, эмоуты и карточки из шаблонов. Каждая правка сохраняется в истории."
+edit_home = "Править этот текст"
+tile_character = "Персонаж"
+tile_lore = "Лор"
+tile_glossary = "Глоссарий"
+tile_schedule = "Расписание"
+tile_clips = "Клипы"
+tile_fan_art = "Фан-арт"
+
+
+[articles]
+one = "{n} статья"
+few = "{n} статьи"
+many = "{n} статей"
+
+[edits]
+one = "{n} правка"
+few = "{n} правки"
+many = "{n} правок"
+
+[files]
+one = "{n} файл"
+few = "{n} файла"
+many = "{n} файлов"

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT slug FROM pages\n         WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL\n           AND COALESCE(locale, '') = $2\n         ORDER BY random() LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cb8deebe505a2e8b3e24c3b7dbc9e17f286cd39e828ee44b56e0c6361f225b53"
+}

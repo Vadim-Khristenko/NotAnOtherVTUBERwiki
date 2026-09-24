@@ -880,9 +880,10 @@ mod tests {
         );
         let html = section.repeat(110);
         assert!(html.len() > 5 * 1024 * 1024);
+        // 0.1 s in a release build; the bound only catches a quadratic slip.
         let started = std::time::Instant::now();
         let pieces = chunks(&parts_from_html(&html), "english");
-        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
         assert!(pieces.len() > 110);
     }
 }

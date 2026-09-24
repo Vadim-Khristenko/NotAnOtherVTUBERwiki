@@ -1,0 +1,35 @@
+# Russian interface messages: special pages.
+#
+# Keys here are asked for as system.<key>. The file name is the prefix.
+
+index = "Служебные страницы"
+index_about = "Страницы, которые вики ведёт сама: списки, свежие правки и цифры."
+recent_changes = "Свежие правки"
+recent_changes_about = "Последние правки на всех страницах вики, новые сверху."
+recent_changes_limit = "Показаны последние {n} правок."
+all_pages = "Все страницы"
+all_pages_about = "Все статьи на этом языке по алфавиту."
+first_only = "Показаны первые {n}."
+files = "Файлы"
+files_about = "Все загруженные файлы, новые сверху. У каждого своя страница."
+statistics = "Статистика"
+statistics_about = "Сколько здесь статей, правок, участников и файлов."
+random = "Случайная страница"
+random_about = "Открыть случайную статью."
+nothing_yet = "Пока пусто."
+stat_articles = "Статей"
+stat_templates = "Шаблонов"
+stat_edits = "Правок всего"
+stat_edits_week = "Правок за неделю"
+stat_editors_month = "Авторов за месяц"
+stat_members = "Участников"
+stat_files = "Файлов"
+stat_file_mb = "Файлы, МБ"
+stat_text_mb = "Текст статей, МБ"
+stat_emotes = "Эмоутов"
+
+
+[pages_count]
+one = "{n} страница"
+few = "{n} страницы"
+many = "{n} страниц"

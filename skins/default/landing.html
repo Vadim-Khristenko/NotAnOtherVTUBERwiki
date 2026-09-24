@@ -1,0 +1,58 @@
+{% extends "layout.html" %}
+{#
+  The front page. The hero and the section tiles are skin partials, so a wiki
+  with its own art ships only those two files. The home article, an ordinary
+  page, gives the lede (its first paragraph) and the text under the landing.
+
+  lede, home_body, home_href, home_edit, recent (title, href, day),
+  articles, edits, files
+#}
+{% block main_class %}content content-wide landing{% endblock %}
+{% block body %}
+<section class="landing-hero" aria-labelledby="landing-title">
+  {% include "_landing_hero.html" %}
+</section>
+
+{% include "_landing_tiles.html" %}
+
+<div class="landing-columns">
+  <section class="landing-card" aria-labelledby="landing-recent">
+    <h2 id="landing-recent"><svg class="icon" aria-hidden="true"><use href="#i-activity" /></svg>{{ t("landing.recent") }}</h2>
+    {% if recent %}
+    <ul class="landing-recent" role="list">
+      {% for r in recent %}<li><a href="{{ r.href }}">{{ r.title }}</a><span class="muted-cell">{{ r.day }}</span></li>{% endfor %}
+    </ul>
+    <p><a href="{{ base }}/system:recent-changes">{{ t("landing.all_changes") }}</a></p>
+    {% else %}
+    <p class="muted-cell">{{ t("landing.nothing_yet") }}</p>
+    {% endif %}
+  </section>
+
+  <section class="landing-card" aria-labelledby="landing-help">
+    <h2 id="landing-help"><svg class="icon" aria-hidden="true"><use href="#i-heart" /></svg>{{ t("landing.help") }}</h2>
+    <ol class="landing-steps">
+      <li>{{ t("landing.help_find") }}</li>
+      <li>{{ t("landing.help_edit") }}</li>
+      <li>{{ t("landing.help_media") }}</li>
+    </ol>
+    <p class="landing-ctas">
+      {% if can_create is defined and can_create %}
+      <a class="button-save" href="{{ base }}/new">{{ t("nav.new_page") }}</a>
+      {% elif not signed_in %}
+      <a class="button-save" href="/login">{{ t("nav.sign_in") }}</a>
+      {% endif %}
+      <a class="button-preview" href="{{ base }}/system">{{ t("nav.system_pages") }}</a>
+    </p>
+  </section>
+</div>
+
+{% if home_body %}
+<section class="landing-home" aria-label="{{ wiki_name }}">
+  {{ home_body | safe }}
+  <p class="page-actions landing-home-edit">
+    {% if home_edit %}<a class="page-action" href="{{ home_edit }}"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("landing.edit_home") }}</a>{% endif %}
+    <a class="page-action" href="{{ home_history }}"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
+  </p>
+</section>
+{% endif %}
+{% endblock %}

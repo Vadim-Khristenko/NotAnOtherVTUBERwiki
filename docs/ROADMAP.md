@@ -176,7 +176,9 @@ The part that makes it a wiki rather than a blog.
       with an avatar. Only the person, their curator, or a moderator and up may edit it.
 - [x] Page protection by role: curators and up protect a page at their own level or
       below, and never loosen a protection set above them
-- [ ] Recent changes, patrolling, watchlists. Patrolling works; the other two do not exist yet
+- [x] Special pages at `/system:name`: recent changes (by day, with the size of each edit and
+      a link to its diff), all pages, files, statistics, a random page, and `/system` listing them
+- [ ] Watchlists. Recent changes and patrolling work; watchlists do not exist yet
 - [ ] Audit log with a retention policy. The log is written and browsable; retention is not in
 - [x] Search behind a swappable backend, PostgreSQL full text first. A long article is
       indexed in 200 000 character pieces, so all of a 5 MB article is searchable and no
