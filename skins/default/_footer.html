@@ -13,6 +13,14 @@
       <a href="{{ base }}/license">{{ t("footer.license") }}</a>
       {% endif %}
     </nav>
+    {% if footer_notice or own_domains %}
+    {# Set in Admin > Header and footer. A fan wiki says it is not the person
+       it writes about, and lists its real addresses so a copy can be told apart. #}
+    <div class="footer-notice" role="note">
+      {% if footer_notice %}<p>{{ footer_notice }}</p>{% endif %}
+      {% if own_domains %}<p class="footer-domains">{{ t("footer.domains") }} {% for d in own_domains %}<strong>{{ d }}</strong>{% if not loop.last %} · {% endif %}{% endfor %}. {{ t("footer.domains_rest") }}</p>{% endif %}
+    </div>
+    {% endif %}
     <p class="engine-note">{{ t("footer.engine", version=version) }}{% if footer_note is defined and footer_note %} · {{ footer_note }}{% endif %}</p>
   </div>
 </footer>

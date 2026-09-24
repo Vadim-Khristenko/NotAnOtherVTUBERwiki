@@ -312,6 +312,8 @@ impl Ctx {
             show_search => header.search,
             show_emotes => header.emotes,
             footer_links => footer_links,
+            footer_notice => crate::chrome::notice(&self.wiki.settings, &self.lang, &self.wiki.default_locale),
+            own_domains => crate::chrome::domains(&self.wiki.settings),
             lang_native => messages
                 .meta(&self.lang)
                 .map(|m| m.native_name.clone())

@@ -538,6 +538,17 @@
       <p class="field-note">{{ t("admin.chrome_link_note") }}</p>
       <label class="check"><input type="checkbox" name="footer_reset" value="1" /> {{ t("admin.chrome_footer_reset") }}</label>
     </fieldset>
+    <fieldset class="perm-set">
+      <legend>{{ t("admin.chrome_notice") }}</legend>
+      <p class="field-note">{{ t("admin.chrome_notice_note") }}</p>
+      {% for n in notices %}
+      <label class="field-label" for="notice-{{ n.code }}">{{ n.name }}</label>
+      <textarea class="field-input" id="notice-{{ n.code }}" name="notice_{{ n.code }}" rows="3" maxlength="{{ notice_max }}" lang="{{ n.code }}">{{ n.text }}</textarea>
+      {% endfor %}
+      <label class="field-label" for="own-domains">{{ t("admin.chrome_domains") }}</label>
+      <input class="field-input" id="own-domains" name="domains" value="{{ domains }}" maxlength="600" placeholder="filian.wiki, snackers.wiki" />
+      <p class="field-note">{{ t("admin.chrome_domains_note") }}</p>
+    </fieldset>
     <div class="form-actions">
       <button class="button-save" type="submit">{{ t("admin.save_settings") }}</button>
     </div>

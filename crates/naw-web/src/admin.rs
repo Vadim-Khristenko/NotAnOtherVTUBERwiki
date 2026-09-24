@@ -776,6 +776,19 @@ pub async fn chrome_settings(
             footer_rows => rows,
             footer_customised => customised,
             offered => ctx.offered_languages(),
+            notices => {
+                let saved = crate::chrome::notices(&ctx.wiki.settings);
+                ctx.offered_languages()
+                    .into_iter()
+                    .map(|code| minijinja::context! {
+                        code => code.clone(),
+                        name => crate::translate::native_name(&ctx, &code),
+                        text => saved.get(&code).and_then(Value::as_str).unwrap_or("").to_string(),
+                    })
+                    .collect::<Vec<_>>()
+            },
+            domains => crate::chrome::domains(&ctx.wiki.settings).join(", "),
+            notice_max => crate::chrome::NOTICE_MAX,
             saved => query.saved.is_some(),
             refused => query.refused.filter(|n| *n > 0),
         },
@@ -832,6 +845,30 @@ pub async fn save_chrome_settings(
     } else {
         Value::Array(links)
     };
+    let mut notice = serde_json::Map::new();
+    for code in &offered {
+        let text = form
+            .get(&format!("notice_{code}"))
+            .map(|v| v.trim().replace("\r\n", "\n"))
+            .unwrap_or_default();
+        if !text.is_empty() {
+            let text: String = text.chars().take(crate::chrome::NOTICE_MAX).collect();
+            notice.insert(code.clone(), Value::String(text));
+        }
+    }
+    let raw_domains = form.get("domains").map(String::as_str).unwrap_or("");
+    let domains: Vec<String> = raw_domains
+        .split([',', ' ', '\n'])
+        .filter(|d| !d.trim().is_empty())
+        .filter_map(|d| {
+            let clean = crate::chrome::clean_domain(d);
+            if clean.is_none() {
+                refused += 1;
+            }
+            clean
+        })
+        .take(crate::chrome::MAX_DOMAINS)
+        .collect();
 
     let mut settings = ctx.wiki.settings.clone();
     if !settings.is_object() {
@@ -844,6 +881,8 @@ pub async fn save_chrome_settings(
         .filter(Value::is_object)
         .unwrap_or_else(|| json!({}));
     chrome["header"] = header.clone();
+    chrome["notice"] = Value::Object(notice);
+    chrome["domains"] = json!(domains);
     if footer.is_null() {
         if let Some(map) = chrome.as_object_mut() {
             map.remove("footer");
@@ -867,7 +906,7 @@ pub async fn save_chrome_settings(
             action: "wiki.chrome",
             entity_type: "wiki",
             entity_id: Some(ctx.wiki.id),
-            meta: json!({ "header": header, "footer": footer, "refused_links": refused }),
+            meta: json!({ "header": header, "footer": footer, "domains": domains, "refused_links": refused }),
         },
     )
     .await?;
