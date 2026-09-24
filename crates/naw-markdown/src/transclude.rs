@@ -2,9 +2,11 @@
 //!
 //! `{{Name | key=value | positional}}` is replaced by the body of the page
 //! `Template:name`, with `{{{key}}}` and `{{{key|default}}}` in it filled from
-//! the call. `{{#if: test | then | else}}` and `{{#ifeq: a | b | then | else}}`
-//! choose between texts, and `{{!}}` is a literal `|` for a table row inside
-//! an argument.
+//! the call. `{{#if: test | then | else}}`, `{{#ifeq: a | b | then | else}}`
+//! and `{{#switch: value | case = text | #default = text}}` choose between
+//! texts, `{{PAGELANGUAGE}}` is the page's language code, so a template can
+//! label its fields in the reader's language, and `{{!}}` is a literal `|` for
+//! a table row inside an argument.
 //!
 //! In a template's source, `<noinclude>...</noinclude>` shows only on the
 //! template's own page (documentation) and `<includeonly>...</includeonly>`
@@ -26,12 +28,15 @@ pub const CALLS_MAX: usize = 2000;
 /// copies would otherwise multiply a small page into gigabytes.
 pub const OUTPUT_MAX: usize = 12 * 1024 * 1024;
 
-/// What goes in the text where a call fails. `{name}` is the template's name.
+/// What a run takes from the page: the text that goes where a call fails
+/// (`{name}` is the template's name), and the page's language for
+/// `{{PAGELANGUAGE}}`.
 #[derive(Clone, Debug)]
 pub struct Notes {
     pub missing: String,
     pub looped: String,
     pub limit: String,
+    pub language: String,
 }
 
 impl Default for Notes {
@@ -40,6 +45,7 @@ impl Default for Notes {
             missing: "[Template:{name}](/template:{name})".into(),
             looped: "**Template loop: {name}**".into(),
             limit: "**Template limit reached**".into(),
+            language: "en".into(),
         }
     }
 }
@@ -202,8 +208,12 @@ impl Run<'_> {
         }
         let parts = split_top(inner, '|');
         let head = parts[0].trim();
-        if head == "!" && parts.len() == 1 {
-            return "|".into();
+        if parts.len() == 1 {
+            match head {
+                "!" => return "|".into(),
+                "PAGELANGUAGE" => return self.notes.language.clone(),
+                _ => {}
+            }
         }
         if let Some(function) = head.strip_prefix('#') {
             return self.function(function, &parts[1..], depth);
@@ -268,6 +278,36 @@ impl Run<'_> {
                 } else {
                     arg(self, 2)
                 }
+            }
+            // `{{#switch: value | a = one | b | c = shared | #default = other}}`:
+            // a case without `=` falls through to the next one that has it, and a
+            // last bare case is the default.
+            "switch" => {
+                let value = self.text(first, depth + 1).trim().to_string();
+                let mut matched = false;
+                let mut default = None;
+                for (i, part) in rest.iter().enumerate() {
+                    match part.split_once('=') {
+                        Some((case, result)) => {
+                            let case = self.text(case, depth + 1).trim().to_string();
+                            if matched || case == value {
+                                return self.text(result, depth + 1).trim().to_string();
+                            }
+                            if case == "#default" {
+                                default = Some(result);
+                            }
+                        }
+                        None if i + 1 == rest.len() => default = Some(part),
+                        None => {
+                            if self.text(part, depth + 1).trim() == value {
+                                matched = true;
+                            }
+                        }
+                    }
+                }
+                default
+                    .map(|d| self.text(d, depth + 1).trim().to_string())
+                    .unwrap_or_default()
             }
             _ => String::new(),
         }
@@ -530,6 +570,31 @@ mod tests {
             "Debut 2021 other"
         );
         assert_eq!(run("{{T|kind=vtuber}}", &[("t", body)]).text, "No debut V");
+    }
+
+    #[test]
+    fn switch_picks_a_case_falls_through_and_defaults() {
+        let t = [("t", "{{#switch:{{{v|}}}|a=one|b|c=shared|#default=other}}")];
+        assert_eq!(run("{{T|v=a}}", &t).text, "one");
+        assert_eq!(run("{{T|v=b}}", &t).text, "shared");
+        assert_eq!(run("{{T|v=c}}", &t).text, "shared");
+        assert_eq!(run("{{T|v=z}}", &t).text, "other");
+        assert_eq!(run("{{#switch:x|a=1|fallback}}", &[]).text, "fallback");
+        assert_eq!(run("{{#switch:x|a=1}}", &[]).text, "");
+    }
+
+    #[test]
+    fn labels_follow_the_page_language() {
+        let t = with(&[(
+            "label",
+            "{{#switch:{{PAGELANGUAGE}}|ru=Дебют|#default=Debut}}",
+        )]);
+        let ru = Notes {
+            language: "ru".into(),
+            ..Notes::default()
+        };
+        assert_eq!(expand("{{Label}}", &t, &ru).text, "Дебют");
+        assert_eq!(expand("{{Label}}", &t, &Notes::default()).text, "Debut");
     }
 
     #[test]
