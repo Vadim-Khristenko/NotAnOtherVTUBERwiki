@@ -29,6 +29,8 @@ const MAX_FILE: usize = 2 * 1024 * 1024;
 const IN_FLIGHT: usize = 6;
 /// Emotes shown on the public list.
 const LIST_MAX: i64 = 3000;
+/// Emotes on one page of the list: enough to browse, few enough to load fast.
+const PAGE_SIZE: usize = 120;
 
 /// A 7TV source an admin entered.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +95,8 @@ struct Remote {
     name: String,
     animated: bool,
     url: String,
+    /// The 1x WebP, for lists; none when 7TV has no smaller file.
+    thumb_url: Option<String>,
     width: u32,
     height: u32,
 }
@@ -126,6 +130,12 @@ fn pick_file(emote: &Value) -> Option<Remote> {
         .iter()
         .find(|f| f.get("name").and_then(Value::as_str) == Some("2x.webp"))
         .or_else(|| files.iter().find(is_webp))?;
+    let thumb = files
+        .iter()
+        .find(|f| f.get("name").and_then(Value::as_str) == Some("1x.webp"))
+        .and_then(|f| f.get("name").and_then(Value::as_str))
+        .filter(|name| Some(*name) != file.get("name").and_then(Value::as_str))
+        .map(str::to_string);
     let base = if base.starts_with("//") {
         format!("https:{base}")
     } else {
@@ -143,6 +153,7 @@ fn pick_file(emote: &Value) -> Option<Remote> {
             .and_then(Value::as_bool)
             .unwrap_or(false),
         url: format!("{base}/{}", file.get("name")?.as_str()?),
+        thumb_url: thumb.map(|name| format!("{base}/{name}")),
         width: file.get("width").and_then(Value::as_u64).unwrap_or(64) as u32,
         height: file.get("height").and_then(Value::as_u64).unwrap_or(64) as u32,
     })
@@ -209,10 +220,13 @@ struct Stored {
     remote: Remote,
     key: String,
     size: i64,
+    /// The small copy and its size, when there is one.
+    thumb: Option<(String, i64)>,
 }
 
-async fn download(state: AppState, remote: Remote) -> Result<Stored, String> {
-    let bytes = crate::fetch::get(&state, &remote.url, MAX_FILE)
+/// Downloads one file into storage under the hash of its bytes.
+async fn store_file(state: &AppState, url: &str) -> Result<(String, i64), String> {
+    let bytes = crate::fetch::get(state, url, MAX_FILE)
         .await
         .map_err(|err| format!("download: {err}"))?
         .bytes;
@@ -234,14 +248,30 @@ async fn download(state: AppState, remote: Remote) -> Result<Stored, String> {
             .await
             .map_err(|e| e.to_string())?;
     }
-    Ok(Stored { remote, key, size })
+    Ok((key, size))
+}
+
+async fn download(state: AppState, remote: Remote) -> Result<Stored, String> {
+    let (key, size) = store_file(&state, &remote.url).await?;
+    let thumb = match &remote.thumb_url {
+        Some(url) => store_file(&state, url).await.ok(),
+        None => None,
+    };
+    Ok(Stored {
+        remote,
+        key,
+        size,
+        thumb,
+    })
 }
 
 /// Bytes all emotes take, a file shared by several names counted once.
 async fn budget_used(state: &AppState) -> Result<i64, AppError> {
     Ok(sqlx::query_scalar!(
         r#"SELECT COALESCE(SUM(size_bytes), 0)::bigint AS "used!"
-           FROM (SELECT DISTINCT storage_key, size_bytes FROM emotes) files"#
+           FROM (SELECT storage_key, size_bytes FROM emotes
+                 UNION
+                 SELECT thumb_key, thumb_bytes FROM emotes WHERE thumb_key IS NOT NULL) files"#
     )
     .fetch_one(&state.db)
     .await?)
@@ -379,6 +409,40 @@ async fn run_sync(
     }
     let not_fetched = queue.len();
 
+    // Emotes kept from an earlier sync, from before small copies were taken.
+    let bare: HashSet<String> = sqlx::query_scalar!(
+        "SELECT name FROM emotes WHERE source_id = $1 AND thumb_key IS NULL",
+        source_id
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(db_err)?
+    .into_iter()
+    .collect();
+    let mut thumbs: Vec<(String, String, i64)> = Vec::new();
+    let mut thumb_jobs = tokio::task::JoinSet::new();
+    let mut thumb_queue = wanted
+        .iter()
+        .filter(|e| keep.contains(&e.name) && bare.contains(&e.name))
+        .filter_map(|e| e.thumb_url.clone().map(|url| (e.name.clone(), url)));
+    loop {
+        while thumb_jobs.len() < IN_FLIGHT && used < budget {
+            let Some((name, url)) = thumb_queue.next() else {
+                break;
+            };
+            let state = state.clone();
+            thumb_jobs
+                .spawn(async move { store_file(&state, &url).await.map(|(k, n)| (name, k, n)) });
+        }
+        let Some(done) = thumb_jobs.join_next().await else {
+            break;
+        };
+        if let Ok(Ok((name, key, size))) = done {
+            used += size;
+            thumbs.push((name, key, size));
+        }
+    }
+
     let mut tx = state.db.begin().await.map_err(db_err)?;
     let current: Vec<String> = keep
         .iter()
@@ -395,12 +459,14 @@ async fn run_sync(
     .map_err(db_err)?;
     for file in &stored {
         sqlx::query!(
-            "INSERT INTO emotes (wiki_id, name, source_id, provider_id, storage_key, width, height, animated, size_bytes)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            "INSERT INTO emotes (wiki_id, name, source_id, provider_id, storage_key, width, height, animated, size_bytes,
+                                 thumb_key, thumb_bytes)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              ON CONFLICT (wiki_id, name) DO UPDATE SET
                provider_id = EXCLUDED.provider_id, storage_key = EXCLUDED.storage_key,
                width = EXCLUDED.width, height = EXCLUDED.height,
-               animated = EXCLUDED.animated, size_bytes = EXCLUDED.size_bytes
+               animated = EXCLUDED.animated, size_bytes = EXCLUDED.size_bytes,
+               thumb_key = EXCLUDED.thumb_key, thumb_bytes = EXCLUDED.thumb_bytes
              WHERE emotes.source_id = EXCLUDED.source_id",
             wiki_id,
             file.remote.name,
@@ -410,7 +476,21 @@ async fn run_sync(
             file.remote.width as i32,
             file.remote.height as i32,
             file.remote.animated,
-            file.size
+            file.size,
+            file.thumb.as_ref().map(|t| t.0.clone()),
+            file.thumb.as_ref().map_or(0, |t| t.1)
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+    }
+    for (name, key, size) in &thumbs {
+        sqlx::query!(
+            "UPDATE emotes SET thumb_key = $3, thumb_bytes = $4 WHERE source_id = $1 AND name = $2",
+            source_id,
+            name,
+            key,
+            size
         )
         .execute(&mut *tx)
         .await
@@ -442,7 +522,36 @@ async fn run_sync(
     .await
     .map_err(db_err)?;
     tx.commit().await.map_err(db_err)?;
+    // Readers' browsers drop the emotes they keep and take the new set.
+    bump_client_cache(&state.db, wiki_id)
+        .await
+        .map_err(db_err)?;
     Ok(())
+}
+
+/// Tells readers' browsers to drop the emotes they keep: the service worker
+/// (`/emote-cache.js`) keys its cache by this number, which every page
+/// carries. Bumped after a sync and by the admin's button.
+pub(crate) async fn bump_client_cache(db: &sqlx::PgPool, wiki_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE wikis SET settings = jsonb_set(
+             CASE WHEN jsonb_typeof(settings) = 'object' THEN settings ELSE '{}'::jsonb END,
+             '{emote_cache}',
+             to_jsonb(COALESCE((settings->>'emote_cache')::bigint, 0) + 1))
+         WHERE id = $1",
+        wiki_id
+    )
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// The emote cache version a page announces to its service worker.
+pub(crate) fn client_cache_version(settings: &Value) -> i64 {
+    settings
+        .get("emote_cache")
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
 }
 
 /// The names marked in rendered HTML, each once.
@@ -533,15 +642,23 @@ pub async fn expand(state: &AppState, wiki_id: Uuid, html: String) -> Result<Str
 pub struct ListQuery {
     #[serde(default)]
     q: String,
+    #[serde(default)]
+    page: Option<usize>,
+}
+
+/// One emote for a list: name, file, small file, drawn size, source.
+struct Listed {
+    name: String,
+    key: String,
+    thumb: Option<String>,
+    width: i32,
+    height: i32,
+    source: String,
 }
 
 /// Every emote of a wiki matching `query` (a substring of the name, any
 /// case), with its source, sorted by source and name.
-async fn find(
-    state: &AppState,
-    wiki_id: Uuid,
-    query: &str,
-) -> Result<Vec<(String, String, i32, i32, String)>, AppError> {
+async fn find(state: &AppState, wiki_id: Uuid, query: &str) -> Result<Vec<Listed>, AppError> {
     let pattern = format!(
         "%{}%",
         query
@@ -554,7 +671,7 @@ async fn find(
             .replace('_', "\\_")
     );
     Ok(sqlx::query!(
-        r#"SELECT e.name, e.storage_key, e.width, e.height, s.label
+        r#"SELECT e.name, e.storage_key, e.thumb_key, e.width, e.height, s.label
            FROM emotes e JOIN emote_sources s ON s.id = e.source_id
            WHERE e.wiki_id = $1 AND e.name ILIKE $2
            ORDER BY s.created_at, lower(e.name), e.name LIMIT $3"#,
@@ -565,14 +682,13 @@ async fn find(
     .fetch_all(&state.db)
     .await?
     .into_iter()
-    .map(|row| {
-        (
-            row.name,
-            row.storage_key,
-            (row.width / 2).max(1),
-            (row.height / 2).max(1),
-            row.label,
-        )
+    .map(|row| Listed {
+        name: row.name,
+        key: row.storage_key,
+        thumb: row.thumb_key,
+        width: (row.width / 2).max(1),
+        height: (row.height / 2).max(1),
+        source: row.label,
     })
     .collect())
 }
@@ -587,17 +703,23 @@ pub async fn list(
     let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let found = find(&state, ctx.wiki.id, &query.q).await?;
     let total = found.len();
+    let pages = total.div_ceil(PAGE_SIZE).max(1);
+    let page_no = query.page.unwrap_or(1).clamp(1, pages);
     let mut groups: Vec<(String, Vec<minijinja::Value>)> = Vec::new();
-    for (name, key, width, height, source) in found {
+    for e in found
+        .into_iter()
+        .skip((page_no - 1) * PAGE_SIZE)
+        .take(PAGE_SIZE)
+    {
         let emote = minijinja::context! {
-            name => name,
-            url => crate::media::url_for_key(&key),
-            width => width,
-            height => height,
+            name => e.name,
+            url => crate::media::url_for_key(e.thumb.as_deref().unwrap_or(&e.key)),
+            width => e.width,
+            height => e.height,
         };
         match groups.last_mut() {
-            Some((label, list)) if *label == source => list.push(emote),
-            _ => groups.push((source, vec![emote])),
+            Some((label, list)) if *label == e.source => list.push(emote),
+            _ => groups.push((e.source, vec![emote])),
         }
     }
     let groups: Vec<minijinja::Value> = groups
@@ -617,6 +739,9 @@ pub async fn list(
                 version => ENGINE_VERSION,
                 groups => groups,
                 total => total,
+                page_no => page_no,
+                pages => pages,
+                page_size => PAGE_SIZE,
                 query => query.q.trim(),
                 can_manage => ctx.actor.can(Capability::WikiSettings),
             }
@@ -625,8 +750,9 @@ pub async fn list(
     Ok(pages::html_response(html, &headers))
 }
 
-/// GET /emotes.json: `[{"n": name, "u": url, "w": width, "h": height}]`, for
-/// the editor's picker. The same for every reader, so it may be cached.
+/// GET /emotes.json: `[{"n": name, "u": url, "t": small url, "w": width, "h":
+/// height}]`, for the editor's picker and the emotes page's search. The same
+/// for every reader, so it may be cached.
 pub async fn list_json(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
@@ -636,8 +762,14 @@ pub async fn list_json(
     let list: Vec<Value> = find(&state, ctx.wiki.id, "")
         .await?
         .into_iter()
-        .map(|(name, key, width, height, _)| {
-            json!({ "n": name, "u": crate::media::url_for_key(&key), "w": width, "h": height })
+        .map(|e| {
+            json!({
+                "n": e.name,
+                "u": crate::media::url_for_key(&e.key),
+                "t": crate::media::url_for_key(e.thumb.as_deref().unwrap_or(&e.key)),
+                "w": e.width,
+                "h": e.height,
+            })
         })
         .collect();
     Ok((
@@ -805,6 +937,46 @@ pub async fn resync(
     .await;
     spawn_sync(state.clone(), id);
     Ok(pages::see_other("/admin/emotes?done=syncing"))
+}
+
+/// POST /admin/emotes/refresh-clients: every reader's browser drops the emotes
+/// it keeps and fetches them again, for when a cached file went bad.
+pub async fn refresh_clients(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let ctx = or_respond!(manage_gate(&state, &headers, user.as_ref()).await);
+    bump_client_cache(&state.db, ctx.wiki.id).await?;
+    crate::audit::record_or_log(
+        &state.db,
+        crate::audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action: "emotes.client_refresh",
+            entity_type: "wiki",
+            entity_id: Some(ctx.wiki.id),
+            meta: json!({}),
+        },
+    )
+    .await;
+    Ok(pages::see_other("/admin/emotes?done=refreshed"))
+}
+
+/// The service worker that keeps emote files in the browser. See
+/// `emote_cache.js`; it only ever answers for `/media/emotes/`.
+pub async fn service_worker() -> Response {
+    (
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "text/javascript; charset=utf-8",
+            ),
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
+        ],
+        include_str!("emote_cache.js"),
+    )
+        .into_response()
 }
 
 /// POST /admin/emotes/{id}/remove. Files stay in storage, shared by hash.

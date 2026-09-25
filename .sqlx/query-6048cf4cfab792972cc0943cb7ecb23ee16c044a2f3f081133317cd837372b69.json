@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE wikis SET settings = jsonb_set(\n             CASE WHEN jsonb_typeof(settings) = 'object' THEN settings ELSE '{}'::jsonb END,\n             '{emote_cache}',\n             to_jsonb(COALESCE((settings->>'emote_cache')::bigint, 0) + 1))\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6048cf4cfab792972cc0943cb7ecb23ee16c044a2f3f081133317cd837372b69"
+}

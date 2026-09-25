@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO emotes (wiki_id, name, source_id, provider_id, storage_key, width, height, animated, size_bytes,\n                                 thumb_key, thumb_bytes)\n             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n             ON CONFLICT (wiki_id, name) DO UPDATE SET\n               provider_id = EXCLUDED.provider_id, storage_key = EXCLUDED.storage_key,\n               width = EXCLUDED.width, height = EXCLUDED.height,\n               animated = EXCLUDED.animated, size_bytes = EXCLUDED.size_bytes,\n               thumb_key = EXCLUDED.thumb_key, thumb_bytes = EXCLUDED.thumb_bytes\n             WHERE emotes.source_id = EXCLUDED.source_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Bool",
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5afc900e8fccaf86c3f67585c5dba9311df94eedefb4bce1f75b57524cb5295f"
+}

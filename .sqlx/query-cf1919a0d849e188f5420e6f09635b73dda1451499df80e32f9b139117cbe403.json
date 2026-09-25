@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(SUM(size_bytes), 0)::bigint AS \"used!\"\n           FROM (SELECT storage_key, size_bytes FROM emotes\n                 UNION\n                 SELECT thumb_key, thumb_bytes FROM emotes WHERE thumb_key IS NOT NULL) files",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "used!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "cf1919a0d849e188f5420e6f09635b73dda1451499df80e32f9b139117cbe403"
+}

@@ -565,6 +565,10 @@
     <span>{{ t("admin.emotes_budget", used=used_mb, budget=budget_mb) }}</span>
     <meter min="0" max="100" value="{{ used_percent }}" high="90">{{ used_percent }}%</meter>
   </p>
+  <form method="post" action="/admin/emotes/refresh-clients" class="inline-form emote-refresh">
+    <button class="button-preview" type="submit"><svg class="icon" aria-hidden="true"><use href="#i-arrow-back-up" /></svg>{{ t("admin.emotes_refresh_clients") }}</button>
+    <span class="field-note">{{ t("admin.emotes_refresh_note") }}</span>
+  </form>
   <form method="post" action="/admin/emotes/add" class="admin-form">
     <label class="field">{{ t("admin.emotes_add") }}
       <input class="field-input" name="source" required maxlength="200" placeholder="https://7tv.app/users/..." autocomplete="off" />

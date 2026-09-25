@@ -1,9 +1,13 @@
 {% extends "layout.html" %}
 {#
-  Every emote this wiki has, with the text that shows it in an article.
+  Every emote this wiki has, with the text that shows it in an article, one
+  page at a time. The cards show the small copy of each emote, so a page of
+  them stays light. Typing in the search box looks through all of them at
+  once from /emotes.json; without a script the form searches on the server.
 
-  `groups`      per source: label, emotes (name, url, width, height)
-  `total`       emotes shown
+  `groups`      per source on this page: label, emotes (name, url, width, height)
+  `total`       emotes matching, on every page
+  `page_no`, `pages`, `page_size`
   `query`       the ?q= filter, if any
   `can_manage`  whether the viewer may add or remove sources
 #}
@@ -16,14 +20,18 @@
   <input class="field-input" id="emote-q" name="q" type="search" value="{{ query }}" placeholder="{{ t('emotes.search') }}" autocomplete="off" />
   <button class="button-preview" type="submit">{{ t("emotes.search_submit") }}</button>
 </form>
-<p class="muted-cell" id="emote-count" data-template="{{ t('emotes.count', count='{n}') }}">{{ t("emotes.count", count=total) }}</p>
+<p class="muted-cell" id="emote-count" data-template="{{ t('emotes.count', count='{n}') }}" data-more="{{ t('emotes.picker_more') }}">{{ t("emotes.count", count=total) }}</p>
+
+<div id="emote-results" class="emote-results" hidden><ul class="emote-grid"></ul></div>
+
+<div id="emote-pages">
 {% if groups %}
 {% for group in groups %}
 <section class="emote-group">
   <h2>{{ group.label }}</h2>
   <ul class="emote-grid">
     {% for e in group.emotes %}
-    <li class="emote-card" data-name="{{ e.name | lower }}">
+    <li class="emote-card">
       <img src="{{ e.url }}" alt="" width="{{ e.width }}" height="{{ e.height }}" loading="lazy" decoding="async" />
       <code>:{{ e.name }}:</code>
       <button class="emote-copy" type="button" data-copy=":{{ e.name }}:" hidden>{{ t("emotes.copy") }}</button>
@@ -32,41 +40,77 @@
   </ul>
 </section>
 {% endfor %}
+{% if pages > 1 %}
+<nav class="pager" aria-label="{{ t('emotes.pages') }}">
+  {% if page_no > 1 %}<a href="/emotes?q={{ query }}&amp;page={{ page_no - 1 }}">{{ t("admin.previous") }}</a>{% endif %}
+  <span class="muted-cell">{{ t("emotes.page_of", n=page_no, total=pages) }}</span>
+  {% if page_no < pages %}<a href="/emotes?q={{ query }}&amp;page={{ page_no + 1 }}">{{ t("admin.next") }}</a>{% endif %}
+</nav>
+{% endif %}
 {% else %}
 <p class="muted-cell">{% if query %}{{ t("emotes.no_match") }}{% else %}{{ t("emotes.none") }}{% endif %}</p>
 {% endif %}
+</div>
 <script nonce="{{ csp_nonce() }}">
 (function () {
-  // Filter as you type, and copy on click. Without a script the form
-  // searches on the server and the text can be selected by hand.
   var input = document.getElementById("emote-q");
   var count = document.getElementById("emote-count");
-  var cards = Array.prototype.slice.call(document.querySelectorAll(".emote-card"));
-  if (input) {
-    input.addEventListener("input", function () {
-      var q = input.value.trim().toLowerCase();
-      var shown = 0;
-      cards.forEach(function (card) {
-        var hit = !q || card.dataset.name.indexOf(q) !== -1;
-        card.hidden = !hit;
-        if (hit) shown++;
+  var pages = document.getElementById("emote-pages");
+  var results = document.getElementById("emote-results");
+  var grid = results.querySelector("ul");
+  var LIMIT = {{ page_size }};
+  var copyLabel = "{{ t('emotes.copy') }}";
+  var all = null, loading = null, pageCount = count.textContent;
+
+  function wireCopy(button) {
+    if (!navigator.clipboard) return;
+    button.hidden = false;
+    var label = button.textContent;
+    button.addEventListener("click", function () {
+      navigator.clipboard.writeText(button.dataset.copy).then(function () {
+        button.textContent = "✓";
+        setTimeout(function () { button.textContent = label; }, 1200);
       });
-      document.querySelectorAll(".emote-group").forEach(function (group) {
-        group.hidden = !group.querySelector(".emote-card:not([hidden])");
-      });
-      if (count) count.textContent = count.dataset.template.replace("{n}", shown);
     });
   }
-  if (navigator.clipboard) {
-    document.querySelectorAll(".emote-copy").forEach(function (button) {
-      button.hidden = false;
-      var label = button.textContent;
-      button.addEventListener("click", function () {
-        navigator.clipboard.writeText(button.dataset.copy).then(function () {
-          button.textContent = "\u2713";
-          setTimeout(function () { button.textContent = label; }, 1200);
-        });
-      });
+  document.querySelectorAll(".emote-copy").forEach(wireCopy);
+
+  function card(e) {
+    var li = document.createElement("li");
+    li.className = "emote-card";
+    var img = document.createElement("img");
+    img.src = e.t || e.u; img.alt = ""; img.width = e.w; img.height = e.h;
+    img.loading = "lazy"; img.decoding = "async";
+    var code = document.createElement("code");
+    code.textContent = ":" + e.n + ":";
+    var button = document.createElement("button");
+    button.className = "emote-copy"; button.type = "button";
+    button.dataset.copy = ":" + e.n + ":"; button.textContent = copyLabel; button.hidden = true;
+    li.appendChild(img); li.appendChild(code); li.appendChild(button);
+    wireCopy(button);
+    return li;
+  }
+
+  function draw() {
+    var q = input.value.trim().toLowerCase();
+    if (!q) {
+      results.hidden = true; pages.hidden = false; count.textContent = pageCount;
+      return;
+    }
+    var hits = all.filter(function (e) { return e.n.toLowerCase().indexOf(q) !== -1; });
+    grid.textContent = "";
+    hits.slice(0, LIMIT).forEach(function (e) { grid.appendChild(card(e)); });
+    results.hidden = false; pages.hidden = true;
+    count.textContent = count.dataset.template.replace("{n}", hits.length)
+      + (hits.length > LIMIT ? " " + count.dataset.more.replace("{n}", hits.length - LIMIT) : "");
+  }
+
+  if (input && window.fetch) {
+    input.addEventListener("input", function () {
+      if (all) return draw();
+      if (!input.value.trim()) return draw();
+      loading = loading || fetch("/emotes.json").then(function (r) { return r.json(); }).then(function (list) { all = list; });
+      loading.then(draw, function () {});
     });
   }
 })();

@@ -357,7 +357,7 @@ a.button-save, a.button-preview { display: inline-flex; align-items: center; jus
 .content img.emote, img.emote { display: inline-block; height: 1.375em; width: auto; max-width: none; vertical-align: -0.3em; margin: 0 0.05em; border-radius: 0; }
 .emote-grid { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: var(--s3, 0.75rem); }
 .emote-card { display: grid; justify-items: center; gap: 0.3rem; padding: var(--s3, 0.75rem); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elevated); text-align: center; }
-.emote-card img { height: 2.5rem; width: auto; }
+.emote-card img { height: 2rem; width: auto; }
 .emote-card code { font-family: var(--font-mono); font-size: 0.8rem; word-break: break-all; }
 .emote-budget { display: flex; align-items: center; gap: var(--s3, 0.75rem); flex-wrap: wrap; }
 .emote-budget meter { width: 12rem; }
@@ -1026,5 +1026,24 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
    with tables and needs the width. #}
 <main class="{% block main_class %}content{% endblock %}" id="content">{% block body %}{% endblock %}</main>
 {% include "_footer.html" %}
+{# Emote files stay in the browser (see /emote-cache.js). The version comes
+   from the server and changes after an emote sync, so readers keep their copy
+   until there is something new. A picture that fails to load is fetched once
+   more past the cache. Pages work the same without any of this. #}
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  if ("serviceWorker" in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register("/emote-cache.js?v={{ emote_cache | default(0) }}", { scope: "/" }).catch(function () {});
+  }
+  document.addEventListener("error", function (event) {
+    var img = event.target;
+    if (!img || img.tagName !== "IMG" || img.dataset.retried) return;
+    var src = img.getAttribute("src") || "";
+    if (src.indexOf("/media/emotes/") !== 0) return;
+    img.dataset.retried = "1";
+    img.src = src + (src.indexOf("?") === -1 ? "?" : "&") + "fresh=1";
+  }, true);
+})();
+</script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT e.name, e.storage_key, e.width, e.height, s.label\n           FROM emotes e JOIN emote_sources s ON s.id = e.source_id\n           WHERE e.wiki_id = $1 AND e.name ILIKE $2\n           ORDER BY s.created_at, lower(e.name), e.name LIMIT $3",
+  "query": "SELECT e.name, e.storage_key, e.thumb_key, e.width, e.height, s.label\n           FROM emotes e JOIN emote_sources s ON s.id = e.source_id\n           WHERE e.wiki_id = $1 AND e.name ILIKE $2\n           ORDER BY s.created_at, lower(e.name), e.name LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,17 @@
       },
       {
         "ordinal": 2,
+        "name": "thumb_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "emotes",
+            "name": "thumb_key"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "width",
         "type_info": "Int4",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "height",
         "type_info": "Int4",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "label",
         "type_info": "Text",
         "origin": {
@@ -69,10 +80,11 @@
     "nullable": [
       false,
       false,
+      true,
       false,
       false,
       false
     ]
   },
-  "hash": "23bc72372de9a12ffc352dd9cd09d7db15a85dd2302475afd40d7b63cf1cd7ea"
+  "hash": "f0852c0c01fb274c22c5022c51c12660f4df6513834e51800d948c47cf9747d0"
 }

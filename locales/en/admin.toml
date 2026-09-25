@@ -290,6 +290,9 @@ emotes_done_syncing = "Sync started."
 emotes_done_removed = "Source removed, with its emotes."
 emotes_done_already = "That source is already on the list."
 emotes_done_unreadable = "That is not a 7TV user or emote set link."
+emotes_done_refreshed = "Readers' browsers will fetch the emotes again the next time they open a page."
+emotes_refresh_clients = "Refresh emotes for readers"
+emotes_refresh_note = "Browsers keep emotes and do not download them again. They refresh on their own after a sync; this button is for when someone sees a broken emote."
 
 chrome_emotes = "Emotes"
 

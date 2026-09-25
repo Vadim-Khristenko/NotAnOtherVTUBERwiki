@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE emotes SET thumb_key = $3, thumb_bytes = $4 WHERE source_id = $1 AND name = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "448587588c490457fd4ea1e20178042880fe075d442e406a5c2e3da5fa76d054"
+}

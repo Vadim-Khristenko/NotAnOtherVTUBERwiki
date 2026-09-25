@@ -189,6 +189,11 @@ fn routes(state: AppState) -> Router {
         .route("/emotes.json", get(emotes::list_json))
         .route("/admin/emotes", get(emotes::admin_page))
         .route("/admin/emotes/add", post(emotes::add))
+        .route(
+            "/admin/emotes/refresh-clients",
+            post(emotes::refresh_clients),
+        )
+        .route("/emote-cache.js", get(emotes::service_worker))
         .route("/admin/emotes/{id}/sync", post(emotes::resync))
         .route("/admin/emotes/{id}/remove", post(emotes::remove))
         .route(

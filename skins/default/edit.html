@@ -228,7 +228,7 @@
         b.title = ":" + e.n + ":";
         b.setAttribute("role", "option");
         var img = document.createElement("img");
-        img.src = e.u; img.alt = ":" + e.n + ":"; img.width = e.w; img.height = e.h;
+        img.src = e.t || e.u; img.alt = ":" + e.n + ":"; img.width = e.w; img.height = e.h;
         img.loading = "lazy"; img.decoding = "async";
         b.appendChild(img);
         b.addEventListener("click", function () { insertSnippet(":" + e.n + ": "); });
