@@ -255,6 +255,28 @@ pub(crate) fn slug_is_valid(path: &str) -> bool {
     }
 }
 
+/// First path segments the engine answers itself. The router tries these
+/// before `/{slug}`, so a page at one of them could be created and never opened.
+pub(crate) const RESERVED: &[&str] = &[
+    "account", "admin", "auth", "emotes", "errors", "health", "lang", "login", "logout", "media",
+    "new", "preview", "ready", "search", "settings", "skin", "system", "user",
+];
+
+/// Why a page cannot live at `path`, when it cannot: an engine route, or a
+/// language code, which the router reads as a language prefix (`/ru/...`).
+pub(crate) fn reserved(path: &str, is_language: impl Fn(&str) -> bool) -> Option<&'static str> {
+    let ("main", bare) = split_path(path) else {
+        return None;
+    };
+    if RESERVED.contains(&bare) {
+        Some("error.reserved_route")
+    } else if crate::locale_path::looks_like_language(bare) && is_language(bare) {
+        Some("error.reserved_language")
+    } else {
+        None
+    }
+}
+
 /// The lowest role that edits a template. One bad edit to a template breaks
 /// every page that uses it, so they start at curator even when unprotected.
 pub(crate) const TEMPLATE_EDIT_FLOOR: crate::perm::WikiRole = crate::perm::WikiRole::Curator;
@@ -994,6 +1016,31 @@ pub async fn create_page(
             "slug: lowercase letters, digits and dashes, up to 100 characters",
         ));
     }
+    if let Some(key) = reserved(&slug, |code| ctx.skin.messages.has(code)) {
+        // Back to the form with everything the author wrote, and the reason on top.
+        let view = FormView {
+            heading: &ctx.t("editor.new_page"),
+            action: &ctx.link("/new"),
+            form_locale: Some(&chosen_locale(&ctx, &form.locale)),
+            show_slug: true,
+            slug: &slug,
+            title_value: &form.title,
+            summary_value: &form.summary,
+            body_md: &form.body_md,
+            base_revision: "",
+            locked: false,
+            fixed_title: false,
+            back_href: None,
+            translation_of: None,
+        };
+        let mut response = render_form_with(
+            &ctx,
+            &view,
+            minijinja::context! { form_error => ctx.t_with(key, &[("slug", &slug)]), slug_invalid => true },
+        )?;
+        *response.status_mut() = StatusCode::CONFLICT;
+        return Ok(response);
+    }
     let (namespace, bare) = split_path(&slug);
     // A description needs its file: there is no page for a file never uploaded.
     if namespace == "file"
@@ -1658,6 +1705,38 @@ mod tests {
         assert!(!slug_is_valid("a b"));
         assert!(!slug_is_valid("../home"));
         assert!(!slug_is_valid(&"x".repeat(101)));
+    }
+
+    fn installed(code: &str) -> bool {
+        matches!(code, "en" | "ru")
+    }
+
+    #[test]
+    fn engine_routes_are_not_page_addresses() {
+        for path in [
+            "admin", "login", "settings", "new", "search", "user", "system",
+        ] {
+            assert_eq!(
+                reserved(path, installed),
+                Some("error.reserved_route"),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn installed_languages_are_not_page_addresses() {
+        assert_eq!(reserved("ru", installed), Some("error.reserved_language"));
+        assert_eq!(reserved("en", installed), Some("error.reserved_language"));
+        // a language the wiki does not have is an ordinary address
+        assert_eq!(reserved("de", installed), None);
+    }
+
+    #[test]
+    fn ordinary_and_namespaced_addresses_pass() {
+        assert_eq!(reserved("filian", installed), None);
+        assert_eq!(reserved("admin-guide", installed), None);
+        assert_eq!(reserved("template:admin", installed), None);
     }
 
     fn query(jump_to: Option<&str>) -> PageQuery {

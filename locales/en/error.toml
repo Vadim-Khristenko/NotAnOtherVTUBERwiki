@@ -14,4 +14,5 @@ taken_title = "Address taken"
 taken_live = "A page with this address already exists."
 taken_archived = "A page with this address existed and was archived. An administrator can restore it."
 taken_link = "Look at that page"
-
+reserved_route = "\"/{slug}\" is an address the wiki keeps for itself, so a page there could never be opened. Pick another address, everything you wrote is still here."
+reserved_language = "\"{slug}\" is a language code: /{slug}/ opens the wiki in that language, so a page there could never be opened. Pick another address, everything you wrote is still here."

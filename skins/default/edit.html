@@ -20,6 +20,9 @@
   {{ t("editor.locked_note") }}
 </p>
 {% endif %}
+{% if form_error is defined and form_error %}
+<p class="notice notice-warn" role="alert" id="form-error">{{ form_error }}</p>
+{% endif %}
 <form method="post" action="{{ form_action }}">
 {#
   The revision this form was built from. The server compares it with the
@@ -29,7 +32,7 @@
 <input type="hidden" name="base_revision" value="{{ base_revision }}" />
 {% if show_slug %}
 <label class="field">{{ t("editor.slug") }}
-<input class="field-input" name="slug" value="{{ slug }}" maxlength="109" required />
+<input class="field-input" name="slug" value="{{ slug }}" maxlength="109" required{% if slug_invalid is defined and slug_invalid %} aria-invalid="true" aria-describedby="form-error" autofocus{% endif %} />
 <span class="field-note">{{ t("template.slug_note") }}</span>
 </label>
 {% elif slug %}

@@ -19,7 +19,7 @@ pub const LOCALE_HEADER: &str = "x-naw-content-locale";
 pub const PATH_HEADER: &str = "x-naw-path";
 
 /// A language code shape (`ru`, `pt-br`, `zh-hant`), checked before the lookup.
-fn looks_like_language(segment: &str) -> bool {
+pub(crate) fn looks_like_language(segment: &str) -> bool {
     let mut parts = segment.split('-');
     let Some(primary) = parts.next() else {
         return false;
