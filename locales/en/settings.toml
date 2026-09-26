@@ -69,3 +69,5 @@ avatar_dimensions = "That picture is too large on screen: at most 16384 pixels o
 avatar_quota = "You changed your avatar many times this hour. Try again later."
 avatar_address = "An avatar cannot come from that address."
 avatar_unreachable = "That picture could not be downloaded."
+reports = "Your reports"
+reports_note = "Mistakes, complaints and suggestions you sent to this wiki, and what its moderators answered. Only you and the moderators see them."

@@ -137,6 +137,34 @@
     {% endif %}
   </section>
 
+  {% if my_reports %}
+  <section class="settings-card settings-card-wide" aria-labelledby="s-reports-h" id="s-reports">
+    <h2 id="s-reports-h"><svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>{{ t("settings.reports") }}</h2>
+    <p class="field-note">{{ t("settings.reports_note") }}</p>
+    <ul class="report-cards" role="list">
+      {% for r in my_reports %}
+      <li class="report-card is-{{ r.status }}">
+        <div class="report-card-head">
+          <span class="tag tag-{{ r.kind }}">{{ r.kind_label }}</span>
+          {% if r.reason %}<span class="tag">{{ r.reason }}</span>{% endif %}
+          <span class="tag tag-status">{{ r.status_label }}</span>
+          <span class="muted-cell">{{ r.at }}</span>
+        </div>
+        <p class="report-card-subject"><a href="{{ r.subject_href }}">{{ r.subject_title }}</a></p>
+        <p class="report-card-message">{{ r.message }}</p>
+        {% if r.response %}
+        <div class="report-answer">
+          <p class="report-answer-head">{{ t("report.answer") }}{% if r.handled_at %} <span class="muted-cell">{{ r.handled_at }}</span>{% endif %}</p>
+          <p>{{ r.response }}</p>
+        </div>
+        {% elif r.status == "open" %}
+        <p class="muted-cell">{{ t("report.waiting") }}</p>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
   <section class="settings-card settings-card-wide" aria-labelledby="s-sessions">
     <h2 id="s-sessions"><svg class="icon" aria-hidden="true"><use href="#i-eye" /></svg>{{ t("settings.sessions") }}</h2>
     <ul class="settings-list">

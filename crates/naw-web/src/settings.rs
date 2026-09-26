@@ -144,6 +144,7 @@ pub async fn page(
         .collect();
 
     let policy = crate::policy::accounts(&state).await?;
+    let my_reports = crate::reports::mine(&state, &ctx, user.id).await?;
 
     // The saved preference, or "" to follow the browser.
     let chosen = if ctx.skin.messages.has(&user.locale) {
@@ -175,6 +176,7 @@ pub async fn page(
                 identities => identity_rows,
                 linkable => linkable,
                 sessions => session_rows,
+                my_reports => my_reports,
                 saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username" | "display_name" | "avatar" | "avatar_removed")),
                 error => crate::pages::message_key(query.error.as_deref(), &["rename_", "display_name_", "avatar_"]),
                 rename_enabled => policy.rename_enabled,

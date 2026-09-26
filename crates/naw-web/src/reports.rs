@@ -506,6 +506,50 @@ pub(crate) async fn open_count(db: &sqlx::PgPool, wiki_id: Uuid) -> Result<i64, 
 }
 
 /// A report's link to what it is about.
+/// How many of a reader's own reports the settings page lists.
+const MINE_SHOWN: i64 = 20;
+
+/// A reader's own reports in this wiki, newest first, with the staff's answer:
+/// what they sent is theirs to follow up on.
+pub(crate) async fn mine(
+    state: &AppState,
+    ctx: &Ctx,
+    user_id: Uuid,
+) -> Result<Vec<minijinja::Value>, AppError> {
+    let rows = sqlx::query!(
+        r#"SELECT r.kind, r.reason, r.subject, r.locale, r.message, r.status,
+                  r.created_at, r.handled_at, r.response,
+                  (SELECT p.title FROM pages p WHERE p.id = r.page_id AND p.deleted_at IS NULL) AS page_title
+           FROM reports r
+           WHERE r.wiki_id = $1 AND r.reporter_id = $2
+           ORDER BY r.created_at DESC
+           LIMIT $3"#,
+        ctx.wiki.id,
+        user_id,
+        MINE_SHOWN
+    )
+    .fetch_all(&state.db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            minijinja::context! {
+                kind => r.kind.clone(),
+                kind_label => ctx.t(&format!("report.short_{}", r.kind)),
+                reason => r.reason.as_deref().map(|x| ctx.t(&format!("report.reason_{x}"))),
+                subject_title => r.page_title.unwrap_or_else(|| r.subject.clone()),
+                subject_href => subject_href(ctx, &r.subject, r.locale.as_deref()),
+                message => excerpt(&r.message),
+                status => r.status.clone(),
+                status_label => ctx.t(&format!("report.status_{}", r.status)),
+                at => ctx.day(r.created_at),
+                handled_at => r.handled_at.map(|t| ctx.day(t)),
+                response => r.response.filter(|a| !a.trim().is_empty()),
+            }
+        })
+        .collect())
+}
+
 fn subject_href(ctx: &Ctx, subject: &str, locale: Option<&str>) -> String {
     match subject.strip_prefix("user:") {
         Some(name) => format!("/user/{name}"),

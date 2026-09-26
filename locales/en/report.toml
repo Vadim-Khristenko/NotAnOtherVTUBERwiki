@@ -74,3 +74,5 @@ save_answer = "Save the answer"
 [count]
 one = "{n} report"
 other = "{n} reports"
+answer = "The moderators answered"
+waiting = "Nobody has looked at it yet. You will find the answer here."
