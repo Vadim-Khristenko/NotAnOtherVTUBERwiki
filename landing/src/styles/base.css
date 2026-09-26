@@ -1,0 +1,110 @@
+/* ---------------------------------------------------------------------------
+   FilianWIKI landing: shared tokens and the page frame. Each section keeps
+   its own styles in its component.
+
+   Night plum, hot pink, violet, one cream highlight, and the exact purple of
+   just.call.me.l's art (--art) wherever the art sits, so it reads as part of
+   the page and never as a pasted picture.
+   --------------------------------------------------------------------------- */
+:root {
+  --bg: #0b0713;
+  --bg-2: #120a20;
+  --surface: #1a1029;
+  --surface-2: #231637;
+  --line: #34224f;
+  --ink: #fff4fa;
+  --ink-soft: #dccfe9;
+  --muted: #a898bd;
+  --hot: #ff2d7a;
+  --hot-ink: #ffffff;
+  --violet: #a366ff;
+  --cream: #ffe3a3;
+  --mint: #7cf2c9;
+  --art: #7c57a5;
+  --halo: 0 0 18px var(--bg), 0 0 3px var(--bg);
+  --display: "Unbounded", "Golos Text", system-ui, sans-serif;
+  --body: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --wrap: 1180px;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --spring: cubic-bezier(.34, 1.56, .64, 1);
+  /* objects lift off the page with a soft shadow tinted by the night, not a hard block */
+  --lift: 0 2px 0 rgb(0 0 0 / .28), 0 26px 50px -22px rgb(3 1 8 / .9);
+  --lift-up: 0 2px 0 rgb(0 0 0 / .28), 0 34px 60px -22px rgb(3 1 8 / .95);
+}
+:root[data-theme="light"] {
+  --bg: #fbf3ff;
+  --bg-2: #f3e6ff;
+  --surface: #ffffff;
+  --surface-2: #f6ecff;
+  --line: #e2cff5;
+  --ink: #1d0f2e;
+  --ink-soft: #3d2b55;
+  --muted: #6e5c86;
+  --hot: #e0005c;
+  --violet: #7a3dff;
+  --cream: #ffcf5c;
+  --mint: #0fae7a;
+  --halo: 0 0 16px var(--bg), 0 0 2px var(--bg);
+  --lift: 0 2px 0 rgb(58 31 92 / .1), 0 26px 50px -24px rgb(58 31 92 / .5);
+  --lift-up: 0 2px 0 rgb(58 31 92 / .1), 0 34px 60px -24px rgb(58 31 92 / .6);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; overflow-x: clip; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 1.0625rem/1.65 var(--body); overflow-x: clip; -webkit-font-smoothing: antialiased; }
+img, svg { max-width: 100%; }
+img { height: auto; display: block; }
+a { color: inherit; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--cream); outline-offset: 3px; border-radius: 6px; }
+::selection { background: var(--hot); color: var(--hot-ink); }
+[hidden] { display: none !important; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.wrap { width: min(var(--wrap), 100% - 2.5rem); margin-inline: auto; }
+html:not(.js) .js-only { display: none !important; }
+main { position: relative; z-index: 1; }
+
+.skip { position: fixed; left: 1rem; top: -4rem; z-index: 100; padding: .7rem 1rem; background: var(--hot); color: var(--hot-ink); font-weight: 700; text-decoration: none; }
+.skip:focus { top: 1rem; }
+
+/* film grain over everything, very faint, and still: a moving full-screen layer costs a weak GPU a whole frame */
+.grain { position: fixed; inset: -50%; z-index: 90; pointer-events: none; opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* section heads: a title whose words rise one by one, a lede */
+.section-title { margin: 0 0 1rem; font: 900 clamp(2rem, 4.8vw, 3.8rem)/1.04 var(--display); letter-spacing: -.045em; text-wrap: balance; text-shadow: var(--halo); }
+.section-lede { margin: 0; color: var(--ink-soft); font-size: 1.1rem; max-width: 40rem; text-shadow: var(--halo); }
+.section-head { position: relative; max-width: 48rem; margin-bottom: clamp(2rem, 5vw, 3.5rem); }
+.section-head::before { content: ""; position: absolute; inset: -1.4rem -1.8rem; z-index: -1; pointer-events: none; background: color-mix(in srgb, var(--bg) 80%, transparent); clip-path: polygon(0 6%, 100% 0, 98% 100%, 2% 94%); }
+.js .reveal { opacity: 0; transform: translateY(36px); transition: opacity .9s var(--ease), transform .9s var(--ease); }
+.js .reveal.is-in { opacity: 1; transform: none; }
+
+/* buttons that are not pills: a slab with a hard offset shadow that the button sinks into when pressed */
+.slab {
+  --mx: 0px; --my: 0px; --c: var(--hot); --t: var(--hot-ink);
+  display: inline-flex; align-items: center; gap: .6rem; padding: .95rem 1.4rem; border: 2px solid var(--ink); cursor: pointer;
+  background: var(--c); color: var(--t); font: 800 .95rem/1 var(--display); letter-spacing: -.01em; text-decoration: none; white-space: nowrap;
+  box-shadow: 5px 5px 0 var(--ink); transform: translate(var(--mx), var(--my)) rotate(-1deg);
+  transition: transform .3s var(--spring), box-shadow .2s var(--ease), background .2s;
+}
+.slab:hover { transform: translate(calc(var(--mx) - 2px), calc(var(--my) - 2px)) rotate(0deg); box-shadow: 8px 8px 0 var(--ink); }
+.slab:active { transform: translate(calc(var(--mx) + 5px), calc(var(--my) + 5px)); box-shadow: 0 0 0 var(--ink); }
+.slab.is-quiet { --c: var(--surface); --t: var(--ink); }
+.slab.is-cream { --c: var(--cream); --t: #1d0f2e; }
+.row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+
+/* toast */
+.toast { position: fixed; left: 50%; bottom: 7rem; z-index: 95; transform: translateX(-50%) rotate(-2deg); padding: .8rem 1.1rem; background: var(--cream); color: #1d0f2e; border: 2px solid #1d0f2e; box-shadow: var(--lift); font: 800 .85rem/1.2 var(--display); }
+.toast-enter-active { transition: transform .45s var(--ease), opacity .3s; }
+.toast-leave-active { transition: transform .3s var(--ease), opacity .3s; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, 1rem) rotate(4deg) scale(.9); }
+.confetti { position: fixed; top: -2rem; z-index: 96; pointer-events: none; display: block; }
+.confetti svg { display: block; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+  .js .reveal { opacity: 1; transform: none; }
+  .grain { display: none; }
+}
