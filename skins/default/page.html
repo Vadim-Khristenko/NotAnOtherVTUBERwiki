@@ -12,6 +12,9 @@
   voice for the content and not for the chrome around it.
 #}
 {% block body %}
+{% if preview is defined and preview %}
+<p class="notice notice-warn preview-bar" role="status">{{ t("editor.preview_bar") }}{% if preview_back %} <a href="{{ preview_back }}">{{ t("editor.back_to_editor") }}</a>{% endif %}</p>
+{% endif %}
 {% if slug is defined %}
 {# Actions sit above the article, where a reader who spots a mistake looks
    for them. The bottom row keeps only the date, which is reference, not action. #}

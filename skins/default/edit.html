@@ -23,7 +23,13 @@
 {% if form_error is defined and form_error %}
 <p class="notice notice-warn" role="alert" id="form-error">{{ form_error }}</p>
 {% endif %}
+<p class="notice" id="draft-note" role="status" hidden>
+  <span id="draft-text" data-template="{{ t('editor.draft_restored') }}"></span>
+  <button class="link-button" type="button" id="draft-discard">{{ t("editor.draft_discard") }}</button>
+</p>
 <form method="post" action="{{ form_action }}">
+{# Where the preview's "back to editing" leads: this editor, filled in by the script. #}
+<input type="hidden" name="back" id="editor-back" value="" />
 {#
   The revision this form was built from. The server compares it with the
   current one and refuses the save if somebody else got there first, which is
@@ -348,6 +354,77 @@
     if (sel) selbar.removeAttribute("hidden");
     else selbar.setAttribute("hidden", "");
   });
+  /* The draft: everything typed here is kept in this browser until it is
+     saved, so a preview that opened in this same tab, a closed tab or a
+     crash does not take the text with it. The revision the draft started
+     from travels with it: if the page changed meanwhile, saving shows the
+     conflict instead of writing over somebody else's edit. */
+  var form = area.form;
+  var back = document.getElementById("editor-back");
+  if (back) back.value = location.pathname + location.search;
+  var draftKey = "naw-draft:" + location.pathname + location.search;
+  var fields = ["title", "summary", "slug", "locale", "body_md", "base_revision"];
+  function snapshot() {
+    var out = {};
+    fields.forEach(function (name) {
+      var el = form && form.elements.namedItem(name);
+      if (el && "value" in el) out[name] = el.value;
+    });
+    return out;
+  }
+  var original = snapshot();
+  function same(a, b) { return fields.every(function (k) { return (a[k] || "") === (b[k] || ""); }); }
+  function fill(values) {
+    fields.forEach(function (name) {
+      var el = form && form.elements.namedItem(name);
+      if (el && "value" in el && values[name] !== undefined) el.value = values[name];
+    });
+    area.dispatchEvent(new Event("input"));
+  }
+  var store = null;
+  try { store = window.localStorage; } catch (e) {}
+  var saveTimer = null;
+  function saveDraft() {
+    if (!store) return;
+    var now = snapshot();
+    try {
+      if (same(now, original)) store.removeItem(draftKey);
+      else store.setItem(draftKey, JSON.stringify({ at: Date.now(), values: now }));
+    } catch (e) {}
+  }
+  if (store && form) {
+    var kept = null;
+    try { kept = JSON.parse(store.getItem(draftKey) || "null"); } catch (e) {}
+    var fresh = kept && kept.values && Date.now() - kept.at < 14 * 24 * 3600 * 1000;
+    if (fresh && !same(kept.values, original)) {
+      fill(kept.values);
+      var note = document.getElementById("draft-note");
+      var text = document.getElementById("draft-text");
+      if (note && text) {
+        var when = new Date(kept.at).toLocaleString(document.documentElement.lang || undefined, { dateStyle: "short", timeStyle: "short" });
+        text.textContent = text.getAttribute("data-template").replace("{when}", when);
+        note.hidden = false;
+        document.getElementById("draft-discard").addEventListener("click", function () {
+          fill(original);
+          try { store.removeItem(draftKey); } catch (e) {}
+          note.hidden = true;
+        });
+      }
+    } else if (kept) {
+      try { store.removeItem(draftKey); } catch (e) {}
+    }
+    form.addEventListener("input", function () {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveDraft, 400);
+    });
+    form.addEventListener("submit", function (ev) {
+      var sub = ev.submitter;
+      // the preview keeps the draft; saving hands the text to the server
+      if (sub && sub.hasAttribute("formaction")) { saveDraft(); return; }
+      try { store.removeItem(draftKey); } catch (e) {}
+    });
+  }
+
   var preview = document.getElementById("live-preview");
   var timer = null;
   function livePreview() {

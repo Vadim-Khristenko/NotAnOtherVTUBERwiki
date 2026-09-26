@@ -1515,6 +1515,9 @@ pub struct PreviewForm {
     /// For a template: a page that uses it, to preview the draft there.
     #[serde(default)]
     on_page: String,
+    /// The editor the preview came from, for its "back to editing" link.
+    #[serde(default)]
+    back: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1584,7 +1587,7 @@ pub async fn preview(
             body_html: &body_html,
             render_ms: Some(rendered.render_ms),
             template: "page.html",
-            extra: minijinja::context! { preview => true },
+            extra: minijinja::context! { preview => true, preview_back => local_path(form.back.trim()) },
         },
     )?;
     Ok(([HTML], html).into_response())
