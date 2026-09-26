@@ -279,8 +279,7 @@
       return fetch("/media/upload", { method: "POST", headers: { "Accept": "application/json" }, body: data })
         .then(function (res) {
           return res.json().then(function (json) {
-            if (res.ok && json.markdown) { insertSnippet(json.markdown + "
-"); return ""; }
+            if (res.ok && json.markdown) { insertSnippet(json.markdown + "\n"); return ""; }
             return file.name + ": " + (json.error || imageFile.dataset.failed);
           }, function () {
             return file.name + ": " + (res.status === 413 ? imageFile.dataset.tooLarge : imageFile.dataset.failed);
