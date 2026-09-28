@@ -40,6 +40,7 @@ const TEMPLATES: &[&str] = &[
     "_diff_table.html",
     "source.html",
     "report.html",
+    "drafts.html",
     "admin.html",
 ];
 
@@ -144,6 +145,26 @@ mod tests {
 
     fn default_skin() -> String {
         format!("{}/../../skins/default", env!("CARGO_MANIFEST_DIR"))
+    }
+
+    /// A template in the default skin that is not on the list is never loaded,
+    /// and the page that renders it fails with a 500 in production only.
+    #[test]
+    fn every_template_in_the_default_skin_is_loaded() {
+        let mut missing = Vec::new();
+        for entry in std::fs::read_dir(default_skin()).expect("default skin") {
+            let name = entry
+                .expect("entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned();
+            if (name.ends_with(".html") || name.ends_with(".svg"))
+                && !TEMPLATES.contains(&name.as_str())
+            {
+                missing.push(name);
+            }
+        }
+        assert!(missing.is_empty(), "add to TEMPLATES: {missing:?}");
     }
 
     fn locales() -> String {
