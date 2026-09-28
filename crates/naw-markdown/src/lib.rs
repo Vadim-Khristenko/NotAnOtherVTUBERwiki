@@ -1814,7 +1814,7 @@ fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 17;
+pub const RENDERER_VERSION: i32 = 18;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
