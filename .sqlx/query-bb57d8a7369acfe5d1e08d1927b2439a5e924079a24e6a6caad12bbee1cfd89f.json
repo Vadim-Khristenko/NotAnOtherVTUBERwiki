@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE drafts SET path = $4, locale = $5, title = $6, summary = $7, body_md = $8,\n                                   updated_at = now()\n                 WHERE id = $1 AND user_id = $2 AND wiki_id = $3 AND kind = 'new'\n                 RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "drafts",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bb57d8a7369acfe5d1e08d1927b2439a5e924079a24e6a6caad12bbee1cfd89f"
+}

@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO drafts (id, wiki_id, user_id, kind, path, locale, title, summary, body_md, base_revision_id)\n             VALUES ($1, $2, $3, 'edit', $4, $5, $6, $7, $8, $9)\n             ON CONFLICT (user_id, wiki_id, locale, path) WHERE kind = 'edit'\n             DO UPDATE SET title = EXCLUDED.title, summary = EXCLUDED.summary,\n                           body_md = EXCLUDED.body_md, updated_at = now(),\n                           base_revision_id = COALESCE(drafts.base_revision_id, EXCLUDED.base_revision_id)\n             RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "drafts",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "83daebae252e747db4567d9b3472c4372c8ec8c870ab8c26f301a16967abd320"
+}

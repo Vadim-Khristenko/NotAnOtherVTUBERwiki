@@ -258,8 +258,8 @@ pub(crate) fn slug_is_valid(path: &str) -> bool {
 /// First path segments the engine answers itself. The router tries these
 /// before `/{slug}`, so a page at one of them could be created and never opened.
 pub(crate) const RESERVED: &[&str] = &[
-    "account", "admin", "auth", "emotes", "errors", "health", "lang", "login", "logout", "media",
-    "new", "preview", "ready", "search", "settings", "skin", "system", "user",
+    "account", "admin", "auth", "drafts", "emotes", "errors", "health", "lang", "login", "logout",
+    "media", "new", "preview", "ready", "search", "settings", "skin", "system", "user",
 ];
 
 /// Why a page cannot live at `path`, when it cannot: an engine route, or a
@@ -862,6 +862,9 @@ pub struct NewForm {
     /// The article's language, from the editor.
     #[serde(default)]
     locale: String,
+    /// The server-side draft this text was autosaved to, if any.
+    #[serde(default)]
+    draft_id: String,
 }
 
 /// The requested language when this wiki offers it, the reader's otherwise.
@@ -902,7 +905,12 @@ fn new_form_again(
     let mut response = render_form_with(
         ctx,
         &view,
-        minijinja::context! { form_error => message, slug_invalid => slug_invalid },
+        minijinja::context! {
+            form_error => message,
+            slug_invalid => slug_invalid,
+            draft_kind => "new",
+            draft_id => form.draft_id.clone(),
+        },
     )?;
     *response.status_mut() = StatusCode::CONFLICT;
     Ok(response)
@@ -932,7 +940,15 @@ fn edit_form_again(
         back_href: None,
         translation_of: None,
     };
-    let mut response = render_form_with(ctx, &view, minijinja::context! { form_error => message })?;
+    let mut response = render_form_with(
+        ctx,
+        &view,
+        minijinja::context! {
+            form_error => message,
+            draft_kind => "edit",
+            draft_path => slug,
+        },
+    )?;
     *response.status_mut() = StatusCode::CONFLICT;
     Ok(response)
 }
@@ -1073,6 +1089,9 @@ pub struct NewQuery {
     /// A starter template to begin the text from.
     #[serde(default)]
     from: Option<String>,
+    /// A new-page draft of this author to go on with.
+    #[serde(default)]
+    draft: Option<String>,
 }
 
 /// The creation form, blank or begun from a starter template; needs `PageCreate`.
@@ -1123,14 +1142,37 @@ pub async fn new_page(
             }
         })
         .collect();
+    // Going on with a draft from "My drafts": its text wins over a starter.
+    let draft = match (user.as_ref(), query.draft.as_deref().and_then(parse_uuid)) {
+        (Some(author), Some(id)) => {
+            crate::drafts::new_by_id(&state.db, ctx.wiki.id, author.id, id).await?
+        }
+        _ => None,
+    };
+    let (slug, title, summary, body, locale) = match &draft {
+        Some(d) => (
+            d.path.clone(),
+            d.title.clone(),
+            d.summary.clone(),
+            d.body_md.clone(),
+            d.locale.clone(),
+        ),
+        None => (
+            slug,
+            String::new(),
+            String::new(),
+            body,
+            ctx.content_locale.clone(),
+        ),
+    };
     let view = FormView {
         heading: &ctx.t("editor.new_page"),
         action: &ctx.link("/new"),
-        form_locale: Some(&ctx.content_locale),
+        form_locale: Some(&locale),
         show_slug: true,
         slug: &slug,
-        title_value: "",
-        summary_value: "",
+        title_value: &title,
+        summary_value: &summary,
         body_md: &body,
         base_revision: "",
         locked: false,
@@ -1138,10 +1180,18 @@ pub async fn new_page(
         back_href: None,
         translation_of: None,
     };
+    let server_draft = draft
+        .as_ref()
+        .map(|d| crate::drafts::notice(&ctx, d, &ctx.link("/new")));
     render_form_with(
         &ctx,
         &view,
-        minijinja::context! { starters => starter_links },
+        minijinja::context! {
+            starters => starter_links,
+            draft_kind => "new",
+            draft_id => draft.as_ref().map(|d| d.id.to_string()).unwrap_or_default(),
+            server_draft => server_draft,
+        },
     )
 }
 
@@ -1287,6 +1337,16 @@ pub async fn create_page(
         },
     )
     .await;
+    if let Some(author) = ctx.actor.user_id {
+        crate::drafts::clear(
+            &state.db,
+            ctx.wiki.id,
+            author,
+            None,
+            parse_uuid(&form.draft_id),
+        )
+        .await;
+    }
     Ok(see_other(&ctx.link_for(&locale, &format!("/{slug}"))))
 }
 
@@ -1344,24 +1404,53 @@ pub async fn edit_page(
             .collect::<Vec<_>>(),
         _ => Vec::new(),
     };
+    // The author's unsaved edit of this page, from this or another device. It
+    // keeps the revision it started from, so a page changed meanwhile still
+    // meets the conflict check when the draft is saved.
+    let draft = match user.as_ref() {
+        Some(author) => {
+            crate::drafts::for_edit(&state.db, ctx.wiki.id, author.id, &slug, &locale).await?
+        }
+        None => None,
+    };
+    let base_revision = draft
+        .as_ref()
+        .and_then(|d| d.base_revision_id)
+        .unwrap_or(found.revision_id)
+        .to_string();
+    let edit_href = ctx.link(&format!("/{slug}/edit"));
     render_form_with(
         &ctx,
         &FormView {
             heading: &ctx.t_with("editor.editing", &[("page", &found.title)]),
-            action: &ctx.link(&format!("/{slug}/edit")),
+            action: &edit_href,
             show_slug: false,
             slug: &slug,
-            title_value: &found.title,
-            summary_value: found.summary.as_deref().unwrap_or(""),
-            body_md: &found.body_md,
-            base_revision: &found.revision_id.to_string(),
+            title_value: draft
+                .as_ref()
+                .map_or(found.title.as_str(), |d| d.title.as_str()),
+            summary_value: draft
+                .as_ref()
+                .map_or(found.summary.as_deref().unwrap_or(""), |d| {
+                    d.summary.as_str()
+                }),
+            body_md: draft
+                .as_ref()
+                .map_or(found.body_md.as_str(), |d| d.body_md.as_str()),
+            base_revision: &base_revision,
             locked: found.locked,
             fixed_title: false,
             back_href: None,
             translation_of: source_name.as_deref(),
             form_locale: Some(&ctx.content_locale),
         },
-        minijinja::context! { preview_pages => preview_pages },
+        minijinja::context! {
+            preview_pages => preview_pages,
+            draft_kind => "edit",
+            draft_path => slug.clone(),
+            draft_id => draft.as_ref().map(|d| d.id.to_string()).unwrap_or_default(),
+            server_draft => draft.as_ref().map(|d| crate::drafts::notice(&ctx, d, &edit_href)),
+        },
     )
 }
 
@@ -1502,11 +1591,25 @@ pub async fn save_page(
         .await?;
     }
 
+    // The author's draft of this edit has done its job either way below.
+    let clear_draft = || async {
+        if let Some(author) = ctx.actor.user_id {
+            crate::drafts::clear(
+                &state.db,
+                ctx.wiki.id,
+                author,
+                Some((&slug, &ctx.content_locale)),
+                None,
+            )
+            .await;
+        }
+    };
     // Saving unchanged text adds no revision.
     if draft.body_md == found.body_md
         && draft.title == found.title
         && draft.summary.as_deref().unwrap_or("") == found.summary.as_deref().unwrap_or("")
     {
+        clear_draft().await;
         return Ok(see_other(&ctx.link_for(&locale, &format!("/{slug}"))));
     }
 
@@ -1573,6 +1676,7 @@ pub async fn save_page(
         },
     )
     .await;
+    clear_draft().await;
     Ok(see_other(&ctx.link_for(&locale, &format!("/{slug}"))))
 }
 
@@ -1594,7 +1698,7 @@ pub struct LangForm {
 
 /// `next` when it is a path on this site. Rejects `//host` and backslashes,
 /// which browsers read as leaving the site.
-fn local_path(next: &str) -> Option<&str> {
+pub(crate) fn local_path(next: &str) -> Option<&str> {
     if !next.starts_with('/') || next.starts_with("//") || next.starts_with("/\\") {
         return None;
     }

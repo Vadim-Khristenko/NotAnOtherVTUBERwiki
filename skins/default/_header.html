@@ -167,6 +167,7 @@
         <h2 class="menu-heading">{{ t("nav.section_account") }}</h2>
         {% if signed_in is defined and signed_in %}
         <a class="menu-link" href="/user/{{ username }}"><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg><bdi>{{ display_name }}</bdi></a>
+        <a class="menu-link" href="/drafts"><svg class="icon" aria-hidden="true"><use href="#i-file-text" /></svg>{{ t("nav.drafts") }}</a>
         <a class="menu-link" href="/settings"><svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg>{{ t("settings.title") }}</a>
         {% if can_admin is defined and can_admin %}
         <a class="menu-link" href="/admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>{{ t("nav.admin") }}</a>

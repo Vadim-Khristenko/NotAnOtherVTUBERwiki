@@ -23,6 +23,7 @@ mod csp;
 mod csrf;
 mod diff;
 mod display_name;
+mod drafts;
 mod emotes;
 mod errors;
 mod fetch;
@@ -214,6 +215,9 @@ fn routes(state: AppState) -> Router {
             get(reports::user_form).post(reports::user_send),
         )
         .route("/lang", post(pages::set_language))
+        .route("/drafts", get(drafts::list))
+        .route("/drafts/save", post(drafts::save).layer(text_form()))
+        .route("/drafts/{id}/delete", post(drafts::discard))
         .route("/", get(pages::home))
         .route(
             "/new",

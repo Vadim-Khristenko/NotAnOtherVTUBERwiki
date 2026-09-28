@@ -27,9 +27,24 @@
   <span id="draft-text" data-template="{{ t('editor.draft_restored') }}"></span>
   <button class="link-button" type="button" id="draft-discard">{{ t("editor.draft_discard") }}</button>
 </p>
-<form method="post" action="{{ form_action }}">
+{% if server_draft is defined and server_draft %}
+<div class="notice" role="status">
+  {{ t("editor.server_draft", when=server_draft.at) }}
+  <form method="post" action="{{ server_draft.discard_action }}" class="inline-form">
+    <input type="hidden" name="next" value="{{ server_draft.back }}" />
+    <button class="link-button" type="submit">{{ t("editor.server_draft_discard") }}</button>
+  </form>
+</div>
+{% endif %}
+{#
+  data-draft-kind turns on the server autosave: `new` for a new page, `edit`
+  for an existing one. Editors without it (a profile, a translation) keep only
+  the browser's own draft.
+#}
+<form method="post" action="{{ form_action }}"{% if draft_kind is defined and draft_kind %} data-draft-kind="{{ draft_kind }}" data-draft-path="{{ draft_path | default('') }}" data-saved="{{ t('editor.autosaved') }}" data-failed="{{ t('editor.autosave_failed') }}"{% endif %}>
 {# Where the preview's "back to editing" leads: this editor, filled in by the script. #}
 <input type="hidden" name="back" id="editor-back" value="" />
+<input type="hidden" name="draft_id" value="{{ draft_id | default('') }}" />
 {#
   The revision this form was built from. The server compares it with the
   current one and refuses the save if somebody else got there first, which is
@@ -112,6 +127,7 @@
 <div class="form-actions">
 <button class="button-save" type="submit">{{ t("editor.save") }}</button>
 <button class="button-preview" type="submit" formaction="/preview" formtarget="_blank">{{ t("editor.preview") }}</button>
+<span class="muted-cell autosave-status" id="autosave-status" role="status" aria-live="polite"></span>
 </div>
 </form>
 <div class="selbar" id="selbar" hidden>
@@ -383,6 +399,43 @@
   var store = null;
   try { store = window.localStorage; } catch (e) {}
   var saveTimer = null;
+  /* The server draft: sent a couple of seconds after the typing stops, and
+     only when something changed since the last one that arrived. */
+  var draftKind = form ? form.getAttribute("data-draft-kind") : null;
+  var draftIdField = form ? form.elements.namedItem("draft_id") : null;
+  var autosaveStatus = document.getElementById("autosave-status");
+  var serverTimer = null;
+  var lastSent = JSON.stringify(original);
+  function autosave() {
+    if (!draftKind) return;
+    var now = snapshot();
+    var signature = JSON.stringify(now);
+    if (signature === lastSent) return;
+    var body = new URLSearchParams();
+    body.set("kind", draftKind);
+    body.set("path", draftKind === "edit" ? form.getAttribute("data-draft-path") : (now.slug || ""));
+    body.set("draft_id", draftIdField ? draftIdField.value : "");
+    ["locale", "title", "summary", "body_md", "base_revision"].forEach(function (name) {
+      if (now[name] !== undefined) body.set(name, now[name]);
+    });
+    fetch("/drafts/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString()
+    }).then(function (res) {
+      if (!res.ok) throw new Error("draft " + res.status);
+      return res.json();
+    }).then(function (json) {
+      lastSent = signature;
+      if (draftIdField && json.id) draftIdField.value = json.id;
+      if (autosaveStatus) {
+        var time = new Date().toLocaleTimeString(document.documentElement.lang || undefined, { hour: "2-digit", minute: "2-digit" });
+        autosaveStatus.textContent = form.getAttribute("data-saved").replace("{time}", time);
+      }
+    }).catch(function () {
+      if (autosaveStatus) autosaveStatus.textContent = form.getAttribute("data-failed");
+    });
+  }
   function saveDraft() {
     if (!store) return;
     var now = snapshot();
@@ -415,11 +468,16 @@
     form.addEventListener("input", function () {
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(saveDraft, 400);
+      if (serverTimer) clearTimeout(serverTimer);
+      serverTimer = setTimeout(autosave, 2000);
     });
     form.addEventListener("submit", function (ev) {
       var sub = ev.submitter;
       // the preview keeps the draft; saving hands the text to the server
-      if (sub && sub.hasAttribute("formaction")) { saveDraft(); return; }
+      if (sub && sub.hasAttribute("formaction")) { saveDraft(); autosave(); return; }
+      // saving: no autosave may land after it and bring the draft back
+      if (serverTimer) clearTimeout(serverTimer);
+      draftKind = null;
       try { store.removeItem(draftKey); } catch (e) {}
     });
   }

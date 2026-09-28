@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+{#
+  The author's drafts in this wiki. Private: the page is only ever rendered for
+  the signed-in author, and the list comes from their own rows.
+#}
+{% block body %}
+<h1>{{ t("drafts.title") }}</h1>
+<p class="field-note">{{ t("drafts.note") }}</p>
+{% if drafts %}
+<ul class="report-cards" role="list">
+  {% for d in drafts %}
+  <li class="report-card">
+    <div class="report-card-head">
+      <span class="tag">{{ d.kind_label }}</span>
+      {% if d.path %}<code>/{{ d.path }}</code>{% endif %}
+      <span class="muted-cell">{{ d.language }}</span>
+    </div>
+    <p class="report-card-subject"><a href="{{ d.continue_href }}">{{ d.title }}</a></p>
+    {% if d.excerpt %}<p class="report-card-message">{{ d.excerpt }}</p>{% endif %}
+    <div class="report-card-foot">
+      <span class="muted-cell">{{ t("drafts.saved_at", when=d.at) }}</span>
+      <form method="post" action="/drafts/{{ d.id }}/delete" class="inline-form">
+        <input type="hidden" name="next" value="/drafts" />
+        <button class="link-button" type="submit">{{ t("drafts.delete") }}</button>
+      </form>
+      <a class="button-preview report-open" href="{{ d.continue_href }}">{{ t("drafts.continue") }}</a>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+<p class="muted-cell">{{ t("drafts.limit", n=drafts_max) }}</p>
+{% else %}
+<p class="muted-cell">{{ t("drafts.empty") }}</p>
+{% endif %}
+{% endblock %}

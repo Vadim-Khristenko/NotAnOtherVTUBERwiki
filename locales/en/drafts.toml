@@ -1,0 +1,14 @@
+# English interface messages: drafts kept on the server.
+#
+# Keys here are asked for as drafts.<key>. The file name is the prefix.
+
+title = "My drafts"
+note = "The editor keeps unsaved text here while you write. Only you see your drafts. When the page is saved, its draft goes away."
+empty = "No drafts. Everything you started writing is saved."
+untitled = "Untitled"
+kind_new = "New page"
+kind_edit = "Edit"
+saved_at = "Saved {when}"
+continue = "Go on"
+delete = "Delete"
+limit = "Up to {n} drafts are kept. Past that, a new one is not saved until you delete old ones."

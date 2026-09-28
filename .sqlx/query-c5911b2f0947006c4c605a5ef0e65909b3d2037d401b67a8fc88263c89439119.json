@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM drafts WHERE user_id = $1 AND wiki_id = $2 AND kind = 'edit'\n                   AND path = $3 AND locale = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c5911b2f0947006c4c605a5ef0e65909b3d2037d401b67a8fc88263c89439119"
+}
