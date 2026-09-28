@@ -9,7 +9,7 @@ If you want to know why the technology is what it is, read [STACK.md](STACK.md).
 
 ## Where we are
 
-**Closed alpha.** There is no public release yet. What exists, as of 2026-09-23:
+**Closed alpha.** There is no public release yet. What exists, as of 2026-09-28:
 
 - A design that has survived one full review, a database schema, and the decisions written
   down with their reasons. This is still the most valuable part.
@@ -31,6 +31,17 @@ If you want to know why the technology is what it is, read [STACK.md](STACK.md).
 - Images can come from a link: the wiki downloads and keeps them, and outside images in
   an article are copied on save. Outside fetches never reach a private address and fall
   back to a proxy when a route is throttled.
+- Templates with one code for every language: a translation of a template carries only
+  its documentation and field labels, so no language can run a different template. Fields
+  can be passed as a strict YAML block and declared in a `<params>` schema, from which the
+  template's page builds its field list and ready examples. Pages and templates may write
+  HTML from a fixed list of tags, with a safe subset of `style`.
+- Reports: a reader can report a mistake, complain or suggest a change; moderators work
+  through a queue, and the reporter sees their answer in settings.
+- Drafts: the editor autosaves to the server while you write, and My drafts lists what
+  you have not saved yet, on any device.
+- The landing at `filian.wiki` and `snackers.wiki`, in Vue with a 3D scene and Snack
+  Radio, prerendered per language.
 - Cloudflare is DNS only on every domain, deliberately: its proxy ranges are blocked in
   Russia, and a large part of this community reads from there.
 
@@ -163,10 +174,20 @@ The part that makes it a wiki rather than a blog.
       it, where it is used, and a description with its own history. Articles use a file by
       name, `![Ferris](image:ferris.png)`; audio and video play in place, PDFs download
 - The other namespaces (`Talk:`, `Category:`) and `Module:` for components
-- Infobox fields as a YAML block the template validates against its own schema, so an
-  editor can offer a form and the values become queryable data
-- Paths the engine uses itself (`admin`, `account`, `search` and so on) refused as page
-  addresses, with a clear message
+- [x] Template fields as a strict YAML block inside the call, checked against the
+      template's own `<params>` schema; the template's page lists the fields and ready
+      examples. Still to come: an editor form built from the schema, and the values as
+      queryable data
+- [x] One template code for every language: the main version holds it, a translation
+      brings only its documentation and `<labels>`, read by `{{#label:key|Default}}`.
+      A translation with code, or a main version that calls itself, is refused on save
+- [x] HTML from a fixed list of tags in pages and templates, with `style` limited to looks
+      (colors, borders, shadows, fonts within reason, spacing); scripts, frames, forms and
+      positioning are dropped
+- [x] Paths the engine uses itself (`admin`, `account`, `search`, `drafts` and so on)
+      and language codes refused as page addresses, with the author's text kept
+- [x] Reports: mistakes, complaints and suggested changes, a moderators' queue, and the
+      answer visible to the reporter
 - Categories, redirects, and slug normalisation that handles Japanese and Cyrillic
 - [x] Media upload behind a swappable storage backend. Images are recognised by their
       bytes (never SVG), stored by content hash, served with a CSP that allows nothing.
@@ -254,7 +275,8 @@ Make editing pleasant, without ever putting it on the reader path.
 - Block editor on TipTap, with a Markdown source toggle
 - Live preview through the real server pipeline, debounced
 - Media drag and drop upload
-- Autosave locally and on the server, with three way merge on conflict
+- [x] Autosave locally and on the server, with My drafts; still to come: a three way merge
+      on conflict instead of the conflict page
 - Component picker that inserts a template or component with a prop form
 - Component editor: source, live preview, build log, version history
 - Admin panel: roles, sponsor privileges, skin variables, webhooks, audit log.
@@ -285,8 +307,8 @@ Make editing pleasant, without ever putting it on the reader path.
 - Snacker of the Month widget, admin configurable
 - Timeline and relationship charts via mermaid
 
-**Done when:** FilianWIKI is live at `snackers.vai-rice.space` and looks like it belongs
-to that community rather than to us.
+**Done when:** FilianWIKI is live at `filian.wiki` and looks like it belongs to that
+community rather than to us. The landing is live there; the wiki itself is in closed alpha.
 
 ---
 
