@@ -184,6 +184,11 @@ jobs:
           done
           exit "$missing"
 
+      - name: Every inline script in the skins parses
+        # A broken inline script fails silently: the page renders and its
+        # features are just gone.
+        run: node scripts/check-inline-scripts.mjs skins
+
       - name: No em-dashes in code, comments, templates or documentation
         run: |
           # The pattern is written as an escape so this file does not contain the very
