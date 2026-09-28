@@ -720,6 +720,16 @@ fn render_infobox(block: &CustomBlock, depth: usize, state: &mut BlockState) -> 
         }
     }
 
+    // A card with no title, no filled row and no text shows nothing, not an
+    // empty frame: a page begun from a template has every field empty.
+    let has_content = !block.title.trim().is_empty()
+        || parts.iter().any(|part| match part {
+            Part::Rows(rows) => !rows.is_empty(),
+            Part::Prose(lines) => lines.iter().any(|l| !l.trim().is_empty()),
+        });
+    if !has_content {
+        return String::new();
+    }
     let mut out = String::from("<aside class=\"infobox\">");
     if !block.title.trim().is_empty() {
         out.push_str("<p class=\"infobox-title\">");
@@ -2040,6 +2050,16 @@ mod tests {
         assert!(!html.contains("Agency"));
         assert!(html.contains("<strong>fox</strong>"));
         assert!(html.find("Debut") < html.find("fox"));
+    }
+
+    #[test]
+    fn an_empty_card_shows_nothing() {
+        let html = render_html(":::infobox \nDebut = \nFans = \n:::\n\nText after.");
+        assert!(!html.contains("infobox"), "{html}");
+        assert!(html.contains("Text after."), "{html}");
+        // one filled field is enough to show it
+        let html = render_html(":::infobox \nDebut = 2021\n:::\n");
+        assert!(html.contains("<aside class=\"infobox\">"), "{html}");
     }
 
     #[test]
