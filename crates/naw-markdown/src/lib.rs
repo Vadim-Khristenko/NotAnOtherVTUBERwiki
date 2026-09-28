@@ -2,6 +2,7 @@
 
 mod scan;
 pub mod transclude;
+pub mod yaml;
 
 use std::collections::HashSet;
 
@@ -10,8 +11,10 @@ use scan::{Closers, Counts};
 /// Renders Markdown to sanitized HTML.
 ///
 /// CommonMark plus tables, footnotes, task lists, strikethrough, super- and
-/// subscript, math, GFM alerts, definition lists and wikilinks. Raw HTML is
-/// dropped at the parser and everything is sanitized with ammonia after.
+/// subscript, math, GFM alerts, definition lists and wikilinks. Raw HTML
+/// passes the parser only when every tag in it is in [`AUTHOR_TAGS`];
+/// everything is sanitized with ammonia after, and `style` keeps only
+/// [`STYLE_PROPERTIES`] (see [`clean_style`]).
 ///
 /// Engine sugar:
 /// - `__italic__` is `<em>`; underline is `++text++`.
@@ -127,7 +130,16 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
     // `id` and `class` keep anchors and author styling; `tabindex` keeps
     // spoilers keyboard operable; `open` keeps collapsible quotes working.
     ammonia::Builder::default()
-        .add_generic_attributes(["id", "class", "tabindex"])
+        .add_generic_attributes(["id", "class", "tabindex", "style", "title", "lang", "dir"])
+        .add_tag_attributes("td", ["colspan", "rowspan", "align"])
+        .add_tag_attributes("th", ["colspan", "rowspan", "align", "scope"])
+        .attribute_filter(|_, attribute, value| {
+            if attribute == "style" {
+                clean_style(value).map(std::borrow::Cow::Owned)
+            } else {
+                Some(value.into())
+            }
+        })
         .add_tag_attributes("details", ["open"])
         .add_tag_attributes("img", ["loading", "decoding"])
         .add_tags(["audio", "video"])
@@ -231,10 +243,196 @@ fn player_for(url: &str) -> Option<&'static str> {
 
 /// The only raw HTML the parser lets through.
 fn is_allowed_raw_html(html: &str) -> bool {
-    matches!(
-        html.trim().to_ascii_lowercase().as_str(),
-        "<br>" | "<br/>" | "<br />"
-    )
+    // A fragment passes only when every tag in it is one of these: anything
+    // else (script, style, iframe, form, svg, object...) drops the whole
+    // fragment here, before ammonia ever sees it.
+    let lower = html.to_ascii_lowercase();
+    let mut rest = lower.as_str();
+    let mut saw_tag = false;
+    while let Some(at) = rest.find('<') {
+        rest = &rest[at + 1..];
+        let name: String = rest
+            .trim_start_matches('/')
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        if name.is_empty() {
+            // `<!-- -->`, `<!doctype>`, `<?`: not markup a page writes
+            return false;
+        }
+        if !AUTHOR_TAGS.contains(&name.as_str()) {
+            return false;
+        }
+        saw_tag = true;
+    }
+    saw_tag
+}
+
+/// The HTML tags a page or a template may write itself. Attributes are
+/// cleaned afterwards; `style` keeps only [`STYLE_PROPERTIES`].
+pub const AUTHOR_TAGS: &[&str] = &[
+    "a",
+    "abbr",
+    "b",
+    "bdi",
+    "blockquote",
+    "br",
+    "caption",
+    "cite",
+    "code",
+    "dd",
+    "del",
+    "details",
+    "div",
+    "dl",
+    "dt",
+    "em",
+    "figcaption",
+    "figure",
+    "hr",
+    "i",
+    "ins",
+    "kbd",
+    "li",
+    "mark",
+    "ol",
+    "p",
+    "q",
+    "rp",
+    "rt",
+    "ruby",
+    "s",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "summary",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "tr",
+    "u",
+    "ul",
+];
+
+/// The CSS a `style` attribute may carry: looks, not layout tricks. Nothing
+/// that positions, layers, transforms, animates, loads a file or changes what
+/// a click does.
+pub const STYLE_PROPERTIES: &[&str] = &[
+    "background-color",
+    "border",
+    "border-bottom",
+    "border-color",
+    "border-left",
+    "border-radius",
+    "border-right",
+    "border-style",
+    "border-top",
+    "border-width",
+    "box-shadow",
+    "clear",
+    "color",
+    "float",
+    "font-family",
+    "font-size",
+    "font-style",
+    "font-variant",
+    "font-weight",
+    "letter-spacing",
+    "line-height",
+    "margin",
+    "margin-bottom",
+    "margin-left",
+    "margin-right",
+    "margin-top",
+    "max-width",
+    "opacity",
+    "padding",
+    "padding-bottom",
+    "padding-left",
+    "padding-right",
+    "padding-top",
+    "text-align",
+    "text-decoration",
+    "text-shadow",
+    "text-transform",
+    "vertical-align",
+    "white-space",
+    "width",
+    "word-break",
+];
+
+/// A `style` attribute with only the allowed declarations left, or `None`
+/// when nothing is. A value that reaches outside the page (`url(`), runs
+/// something (`expression`), escapes (`\`), comments, or pulls a margin under
+/// the page around it is dropped with its declaration.
+pub fn clean_style(style: &str) -> Option<String> {
+    let mut kept = Vec::new();
+    for declaration in style.split(';') {
+        let Some((property, value)) = declaration.split_once(':') else {
+            continue;
+        };
+        let property = property.trim().to_ascii_lowercase();
+        let value = value.trim().trim_end_matches("!important").trim();
+        let lower = value.to_ascii_lowercase();
+        let unsafe_value = value.is_empty()
+            || value.len() > 200
+            || [
+                "url(",
+                "expression",
+                "\\",
+                "/*",
+                "*/",
+                "@",
+                "<",
+                ">",
+                "javascript:",
+                "image-set",
+                "attr(",
+            ]
+            .iter()
+            .any(|bad| lower.contains(bad));
+        let negative_margin = property.starts_with("margin") && lower.contains('-');
+        let huge_font = property == "font-size" && !small_font(&lower);
+        if STYLE_PROPERTIES.contains(&property.as_str())
+            && !unsafe_value
+            && !negative_margin
+            && !huge_font
+        {
+            kept.push(format!("{property}: {value}"));
+        }
+    }
+    (!kept.is_empty()).then(|| kept.join("; "))
+}
+
+/// A font size a page cannot shout with: a keyword, or up to 3em, 300% or 48px.
+fn small_font(value: &str) -> bool {
+    let keywords = [
+        "smaller", "larger", "small", "x-small", "medium", "large", "x-large", "inherit",
+    ];
+    if keywords.contains(&value) {
+        return true;
+    }
+    let (number, limit) = if let Some(n) = value
+        .strip_suffix("rem")
+        .or_else(|| value.strip_suffix("em"))
+    {
+        (n, 3.0)
+    } else if let Some(n) = value.strip_suffix('%') {
+        (n, 300.0)
+    } else if let Some(n) = value.strip_suffix("px") {
+        (n, 48.0)
+    } else {
+        return false;
+    };
+    number
+        .trim()
+        .parse::<f32>()
+        .is_ok_and(|n| n > 0.0 && n <= limit)
 }
 
 /// A `:::details`, `:::pullquote` or `>!` block, replaced by a placeholder
@@ -1682,11 +1880,77 @@ mod tests {
     }
 
     #[test]
-    fn drops_raw_html_that_sanitizing_would_keep() {
-        // ammonia allows <div>, so only the parser filter removes this.
-        let html = render_html("<div>raw block</div>");
-        assert!(!html.contains("<div"));
-        assert!(!html.contains("raw block"));
+    fn keeps_the_html_a_page_may_write() {
+        let html = render_html("<div class=\"card\" title=\"t\">raw block</div>");
+        assert!(
+            html.contains("<div class=\"card\" title=\"t\">raw block</div>"),
+            "{html}"
+        );
+        let html =
+            render_html("a <span style=\"color: red; text-shadow: 0 0 2px #000\">b</span> c");
+        assert!(
+            html.contains("style=\"color: red; text-shadow: 0 0 2px #000\""),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn drops_html_outside_the_allowed_tags_whole() {
+        for source in [
+            "<iframe src=\"https://evil.example\"></iframe>",
+            "<style>body { display: none }</style>",
+            "<form action=\"https://evil.example\"><input name=\"p\"></form>",
+            "<div><svg onload=\"alert(1)\"></svg></div>",
+            "<object data=\"x.swf\"></object>",
+            "<!-- a comment -->",
+        ] {
+            let html = render_html(source);
+            for bad in [
+                "<iframe", "<style", "<form", "<input", "<svg", "<object", "<!--", "evil",
+            ] {
+                assert!(!html.contains(bad), "{source} -> {html}");
+            }
+        }
+    }
+
+    #[test]
+    fn allowed_tags_lose_their_dangerous_attributes() {
+        let html = render_html(
+            "<span onclick=\"alert(1)\" style=\"position: fixed; color: blue\">x</span>",
+        );
+        assert!(!html.contains("onclick"), "{html}");
+        assert!(!html.contains("position"), "{html}");
+        assert!(html.contains("color: blue"), "{html}");
+        let html = render_html("<a href=\"javascript:alert(1)\">x</a>");
+        assert!(!html.contains("javascript"), "{html}");
+    }
+
+    #[test]
+    fn styles_keep_looks_and_drop_the_rest() {
+        assert_eq!(
+            clean_style("color: red; box-shadow: 0 1px 2px #0003"),
+            Some("color: red; box-shadow: 0 1px 2px #0003".into())
+        );
+        for bad in [
+            "background: url(https://x.example/t.png)",
+            "background-color: expression(alert(1))",
+            "color: red; position: absolute",
+            "margin-top: -500px",
+            "font-size: 400px",
+            "color: \\72 ed",
+            "z-index: 999",
+            "transform: scale(9)",
+        ] {
+            assert!(
+                clean_style(bad).is_none_or(|s| s == "color: red"),
+                "{bad} -> {:?}",
+                clean_style(bad)
+            );
+        }
+        assert_eq!(
+            clean_style("font-size: 1.2em"),
+            Some("font-size: 1.2em".into())
+        );
     }
 
     #[test]
@@ -1782,9 +2046,10 @@ mod tests {
     fn infobox_titles_and_keys_are_text() {
         let html = render_html(":::infobox <script>x</script>\nKey<b> = v\n:::\n");
         assert!(!html.contains("<script>"));
-        assert!(!html.contains("<b>"));
-        // `<` in a key makes it prose, which the parser strips of HTML.
+        // `<` in a key makes it prose, never a row; the prose keeps only
+        // allowed markup.
         assert!(!html.contains("<dt>Key"));
+        assert!(!html.contains("<dt>Key<b>"));
     }
 
     #[test]

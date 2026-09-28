@@ -130,7 +130,7 @@ The skeleton everything else hangs on.
       sanctions (mute, wiki ban, install ban). Namespace awareness is not in
       yet, beyond profiles living in their own namespace.
 - [x] The wiki resolver, so one install can serve many wikis
-- [x] The Markdown pipeline with raw HTML disabled at the parser
+- [x] The Markdown pipeline with raw HTML disabled at the parser (since 2026-09: a whitelist of tags and a safe subset of `style`, for templates)
 - [ ] The render job pipeline. The cache and the render-on-miss path work; the
       queue and the worker loop do not exist, so a miss renders inline.
 - [x] Default skin, health check, structured logging. `NAW_LOG_TRACE=1` adds
