@@ -44,6 +44,8 @@ pub struct Notes {
     pub unknown_fields: String,
     /// Required fields left out or empty: `{names}`.
     pub missing_fields: String,
+    /// YAML error reasons in the reader's language, by code; English otherwise.
+    pub yaml_reasons: HashMap<String, String>,
 }
 
 impl Default for Notes {
@@ -56,6 +58,7 @@ impl Default for Notes {
             bad_data: "**YAML, line {line}: {reason}**".into(),
             unknown_fields: "*Fields this template does not have: {names}*".into(),
             missing_fields: "*Required fields left empty: {names}*".into(),
+            yaml_reasons: HashMap::new(),
         }
     }
 }
@@ -157,6 +160,9 @@ pub struct Expansion {
     pub missing: BTreeSet<String>,
     /// Templates that ended up calling themselves, by slug.
     pub looped: BTreeSet<String>,
+    /// Names that are not slugs and are not among the aliases, as
+    /// [`alias_key`]s: the caller looks them up by title and runs again.
+    pub unresolved: BTreeSet<String>,
 }
 
 /// Field labels in the reader's language, per template slug: what a
@@ -206,14 +212,29 @@ pub fn expand_labeled(
     labels: &Labels,
     notes: &Notes,
 ) -> Expansion {
+    expand_full(source, templates, labels, &HashMap::new(), notes)
+}
+
+/// [`expand_labeled`], with `aliases` naming templates by a title that is not
+/// a slug: `{{Карточка VTuber}}` for `infobox-vtuber`. Keys are
+/// [`alias_key`]s; a name found in none is reported in `unresolved`.
+pub fn expand_full(
+    source: &str,
+    templates: &HashMap<String, String>,
+    labels: &Labels,
+    aliases: &HashMap<String, String>,
+    notes: &Notes,
+) -> Expansion {
     let mut run = Run {
         templates,
         labels,
+        aliases,
         notes,
         calls: 0,
         used: BTreeSet::new(),
         missing: BTreeSet::new(),
         looped: BTreeSet::new(),
+        unresolved: BTreeSet::new(),
         stack: Vec::new(),
     };
     let text = run.text(source, 0);
@@ -222,7 +243,28 @@ pub fn expand_labeled(
         used: run.used,
         missing: run.missing,
         looped: run.looped,
+        unresolved: run.unresolved,
     }
+}
+
+/// How a template name that is not a slug is looked up: without a
+/// `Template:` or `Шаблон:` prefix, lowercase, `_` and runs of spaces as one
+/// space. `None` for what could not be a name (braces, bars, line breaks).
+pub fn alias_key(name: &str) -> Option<String> {
+    let lower = name.trim().to_lowercase();
+    let bare = ["template:", "шаблон:"]
+        .iter()
+        .find_map(|prefix| lower.strip_prefix(prefix))
+        .unwrap_or(&lower);
+    let key = bare
+        .replace('_', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let plain = !key.is_empty()
+        && key.chars().count() <= 200
+        && !key.contains(['{', '}', '|', '[', ']', '#', '<', '>', '\n']);
+    plain.then_some(key)
 }
 
 /// A template's source as its own page shows it: the documentation in, the
@@ -279,15 +321,38 @@ pub fn has_code(source: &str) -> bool {
 struct Run<'a> {
     templates: &'a HashMap<String, String>,
     labels: &'a Labels,
+    aliases: &'a HashMap<String, String>,
     notes: &'a Notes,
     calls: usize,
     used: BTreeSet<String>,
     missing: BTreeSet<String>,
     looped: BTreeSet<String>,
+    unresolved: BTreeSet<String>,
     stack: Vec<String>,
 }
 
 impl Run<'_> {
+    /// The slug a call names: the name itself when it spells one, else a
+    /// template whose title it is in some language. `None` when neither;
+    /// such a name is kept for the next round to look up.
+    fn resolve(&mut self, name: &str) -> Option<String> {
+        let slug = template_slug(name);
+        if let Some(slug) = &slug
+            && self.templates.contains_key(slug)
+        {
+            return Some(slug.clone());
+        }
+        if let Some(key) = alias_key(name) {
+            if let Some(slug) = self.aliases.get(&key) {
+                return Some(slug.clone());
+            }
+            if slug.is_none() {
+                self.unresolved.insert(key);
+            }
+        }
+        slug
+    }
+
     fn note(&self, template: &str, name: &str) -> String {
         template.replace("{name}", name)
     }
@@ -365,7 +430,7 @@ impl Run<'_> {
         }
         // `{{Name` + a ```yaml block + `}}`: the fields as YAML.
         if let Some((name, yaml)) = data_call(inner) {
-            let Some(slug) = template_slug(name) else {
+            let Some(slug) = self.resolve(name) else {
                 return format!("{{{{{inner}}}}}");
             };
             let fields = match yaml::parse(yaml) {
@@ -375,7 +440,13 @@ impl Run<'_> {
                         .notes
                         .bad_data
                         .replace("{line}", &err.line.to_string())
-                        .replace("{reason}", err.reason);
+                        .replace(
+                            "{reason}",
+                            self.notes
+                                .yaml_reasons
+                                .get(err.code)
+                                .map_or(err.reason, String::as_str),
+                        );
                 }
             };
             let args = fields
@@ -396,7 +467,7 @@ impl Run<'_> {
         if let Some(function) = head.strip_prefix('#') {
             return self.function(function, &parts[1..], depth);
         }
-        let Some(slug) = template_slug(head) else {
+        let Some(slug) = self.resolve(head) else {
             return format!("{{{{{inner}}}}}");
         };
         if !self.templates.contains_key(&slug) || self.stack.contains(&slug) {
@@ -834,6 +905,47 @@ mod tests {
             run(source, &[("card", card)]).text,
             "Filian / Fil, Cat / a | pipe"
         );
+    }
+
+    #[test]
+    fn a_yaml_error_reads_in_the_readers_language() {
+        let notes = Notes {
+            bad_data: "**YAML, строка {line}: {reason}**".into(),
+            yaml_reasons: HashMap::from([(
+                "duplicate".to_string(),
+                "это поле уже задано выше".to_string(),
+            )]),
+            ..Notes::default()
+        };
+        let source = "{{Card\n```yaml\nимя: Филиан\nимя: снова\n```\n}}";
+        let text = expand(source, &with(&[("card", "x")]), &notes).text;
+        assert_eq!(text, "**YAML, строка 2: это поле уже задано выше**");
+    }
+
+    #[test]
+    fn a_template_is_called_by_its_name_in_any_language() {
+        let templates = with(&[(
+            "infobox-vtuber",
+            "<includeonly>card {{{имя|}}}</includeonly>",
+        )]);
+        let aliases =
+            HashMap::from([("карточка vtuber".to_string(), "infobox-vtuber".to_string())]);
+        let run = expand_full(
+            "{{Карточка VTuber | имя = Филиан}} {{Шаблон:Карточка_VTuber}}",
+            &templates,
+            &Labels::new(),
+            &aliases,
+            &Notes::default(),
+        );
+        assert_eq!(run.text, "card Филиан card ");
+        // a name nobody knows is reported for the next round to look up
+        let unknown = expand("{{Неизвестный шаблон}}", &templates, &Notes::default());
+        assert!(
+            unknown.unresolved.contains("неизвестный шаблон"),
+            "{:?}",
+            unknown.unresolved
+        );
+        assert_eq!(unknown.text, "{{Неизвестный шаблон}}");
     }
 
     #[test]

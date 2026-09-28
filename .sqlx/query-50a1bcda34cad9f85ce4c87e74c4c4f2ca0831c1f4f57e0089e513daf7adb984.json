@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.title, p.slug FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.deleted_at IS NULL\n             AND lower(regexp_replace(btrim(replace(p.title, '_', ' ')), '\\s+', ' ', 'g')) = ANY($2)\n           ORDER BY p.created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "50a1bcda34cad9f85ce4c87e74c4c4f2ca0831c1f4f57e0089e513daf7adb984"
+}

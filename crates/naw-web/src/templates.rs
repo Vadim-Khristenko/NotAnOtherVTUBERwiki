@@ -52,6 +52,10 @@ pub(crate) fn notes(ctx: &Ctx) -> transclude::Notes {
         ),
         unknown_fields: ctx.t_with("template.unknown_fields", &[("names", "{names}")]),
         missing_fields: ctx.t_with("template.missing_fields", &[("names", "{names}")]),
+        yaml_reasons: naw_markdown::yaml::CODES
+            .iter()
+            .map(|code| (code.to_string(), ctx.t(&format!("template.yaml_{code}"))))
+            .collect(),
     }
 }
 
@@ -117,29 +121,81 @@ async fn run_rounds(
     let mut tried: HashSet<String> = given.keys().cloned().collect();
     let mut loaded = given;
     let mut labels = transclude::Labels::new();
+    let mut aliases: HashMap<String, String> = HashMap::new();
+    let mut names_tried: HashSet<String> = HashSet::new();
     if !tried.is_empty() {
         let wanted: Vec<String> = tried.iter().cloned().collect();
         labels.extend(load(db, wiki, &wanted).await?.labels);
     }
     for _ in 0..transclude::DEPTH_MAX {
-        let run = transclude::expand_labeled(source, &loaded, &labels, notes);
+        let run = transclude::expand_full(source, &loaded, &labels, &aliases, notes);
+        // names in another script (`{{Карточка VTuber}}`) are looked up by title
+        let names: Vec<String> = run
+            .unresolved
+            .iter()
+            .filter(|name| !names_tried.contains(*name))
+            .take(TEMPLATES_MAX)
+            .cloned()
+            .collect();
+        names_tried.extend(names.iter().cloned());
+        let found_names = if names.is_empty() {
+            HashMap::new()
+        } else {
+            titles(db, wiki, &names).await?
+        };
         let room = TEMPLATES_MAX.saturating_sub(tried.len());
         let wanted: Vec<String> = run
             .missing
             .iter()
+            .chain(found_names.values())
             .filter(|slug| !tried.contains(*slug))
             .take(room)
             .cloned()
+            .collect::<HashSet<_>>()
+            .into_iter()
             .collect();
-        if wanted.is_empty() {
+        aliases.extend(found_names);
+        if wanted.is_empty() && names.is_empty() {
             return Ok(run);
         }
         tried.extend(wanted.iter().cloned());
-        let found = load(db, wiki, &wanted).await?;
-        loaded.extend(found.code);
-        labels.extend(found.labels);
+        if !wanted.is_empty() {
+            let found = load(db, wiki, &wanted).await?;
+            loaded.extend(found.code);
+            labels.extend(found.labels);
+        }
     }
-    Ok(transclude::expand_labeled(source, &loaded, &labels, notes))
+    Ok(transclude::expand_full(
+        source, &loaded, &labels, &aliases, notes,
+    ))
+}
+
+/// Templates of this wiki whose title in some language is one of `names`
+/// (as [`transclude::alias_key`]s), by name; the oldest wins a tie.
+async fn titles(
+    db: &sqlx::PgPool,
+    wiki: &Wiki<'_>,
+    names: &[String],
+) -> Result<HashMap<String, String>, AppError> {
+    let rows = sqlx::query!(
+        r#"SELECT p.title, p.slug FROM pages p
+           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.deleted_at IS NULL
+             AND lower(regexp_replace(btrim(replace(p.title, '_', ' ')), '\s+', ' ', 'g')) = ANY($2)
+           ORDER BY p.created_at"#,
+        wiki.id,
+        names
+    )
+    .fetch_all(db)
+    .await?;
+    let mut out = HashMap::new();
+    for row in rows {
+        if let Some(key) = transclude::alias_key(&row.title)
+            && names.contains(&key)
+        {
+            out.entry(key).or_insert(row.slug);
+        }
+    }
+    Ok(out)
 }
 
 /// Why a template version cannot be saved as it is, as a message key, or
@@ -815,6 +871,70 @@ mod db_tests {
             Some("en")
         );
         assert_eq!(render(&db, w, "ru", "en", "{{card}}").await, "en code");
+    }
+
+    async fn retitle(db: &PgPool, wiki_id: Uuid, slug: &str, locale: &str, title: &str) {
+        sqlx::query("UPDATE pages SET title = $4 WHERE wiki_id = $1 AND slug = $2 AND locale = $3")
+            .bind(wiki_id)
+            .bind(slug)
+            .bind(locale)
+            .bind(title)
+            .execute(db)
+            .await
+            .expect("title");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_template_is_called_by_its_title_in_its_own_wiki(db: PgPool) {
+        let w = wiki(&db, "w", "en").await;
+        let other = wiki(&db, "other", "en").await;
+        template(
+            &db,
+            w,
+            "infobox-vtuber",
+            "en",
+            "<includeonly>card {{{name|}}}</includeonly>",
+            20,
+        )
+        .await;
+        template(
+            &db,
+            w,
+            "infobox-vtuber",
+            "ru",
+            "<labels>\nname = Имя\n</labels>",
+            10,
+        )
+        .await;
+        retitle(&db, w, "infobox-vtuber", "ru", "Карточка VTuber").await;
+        // the same title in another wiki must never answer for this one
+        template(
+            &db,
+            other,
+            "stranger",
+            "en",
+            "<includeonly>not ours</includeonly>",
+            20,
+        )
+        .await;
+        retitle(&db, other, "stranger", "en", "Чужая карточка").await;
+        let call = "{{Карточка VTuber | name = Филиан}} {{Шаблон:Карточка_VTuber}}";
+        assert_eq!(render(&db, w, "ru", "en", call).await, "card Филиан card ");
+        let stranger = render(&db, w, "ru", "en", "{{Чужая карточка}}").await;
+        assert!(!stranger.contains("not ours"), "{stranger}");
+        // YAML with Russian field names through a Russian title
+        template(
+            &db,
+            w,
+            "karta",
+            "en",
+            "<includeonly>{{{имя|}}} / {{{дебют|}}}</includeonly>",
+            20,
+        )
+        .await;
+        retitle(&db, w, "karta", "en", "Карта").await;
+        let yaml = "{{Карта\n```yaml\nимя: Филиан\nдебют: 2021\n```\n}}";
+        assert_eq!(render(&db, w, "ru", "en", yaml).await, "Филиан / 2021");
     }
 
     #[sqlx::test(migrations = "../../migrations")]

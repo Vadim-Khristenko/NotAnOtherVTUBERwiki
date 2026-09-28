@@ -22,6 +22,7 @@ loops_itself = "Like this, the template \"{name}\" calls itself, and every page 
 translation_title = "Template translation"
 translation_note = "This is where the description and the field labels are translated. The code is shared by every language and edited in the main version."
 main_version = "Main version"
+or = "or"
 page_heading = "Page template: {name}"
 starter_title = "This is a page template"
 starter_note = "New page offers it as \"{label}\" and copies everything above the note below into the new article. Edit it like any article: its sections, card and hints appear in every new page of this kind."
@@ -49,6 +50,19 @@ no_params = "This template does not describe its fields yet. Add a <params> bloc
 how_to_write = "How a template is written"
 
 
+yaml_one_block = "one block holds one set of fields"
+yaml_nested = "nested fields are not supported: keep one level"
+yaml_expected_field = "expected \"field: value\""
+yaml_field_name = "a field name is letters, digits, \"_\" and \"-\""
+yaml_space_after_colon = "put a space after the colon"
+yaml_duplicate = "this field is already set above"
+yaml_unclosed_quote = "the quote is not closed"
+yaml_unknown_escape = "unknown escape after a backslash"
+yaml_unsupported = "anchors, aliases, tags and inline lists are not supported: put the text in quotes"
+yaml_quote_value = "a value with \": \" in it needs quotes"
+yaml_after_quote = "only a comment may follow the closing quote"
+yaml_space_after_dash = "put a space after \"-\""
+yaml_list_plain = "a list holds plain items, one level deep"
 [used_on]
 one = "Used on {n} page"
 other = "Used on {n} pages"

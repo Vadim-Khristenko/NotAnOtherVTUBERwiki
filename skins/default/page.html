@@ -89,7 +89,7 @@
   <p class="notice">{{ t("template.translation_note") }} <a href="{{ template.main_href }}">{{ t("template.main_version") }}</a></p>
   {% endif %}
   {% if not template.starter %}
-  <p>{{ t("template.how_to_call") }} <code class="template-call">{{ template.call }}</code></p>
+  <p>{{ t("template.how_to_call") }} <code class="template-call">{{ template.call }}</code>{% if template.call_local %} {{ t("template.or") }} <code class="template-call">{{ template.call_local }}</code>{% endif %}</p>
   {% if template.fields %}
   <h3>{{ t("template.fields") }}</h3>
   <div class="table-wrap">

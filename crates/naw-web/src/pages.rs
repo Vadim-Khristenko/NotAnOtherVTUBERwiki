@@ -756,6 +756,9 @@ pub async fn page(
                 .map(|m| ctx.link_for(&m.locale, &format!("/{TEMPLATE_PREFIX}{bare}")));
             Some(minijinja::context! {
                 call => format!("{{{{{name}}}}}"),
+                // a translation's own title calls it too, in its language
+                call_local => (found.title != name && naw_markdown::transclude::alias_key(&found.title).is_some())
+                    .then(|| format!("{{{{{}}}}}", found.title)),
                 starter => is_starter,
                 starter_label => found.body_md.lines().next().and_then(crate::templates::starter_label),
                 new_href => ctx.link(&format!("/new?from={bare}")),

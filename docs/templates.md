@@ -79,6 +79,12 @@ documentation is fine.
 
 ## Calling a template
 
+A template answers to its address (`{{Infobox VTuber}}` is `template:infobox-vtuber`)
+and to the title of any of its versions in this wiki, in any script:
+`{{Карточка VTuber}}` calls the same template as `{{Infobox VTuber}}` once its
+Russian version is titled so. Case, `_` and extra spaces do not matter, and
+`Template:` or `Шаблон:` in front is optional. Only this wiki's templates answer.
+
 With fields after bars:
 
 ```
@@ -111,7 +117,12 @@ is plain text, text in `"double"` or `'single'` quotes, a `|` block (lines
 kept) or `>` block (lines joined), or a list of `- item` lines, which reads
 as the items joined by commas. `#` starts a comment. Anchors, aliases, tags,
 inline `{}` and `[]` collections and nested fields are refused with the line
-they are on.
+they are on, and the reason reads in the page's language.
+
+Field names and values may be in any language (`дебют: 2021`, `名前: フィリアン`).
+The full-width colon a Japanese or Chinese keyboard types works as a colon and
+needs no space after it; a no-break space after a colon, Windows line ends and
+a byte order mark are all fine.
 
 ## HTML and styles
 
