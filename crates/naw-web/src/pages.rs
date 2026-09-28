@@ -757,6 +757,8 @@ pub async fn page(
             Some(minijinja::context! {
                 call => format!("{{{{{name}}}}}"),
                 starter => is_starter,
+                starter_label => found.body_md.lines().next().and_then(crate::templates::starter_label),
+                new_href => ctx.link(&format!("/new?from={bare}")),
                 fields => fields,
                 yaml_example => yaml_example,
                 pipes_example => pipes_example,
@@ -1121,27 +1123,33 @@ pub async fn new_page(
     let from = query
         .from
         .as_deref()
-        .and_then(|name| starters.iter().find(|(slug, _)| slug == name));
+        .and_then(|name| starters.iter().find(|s| s.slug == name));
+    // The starter in the reader's language, else the wiki's, else the first
+    // written: an untranslated starter still fills the page.
     let body = match from {
-        Some((starter, _)) => {
-            let path = format!("{TEMPLATE_PREFIX}{starter}");
-            find_page(&state.db, ctx.wiki.id, &path, &ctx.content_locale)
-                .await?
-                .map(|page| crate::templates::starter_body(&page.body_md))
-                .unwrap_or_default()
-        }
+        Some(starter) => crate::templates::starter_source(
+            &state.db,
+            &crate::templates::Wiki::of(&ctx),
+            &starter.slug,
+        )
+        .await?
+        .map(|source| crate::templates::starter_body(&source))
+        .unwrap_or_default(),
         None => String::new(),
     };
     let starter_links: Vec<minijinja::Value> = starters
         .iter()
-        .map(|(starter, label)| {
+        .map(|s| {
             minijinja::context! {
-                label => label,
-                href => ctx.link(&format!("/new?from={starter}")),
-                current => from.is_some_and(|(s, _)| s == starter),
+                label => s.label.clone(),
+                note => s.note.clone(),
+                href => ctx.link(&format!("/new?from={}", s.slug)),
+                page_href => ctx.link(&format!("/{TEMPLATE_PREFIX}{}", s.slug)),
+                current => from.is_some_and(|f| f.slug == s.slug),
             }
         })
         .collect();
+    let chosen_note = from.map(|s| s.note.clone()).filter(|n| !n.is_empty());
     // Going on with a draft from "My drafts": its text wins over a starter.
     let draft = match (user.as_ref(), query.draft.as_deref().and_then(parse_uuid)) {
         (Some(author), Some(id)) => {
@@ -1188,6 +1196,7 @@ pub async fn new_page(
         &view,
         minijinja::context! {
             starters => starter_links,
+            starter_note => chosen_note,
             draft_kind => "new",
             draft_id => draft.as_ref().map(|d| d.id.to_string()).unwrap_or_default(),
             server_draft => server_draft,

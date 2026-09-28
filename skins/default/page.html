@@ -62,8 +62,15 @@
   <a href="{{ stale.diff_href }}">{{ t("translate.stale_diff") }}</a> · <a href="{{ stale.source_href }}">{{ t("translate.stale_source") }}</a></span></p>
 {% endif %}
 {# An article carries its heading in the text; a template page gets one. #}
-{% if template is defined and template %}<h1 class="template-heading">{{ t("template.heading", name=title) }}</h1>{% endif %}
-{% if content_lang is defined and content_lang != lang %}
+{% if template is defined and template %}<h1 class="template-heading">{% if template.starter %}{{ t("template.page_heading", name=title) }}{% else %}{{ t("template.heading", name=title) }}{% endif %}</h1>{% endif %}
+{% if template is defined and template and template.starter %}
+{# A page template's text is the page a new article starts as: shown framed,
+   so nobody reads it as an article of its own. #}
+<figure class="starter-preview">
+  <figcaption>{{ t("template.starter_preview") }}</figcaption>
+  <div class="starter-preview-body"{% if content_lang is defined and content_lang != lang %} lang="{{ content_lang }}"{% endif %}>{{ body | safe }}</div>
+</figure>
+{% elif content_lang is defined and content_lang != lang %}
 <div lang="{{ content_lang }}">{{ body | safe }}</div>
 {% else %}
 {{ body | safe }}
@@ -72,7 +79,12 @@
 {% if template is defined and template %}
 {# A template's own page: how to call it and which pages it would change. #}
 <section class="template-info" aria-labelledby="template-info-title">
-  <h2 id="template-info-title"><svg class="icon" aria-hidden="true"><use href="#i-template" /></svg>{% if template.main_href %}{{ t("template.translation_title") }}{% else %}{{ t("template.info_title") }}{% endif %}</h2>
+  <h2 id="template-info-title"><svg class="icon" aria-hidden="true"><use href="#i-template" /></svg>{% if template.starter %}{{ t("template.starter_title") }}{% elif template.main_href %}{{ t("template.translation_title") }}{% else %}{{ t("template.info_title") }}{% endif %}</h2>
+  {% if template.starter %}
+  <p>{{ t("template.starter_note", label=template.starter_label) }}</p>
+  <p class="field-note">{{ t("template.starter_translate") }}</p>
+  <p><a class="button-save" href="{{ template.new_href }}">{{ t("template.starter_start") }}</a></p>
+  {% endif %}
   {% if template.main_href %}
   <p class="notice">{{ t("template.translation_note") }} <a href="{{ template.main_href }}">{{ t("template.main_version") }}</a></p>
   {% endif %}
@@ -99,6 +111,7 @@
   {% endif %}
   {% endif %}
   <p class="field-note"><a href="{{ template.docs_href }}" rel="noopener">{{ t("template.how_to_write") }} ↗</a></p>
+  {% if not template.starter %}
   <h3>{{ tn("template.used_on", template.uses_total) }}</h3>
   {% if template.uses %}
   <ul class="template-uses">
@@ -107,6 +120,7 @@
   {% if template.uses_total > template.uses_shown %}<p class="muted-cell">{{ t("template.uses_more", shown=template.uses_shown) }}</p>{% endif %}
   {% else %}
   <p class="muted-cell">{{ t("template.unused") }}</p>
+  {% endif %}
   {% endif %}
 </section>
 {% endif %}

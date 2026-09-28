@@ -12,8 +12,11 @@
 <nav class="starter-picker" aria-label="{{ t('template.start_from') }}">
   <span class="muted-cell">{{ t("template.start_from") }}</span>
   <a href="{{ base }}/new"{% if not (starters | selectattr("current") | list) %} aria-current="page"{% endif %}>{{ t("template.blank") }}</a>
-  {% for s in starters %}<a href="{{ s.href }}"{% if s.current %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-template" /></svg>{{ s.label }}</a>{% endfor %}
+  {% for s in starters %}<a href="{{ s.href }}"{% if s.current %} aria-current="page"{% endif %}{% if s.note %} title="{{ s.note }}"{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-template" /></svg>{{ s.label }}</a>{% endfor %}
 </nav>
+{% if starter_note is defined and starter_note %}
+<p class="field-note starter-chosen">{{ starter_note }} {% for s in starters %}{% if s.current %}<a href="{{ s.page_href }}">{{ t("template.starter_open") }}</a>{% endif %}{% endfor %}</p>
+{% endif %}
 {% endif %}
 {% if locked is defined and locked %}
 <p class="notice notice-warn" role="status">

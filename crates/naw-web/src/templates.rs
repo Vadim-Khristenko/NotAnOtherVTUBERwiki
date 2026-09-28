@@ -384,27 +384,90 @@ pub(crate) async fn uses(
     Ok((total, shown))
 }
 
+/// A page template (a starter) as New page offers it.
+pub(crate) struct Starter {
+    pub slug: String,
+    pub label: String,
+    /// The first paragraph of its `<noinclude>` note, as plain text.
+    pub note: String,
+}
+
 /// Templates a new page can start from: those whose source begins with
-/// `<!-- starter: Label -->`. The comment never renders.
-pub(crate) async fn starters(
-    state: &AppState,
-    ctx: &Ctx,
-) -> Result<Vec<(String, String)>, AppError> {
+/// `<!-- starter: Label -->`. The comment never renders. Each comes in the
+/// reader's language when it has one, else the wiki's, else the first written.
+pub(crate) async fn starters(state: &AppState, ctx: &Ctx) -> Result<Vec<Starter>, AppError> {
     let rows = sqlx::query!(
-        r#"SELECT DISTINCT ON (p.slug) p.slug AS "slug!", left(r.body_md, 300) AS "head!"
+        r#"SELECT DISTINCT ON (p.slug) p.slug AS "slug!", r.body_md AS "body!"
            FROM pages p JOIN revisions r ON r.id = p.current_revision_id
            WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.deleted_at IS NULL
              AND r.body_md LIKE '<!-- starter:%'
-           ORDER BY p.slug, (COALESCE(p.locale, '') = $2) DESC"#,
+           ORDER BY p.slug, (COALESCE(p.locale, '') = $2) DESC,
+                    (COALESCE(p.locale, '') = $3) DESC, p.created_at"#,
         ctx.wiki.id,
-        ctx.content_locale
+        ctx.content_locale,
+        ctx.wiki.default_locale
     )
     .fetch_all(&state.db)
     .await?;
     Ok(rows
         .into_iter()
-        .filter_map(|row| starter_label(&row.head).map(|label| (row.slug, label)))
+        .filter_map(|row| {
+            starter_label(&row.body).map(|label| Starter {
+                note: starter_note(&row.body),
+                slug: row.slug,
+                label,
+            })
+        })
         .collect())
+}
+
+/// A starter's source for a new page, with the same language preference as
+/// [`starters`], so a starter nobody translated still fills the page.
+pub(crate) async fn starter_source(
+    db: &sqlx::PgPool,
+    wiki: &Wiki<'_>,
+    slug: &str,
+) -> Result<Option<String>, AppError> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT r.body_md FROM pages p JOIN revisions r ON r.id = p.current_revision_id
+           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.slug = $2
+             AND p.deleted_at IS NULL AND r.body_md LIKE '<!-- starter:%'
+           ORDER BY (COALESCE(p.locale, '') = $3) DESC, (COALESCE(p.locale, '') = $4) DESC,
+                    p.created_at
+           LIMIT 1"#,
+        wiki.id,
+        slug,
+        wiki.locale,
+        wiki.default_locale
+    )
+    .fetch_optional(db)
+    .await?)
+}
+
+/// The first paragraph of a starter's `<noinclude>` note, without Markdown
+/// emphasis, for the list on New page.
+pub(crate) fn starter_note(source: &str) -> String {
+    let lower = source.to_ascii_lowercase();
+    let Some(start) = lower.find("<noinclude>") else {
+        return String::new();
+    };
+    let start = start + "<noinclude>".len();
+    let end = lower[start..]
+        .find("</noinclude>")
+        .map_or(source.len(), |e| start + e);
+    let paragraph = source[start..end]
+        .trim()
+        .split("\n\n")
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let plain: String = paragraph
+        .chars()
+        .filter(|c| !matches!(c, '*' | '_' | '`'))
+        .collect();
+    plain.chars().take(240).collect()
 }
 
 /// The label of `<!-- starter: Label -->` on the first line.
@@ -752,6 +815,63 @@ mod db_tests {
             Some("en")
         );
         assert_eq!(render(&db, w, "ru", "en", "{{card}}").await, "en code");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_page_template_fills_a_new_page_in_any_language(db: PgPool) {
+        let w = wiki(&db, "w", "en").await;
+        let other = wiki(&db, "other", "en").await;
+        template(
+            &db,
+            w,
+            "vtuber-article",
+            "en",
+            "<!-- starter: VTuber article -->\n# Name",
+            20,
+        )
+        .await;
+        template(
+            &db,
+            other,
+            "vtuber-article",
+            "en",
+            "<!-- starter: Elsewhere -->\n# Other wiki",
+            20,
+        )
+        .await;
+        let in_ru = Wiki {
+            id: w,
+            locale: "ru",
+            default_locale: "en",
+        };
+        // no Russian version yet: the page still starts from the English one
+        let body = starter_source(&db, &in_ru, "vtuber-article")
+            .await
+            .expect("q")
+            .expect("found");
+        assert!(body.contains("# Name"), "{body}");
+        template(
+            &db,
+            w,
+            "vtuber-article",
+            "ru",
+            "<!-- starter: Статья о VTuber -->\n# Имя",
+            10,
+        )
+        .await;
+        let body = starter_source(&db, &in_ru, "vtuber-article")
+            .await
+            .expect("q")
+            .expect("found");
+        assert!(body.contains("# Имя"), "{body}");
+        // a component is not a page template
+        template(&db, w, "card", "en", "<includeonly>x</includeonly>", 10).await;
+        assert!(
+            starter_source(&db, &in_ru, "card")
+                .await
+                .expect("q")
+                .is_none()
+        );
     }
 
     #[sqlx::test(migrations = "../../migrations")]

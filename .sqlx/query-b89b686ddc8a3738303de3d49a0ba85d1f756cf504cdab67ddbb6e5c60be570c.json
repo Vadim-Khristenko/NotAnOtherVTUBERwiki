@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.body_md FROM pages p JOIN revisions r ON r.id = p.current_revision_id\n           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.slug = $2\n             AND p.deleted_at IS NULL AND r.body_md LIKE '<!-- starter:%'\n           ORDER BY (COALESCE(p.locale, '') = $3) DESC, (COALESCE(p.locale, '') = $4) DESC,\n                    p.created_at\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "body_md",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "body_md"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b89b686ddc8a3738303de3d49a0ba85d1f756cf504cdab67ddbb6e5c60be570c"
+}
