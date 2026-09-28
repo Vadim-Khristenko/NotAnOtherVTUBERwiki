@@ -46,6 +46,12 @@ pub(crate) fn notes(ctx: &Ctx) -> transclude::Notes {
         looped: ctx.t_with("template.looped", &[("name", "{name}")]),
         limit: ctx.t("template.limit"),
         language: ctx.content_locale.clone(),
+        bad_data: ctx.t_with(
+            "template.bad_data",
+            &[("line", "{line}"), ("reason", "{reason}")],
+        ),
+        unknown_fields: ctx.t_with("template.unknown_fields", &[("names", "{names}")]),
+        missing_fields: ctx.t_with("template.missing_fields", &[("names", "{names}")]),
     }
 }
 
@@ -95,26 +101,152 @@ pub(crate) async fn expand_with(
     if !source.contains("{{") {
         return finish(db, wiki, source, Vec::new()).await;
     }
+    let run = run_rounds(db, wiki, notes, &source, given).await?;
+    finish(db, wiki, run.text, run.used.into_iter().collect()).await
+}
+
+/// Expands `source`, loading in rounds what the templates of the last round
+/// call, with `given` in place of what is stored.
+async fn run_rounds(
+    db: &sqlx::PgPool,
+    wiki: &Wiki<'_>,
+    notes: &transclude::Notes,
+    source: &str,
+    given: HashMap<String, String>,
+) -> Result<transclude::Expansion, AppError> {
     let mut tried: HashSet<String> = given.keys().cloned().collect();
     let mut loaded = given;
-    // Each round loads what the templates of the last round call.
+    let mut labels = transclude::Labels::new();
+    if !tried.is_empty() {
+        let wanted: Vec<String> = tried.iter().cloned().collect();
+        labels.extend(load(db, wiki, &wanted).await?.labels);
+    }
     for _ in 0..transclude::DEPTH_MAX {
-        let run = transclude::expand(&source, &loaded, notes);
+        let run = transclude::expand_labeled(source, &loaded, &labels, notes);
         let room = TEMPLATES_MAX.saturating_sub(tried.len());
         let wanted: Vec<String> = run
             .missing
-            .into_iter()
-            .filter(|slug| !tried.contains(slug))
+            .iter()
+            .filter(|slug| !tried.contains(*slug))
             .take(room)
+            .cloned()
             .collect();
         if wanted.is_empty() {
-            return finish(db, wiki, run.text, run.used.into_iter().collect()).await;
+            return Ok(run);
         }
         tried.extend(wanted.iter().cloned());
-        loaded.extend(load(db, wiki, &wanted).await?);
+        let found = load(db, wiki, &wanted).await?;
+        loaded.extend(found.code);
+        labels.extend(found.labels);
     }
-    let run = transclude::expand(&source, &loaded, notes);
-    finish(db, wiki, run.text, run.used.into_iter().collect()).await
+    Ok(transclude::expand_labeled(source, &loaded, &labels, notes))
+}
+
+/// Why a template version cannot be saved as it is, as a message key, or
+/// `None`. A translation carries no code: every language runs the main
+/// version's, so translating a template cannot make it a different template.
+/// The main version must not end up calling itself, or every page using it
+/// would show the loop instead.
+pub(crate) async fn refusal(
+    db: &sqlx::PgPool,
+    wiki: &Wiki<'_>,
+    notes: &transclude::Notes,
+    slug: &str,
+    locale: &str,
+    body: &str,
+) -> Result<Option<&'static str>, AppError> {
+    // A starter lays out a whole new page: its body is an article, and each
+    // language writes its own. The rules below are for components.
+    if body
+        .lines()
+        .next()
+        .is_some_and(|first| starter_label(first).is_some())
+    {
+        return Ok(None);
+    }
+    let main = main_locale(db, wiki, slug).await?;
+    let is_main = match &main {
+        None => true,
+        Some(main) => main == locale || locale == wiki.default_locale,
+    };
+    if !is_main {
+        return Ok(transclude::has_code(body).then_some("template.translation_code"));
+    }
+    let given = HashMap::from([(slug.to_string(), body.to_string())]);
+    let run = run_rounds(db, wiki, notes, &format!("{{{{{slug}}}}}"), given).await?;
+    Ok(run.looped.contains(slug).then_some("template.loops_itself"))
+}
+
+/// A template's main version: its language, title and source.
+pub(crate) struct Main {
+    pub locale: String,
+    pub title: String,
+    pub body: String,
+}
+
+/// The main version of `slug` (see [`main_locale`]), or `None`.
+pub(crate) async fn main_version(
+    db: &sqlx::PgPool,
+    wiki: &Wiki<'_>,
+    slug: &str,
+) -> Result<Option<Main>, AppError> {
+    let row = sqlx::query!(
+        r#"SELECT COALESCE(p.locale, '') AS "locale!", p.title, r.body_md
+           FROM pages p JOIN revisions r ON r.id = p.current_revision_id
+           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.slug = $2
+             AND p.deleted_at IS NULL
+           ORDER BY (COALESCE(p.locale, '') = $3) DESC, p.created_at
+           LIMIT 1"#,
+        wiki.id,
+        slug,
+        wiki.default_locale
+    )
+    .fetch_optional(db)
+    .await?;
+    Ok(row.map(|r| Main {
+        locale: r.locale,
+        title: r.title,
+        body: r.body_md,
+    }))
+}
+
+/// The default of each `{{#label:key|Default}}` in a template's code.
+pub(crate) fn label_defaults(code: &str) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    let mut rest = code;
+    while let Some(at) = rest.find("{{#label:") {
+        rest = &rest[at + "{{#label:".len()..];
+        let Some(end) = rest.find("}}") else { break };
+        let inside = &rest[..end];
+        if let Some((key, default)) = inside.split_once('|') {
+            out.entry(key.trim().to_string())
+                .or_insert_with(|| default.trim().to_string());
+        }
+        rest = &rest[end..];
+    }
+    out
+}
+
+/// The language of a template's main version: the wiki's own when it has
+/// one, else the first written. `None` for a template nobody wrote yet.
+pub(crate) async fn main_locale(
+    db: &sqlx::PgPool,
+    wiki: &Wiki<'_>,
+    slug: &str,
+) -> Result<Option<String>, AppError> {
+    let locale = sqlx::query_scalar!(
+        r#"SELECT COALESCE(p.locale, '') AS "locale!" FROM pages p
+           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.slug = $2
+             AND p.deleted_at IS NULL
+           ORDER BY (COALESCE(p.locale, '') = $3) DESC, p.created_at
+           LIMIT 1"#,
+        wiki.id,
+        slug,
+        wiki.default_locale
+    )
+    .fetch_optional(db)
+    .await?;
+    Ok(locale)
 }
 
 /// The last step for any text: `image:name` and its siblings point at files.
@@ -128,27 +260,44 @@ async fn finish(
     Ok(Expanded { text, used })
 }
 
-/// The live source of each template, in the reader's language when there is
-/// one, else the wiki's own, else any.
-async fn load(
-    db: &sqlx::PgPool,
-    wiki: &Wiki<'_>,
-    slugs: &[String],
-) -> Result<HashMap<String, String>, AppError> {
+/// What a round of loading brings: each template's code, from its main
+/// version, and its labels in the reader's language.
+struct Loaded {
+    code: HashMap<String, String>,
+    labels: transclude::Labels,
+}
+
+/// The live versions of each template. The code always comes from the main
+/// version (see [`main_locale`]), so every language runs the same template;
+/// the version in the reader's language adds only its labels.
+async fn load(db: &sqlx::PgPool, wiki: &Wiki<'_>, slugs: &[String]) -> Result<Loaded, AppError> {
     let rows = sqlx::query!(
-        r#"SELECT DISTINCT ON (p.slug) p.slug AS "slug!", r.body_md AS "body!"
+        r#"SELECT p.slug AS "slug!", COALESCE(p.locale, '') AS "locale!", r.body_md AS "body!"
            FROM pages p JOIN revisions r ON r.id = p.current_revision_id
            WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.slug = ANY($2)
              AND p.deleted_at IS NULL
-           ORDER BY p.slug, (COALESCE(p.locale, '') = $3) DESC, (COALESCE(p.locale, '') = $4) DESC"#,
+           ORDER BY p.slug, (COALESCE(p.locale, '') = $3) DESC, p.created_at"#,
         wiki.id,
         slugs,
-        wiki.locale,
         wiki.default_locale
     )
     .fetch_all(db)
     .await?;
-    Ok(rows.into_iter().map(|row| (row.slug, row.body)).collect())
+    let mut code = HashMap::new();
+    let mut labels = transclude::Labels::new();
+    for row in rows {
+        // the first row of each slug is its main version
+        if !code.contains_key(&row.slug) {
+            code.insert(row.slug.clone(), row.body.clone());
+        }
+        if row.locale == wiki.locale {
+            let found = transclude::labels_of(&row.body);
+            if !found.is_empty() {
+                labels.insert(row.slug, found);
+            }
+        }
+    }
+    Ok(Loaded { code, labels })
 }
 
 /// Replaces the list of templates `page_id` uses. A failure is logged: the
@@ -194,7 +343,8 @@ pub(crate) async fn uses(
 ) -> Result<(i64, Vec<Use>), AppError> {
     let total = sqlx::query_scalar!(
         r#"SELECT count(*) AS "n!" FROM template_uses u JOIN pages p ON p.id = u.page_id
-           WHERE u.wiki_id = $1 AND u.template_slug = $2 AND p.deleted_at IS NULL"#,
+           WHERE u.wiki_id = $1 AND u.template_slug = $2 AND p.deleted_at IS NULL
+             AND NOT (p.namespace = 'template' AND p.slug = $2)"#,
         ctx.wiki.id,
         slug
     )
@@ -204,6 +354,7 @@ pub(crate) async fn uses(
         r#"SELECT p.title, p.slug, p.namespace::text AS "namespace!"
            FROM template_uses u JOIN pages p ON p.id = u.page_id
            WHERE u.wiki_id = $1 AND u.template_slug = $2 AND p.deleted_at IS NULL
+             AND NOT (p.namespace = 'template' AND p.slug = $2)
            ORDER BY p.title LIMIT $3"#,
         ctx.wiki.id,
         slug,
@@ -314,5 +465,323 @@ mod tests {
             starter_body(source),
             "{{Infobox VTuber|name=}}\n\n## Lore\n"
         );
+    }
+}
+
+/// With a database: a template belongs to one wiki, runs one code in every
+/// language, and a save that would break that is refused.
+#[cfg(test)]
+mod db_tests {
+    use super::*;
+    use sqlx::PgPool;
+
+    async fn wiki(db: &PgPool, slug: &str, default_locale: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO wikis (id, slug, name, default_locale) VALUES ($1, $2, $2, $3)")
+            .bind(id)
+            .bind(slug)
+            .bind(default_locale)
+            .execute(db)
+            .await
+            .expect("wiki");
+        id
+    }
+
+    /// A live template version; `age` seconds old, so the first written is known.
+    async fn template(db: &PgPool, wiki_id: Uuid, slug: &str, locale: &str, body: &str, age: i64) {
+        let page = Uuid::new_v4();
+        let revision = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale, created_at)
+             VALUES ($1, $2, 'template', $3, $3, $4, now() - make_interval(secs => $5))",
+        )
+        .bind(page)
+        .bind(wiki_id)
+        .bind(slug)
+        .bind(locale)
+        .bind(age as f64)
+        .execute(db)
+        .await
+        .expect("page");
+        sqlx::query(
+            "INSERT INTO revisions (id, page_id, body_md, content_hash) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(revision)
+        .bind(page)
+        .bind(body)
+        .bind(vec![0u8])
+        .execute(db)
+        .await
+        .expect("revision");
+        sqlx::query("UPDATE pages SET current_revision_id = $2 WHERE id = $1")
+            .bind(page)
+            .bind(revision)
+            .execute(db)
+            .await
+            .expect("current");
+    }
+
+    async fn render(
+        db: &PgPool,
+        wiki_id: Uuid,
+        locale: &str,
+        default_locale: &str,
+        body: &str,
+    ) -> String {
+        let wiki = Wiki {
+            id: wiki_id,
+            locale,
+            default_locale,
+        };
+        expand_in(db, &wiki, &transclude::Notes::default(), "article", body)
+            .await
+            .expect("expand")
+            .text
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_template_never_leaves_its_wiki(db: PgPool) {
+        let a = wiki(&db, "a", "en").await;
+        let b = wiki(&db, "b", "en").await;
+        let c = wiki(&db, "c", "en").await;
+        template(&db, a, "card", "en", "from A", 10).await;
+        template(&db, b, "card", "en", "from B", 10).await;
+        assert_eq!(render(&db, a, "en", "en", "{{card}}").await, "from A");
+        assert_eq!(render(&db, b, "en", "en", "{{card}}").await, "from B");
+        // a wiki without it gets the missing note, not a neighbour's template
+        let missing = render(&db, c, "en", "en", "{{card}}").await;
+        assert!(
+            !missing.contains("from A") && !missing.contains("from B"),
+            "{missing}"
+        );
+        assert!(
+            main_version(
+                &db,
+                &Wiki {
+                    id: c,
+                    locale: "en",
+                    default_locale: "en"
+                },
+                "card"
+            )
+            .await
+            .expect("q")
+            .is_none()
+        );
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn every_language_runs_the_main_code_with_its_own_labels(db: PgPool) {
+        let w = wiki(&db, "w", "en").await;
+        template(
+            &db,
+            w,
+            "card",
+            "en",
+            "<includeonly>{{#label:debut|Debut}}: {{{debut|}}}</includeonly>",
+            20,
+        )
+        .await;
+        // a translation with words only
+        template(
+            &db,
+            w,
+            "card",
+            "ru",
+            "<noinclude>Описание</noinclude>\n<labels>\ndebut = Дебют\n</labels>",
+            10,
+        )
+        .await;
+        let call = "{{card|debut=2021}}";
+        assert_eq!(render(&db, w, "en", "en", call).await, "Debut: 2021");
+        assert_eq!(render(&db, w, "ru", "en", call).await, "Дебют: 2021");
+        // a language with no translation still runs the same template
+        assert_eq!(render(&db, w, "de", "en", call).await, "Debut: 2021");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_translation_that_carries_code_is_ignored_and_refused(db: PgPool) {
+        let w = wiki(&db, "w", "en").await;
+        template(&db, w, "card", "en", "<includeonly>real</includeonly>", 20).await;
+        // written before the rule: its code must not run for Russian readers
+        template(&db, w, "card", "ru", "other code", 10).await;
+        assert_eq!(render(&db, w, "ru", "en", "{{card}}").await, "real");
+        let wiki_ru = Wiki {
+            id: w,
+            locale: "ru",
+            default_locale: "en",
+        };
+        let notes = transclude::Notes::default();
+        let refused = refusal(
+            &db,
+            &wiki_ru,
+            &notes,
+            "card",
+            "ru",
+            "<includeonly>mine</includeonly>",
+        )
+        .await
+        .expect("q");
+        assert_eq!(refused, Some("template.translation_code"));
+        let words = refusal(
+            &db,
+            &wiki_ru,
+            &notes,
+            "card",
+            "ru",
+            "<noinclude>Описание</noinclude>\n<labels>\na = б\n</labels>",
+        )
+        .await
+        .expect("q");
+        assert_eq!(words, None);
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn the_main_version_cannot_call_itself(db: PgPool) {
+        let w = wiki(&db, "w", "en").await;
+        template(&db, w, "card", "en", "<includeonly>fine</includeonly>", 20).await;
+        template(
+            &db,
+            w,
+            "wrapper",
+            "en",
+            "<includeonly>{{card}}</includeonly>",
+            20,
+        )
+        .await;
+        let wiki_en = Wiki {
+            id: w,
+            locale: "en",
+            default_locale: "en",
+        };
+        let notes = transclude::Notes::default();
+        // directly
+        let direct = refusal(&db, &wiki_en, &notes, "card", "en", "x {{card}}")
+            .await
+            .expect("q");
+        assert_eq!(direct, Some("template.loops_itself"));
+        // through another template
+        let around = refusal(&db, &wiki_en, &notes, "card", "en", "x {{wrapper}}")
+            .await
+            .expect("q");
+        assert_eq!(around, Some("template.loops_itself"));
+        // an example of itself in its own documentation is fine
+        let docs = refusal(
+            &db,
+            &wiki_en,
+            &notes,
+            "card",
+            "en",
+            "<includeonly>x</includeonly><noinclude>{{card}}</noinclude>",
+        )
+        .await
+        .expect("q");
+        assert_eq!(docs, None);
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_starter_is_an_article_and_translates_freely(db: PgPool) {
+        let w = wiki(&db, "w", "en").await;
+        template(
+            &db,
+            w,
+            "vtuber-article",
+            "en",
+            "<!-- starter: VTuber article -->\n# Name",
+            20,
+        )
+        .await;
+        let wiki_ru = Wiki {
+            id: w,
+            locale: "ru",
+            default_locale: "en",
+        };
+        let ru = "<!-- starter: Статья о VTuber -->\n# Имя\n\n{{Infobox VTuber}}";
+        let result = refusal(
+            &db,
+            &wiki_ru,
+            &transclude::Notes::default(),
+            "vtuber-article",
+            "ru",
+            ru,
+        )
+        .await
+        .expect("q");
+        assert_eq!(result, None);
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn the_first_version_is_main_until_the_wiki_language_has_one(db: PgPool) {
+        let w = wiki(&db, "w", "en").await;
+        let wiki_en = Wiki {
+            id: w,
+            locale: "en",
+            default_locale: "en",
+        };
+        template(
+            &db,
+            w,
+            "card",
+            "ru",
+            "<includeonly>ru code</includeonly>",
+            20,
+        )
+        .await;
+        assert_eq!(
+            main_locale(&db, &wiki_en, "card")
+                .await
+                .expect("q")
+                .as_deref(),
+            Some("ru")
+        );
+        assert_eq!(render(&db, w, "en", "en", "{{card}}").await, "ru code");
+        template(
+            &db,
+            w,
+            "card",
+            "en",
+            "<includeonly>en code</includeonly>",
+            10,
+        )
+        .await;
+        assert_eq!(
+            main_locale(&db, &wiki_en, "card")
+                .await
+                .expect("q")
+                .as_deref(),
+            Some("en")
+        );
+        assert_eq!(render(&db, w, "ru", "en", "{{card}}").await, "en code");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn yaml_fields_follow_the_schema_of_the_main_version(db: PgPool) {
+        let w = wiki(&db, "w", "en").await;
+        let code = "<params>\nname: text required\nfans: list\n</params>\n<includeonly>{{#label:fans|Fans}}: {{{fans|}}} ({{{name|}}})</includeonly>";
+        template(&db, w, "card", "en", code, 20).await;
+        template(
+            &db,
+            w,
+            "card",
+            "ru",
+            "<labels>\nfans = Фанаты\n</labels>",
+            10,
+        )
+        .await;
+        let yaml = "{{Card\n```yaml\nname: Filian\nfans:\n  - Snackers\n  - Cats\n```\n}}";
+        assert_eq!(
+            render(&db, w, "ru", "en", yaml).await,
+            "Фанаты: Snackers, Cats (Filian)"
+        );
+        let off = render(
+            &db,
+            w,
+            "en",
+            "en",
+            "{{Card\n```yaml\nfans: x\ncolour: red\n```\n}}",
+        )
+        .await;
+        assert!(off.contains("does not have: colour"), "{off}");
+        assert!(off.contains("left empty: name"), "{off}");
     }
 }

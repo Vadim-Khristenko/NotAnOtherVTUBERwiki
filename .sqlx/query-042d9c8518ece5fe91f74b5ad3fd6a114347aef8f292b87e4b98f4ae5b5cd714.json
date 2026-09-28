@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM template_uses u JOIN pages p ON p.id = u.page_id\n           WHERE u.wiki_id = $1 AND u.template_slug = $2 AND p.deleted_at IS NULL\n             AND NOT (p.namespace = 'template' AND p.slug = $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "042d9c8518ece5fe91f74b5ad3fd6a114347aef8f292b87e4b98f4ae5b5cd714"
+}

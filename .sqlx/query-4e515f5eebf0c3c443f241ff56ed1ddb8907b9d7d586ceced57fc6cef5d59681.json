@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(p.locale, '') AS \"locale!\", p.title, r.body_md\n           FROM pages p JOIN revisions r ON r.id = p.current_revision_id\n           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.slug = $2\n             AND p.deleted_at IS NULL\n           ORDER BY (COALESCE(p.locale, '') = $3) DESC, p.created_at\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "locale!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "body_md",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "body_md"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "4e515f5eebf0c3c443f241ff56ed1ddb8907b9d7d586ceced57fc6cef5d59681"
+}

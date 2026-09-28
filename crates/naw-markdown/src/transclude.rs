@@ -16,6 +16,7 @@
 //! Pure: the caller loads the templates. [`expand`] reports the names it
 //! could not find, so the caller loads those and runs it again.
 
+use crate::yaml;
 use std::collections::{BTreeSet, HashMap};
 
 /// Templates inside templates, at most this deep.
@@ -37,6 +38,12 @@ pub struct Notes {
     pub looped: String,
     pub limit: String,
     pub language: String,
+    /// YAML fields that could not be read: `{line}` and `{reason}`.
+    pub bad_data: String,
+    /// Fields the template's `<params>` do not list: `{names}`.
+    pub unknown_fields: String,
+    /// Required fields left out or empty: `{names}`.
+    pub missing_fields: String,
 }
 
 impl Default for Notes {
@@ -46,8 +53,99 @@ impl Default for Notes {
             looped: "**Template loop: {name}**".into(),
             limit: "**Template limit reached**".into(),
             language: "en".into(),
+            bad_data: "**YAML, line {line}: {reason}**".into(),
+            unknown_fields: "*Fields this template does not have: {names}*".into(),
+            missing_fields: "*Required fields left empty: {names}*".into(),
         }
     }
+}
+
+/// One field a template declares in its `<params>` block.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Param {
+    pub name: String,
+    /// `text`, `image`, `date`, `number`, `link` or `list`.
+    pub kind: String,
+    pub required: bool,
+}
+
+/// The kinds a `<params>` line may name; anything else reads as `text`.
+pub const PARAM_KINDS: &[&str] = &["text", "image", "date", "number", "link", "list"];
+
+/// The fields a template declares: a `<params>` block with one
+/// `name: kind` or `name: kind required` a line. Empty when there is none.
+pub fn params_of(source: &str) -> Vec<Param> {
+    let mut out: Vec<Param> = Vec::new();
+    for (key, value) in block_lines(source, "params") {
+        let mut words = value.split_whitespace();
+        let kind = words
+            .next()
+            .filter(|k| PARAM_KINDS.contains(k))
+            .unwrap_or("text");
+        let required = words.any(|w| w == "required");
+        if !out.iter().any(|p| p.name == key) {
+            out.push(Param {
+                name: key,
+                kind: kind.to_string(),
+                required,
+            });
+        }
+    }
+    out
+}
+
+/// `key: value` or `key = value` lines of every `<tag>` block, in order.
+fn block_lines(source: &str, tag: &str) -> Vec<(String, String)> {
+    let (open, close) = (format!("<{tag}>"), format!("</{tag}>"));
+    let lower = source.to_ascii_lowercase();
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(at) = lower[from..].find(&open) {
+        let start = from + at + open.len();
+        let end = lower[start..]
+            .find(&close)
+            .map_or(source.len(), |e| start + e);
+        for line in source[start..end].lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let split = match (line.find(':'), line.find('=')) {
+                (Some(c), Some(e)) => Some(c.min(e)),
+                (c, e) => c.or(e),
+            };
+            if let Some(at) = split {
+                let key = line[..at].trim();
+                let plain = !key.is_empty()
+                    && key.len() <= 64
+                    && key
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+                if plain {
+                    out.push((key.to_string(), line[at + 1..].trim().to_string()));
+                }
+            }
+        }
+        from = end;
+    }
+    out
+}
+
+/// `Name` + a fenced ```yaml block and nothing else: the call and its data.
+fn data_call(inner: &str) -> Option<(&str, &str)> {
+    let (name, rest) = inner.split_once('\n')?;
+    let name = name.trim();
+    if name.is_empty() || name.contains('|') || name.starts_with('#') {
+        return None;
+    }
+    let rest = rest.trim();
+    let first_line = rest.lines().next()?.trim();
+    if !matches!(first_line, "```yaml" | "```yml") {
+        return None;
+    }
+    let body = rest[rest.find('\n')? + 1..].trim_end();
+    let body = body.strip_suffix("```")?;
+    Some((name, body))
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -57,7 +155,13 @@ pub struct Expansion {
     pub used: BTreeSet<String>,
     /// Templates called but not passed in, by slug.
     pub missing: BTreeSet<String>,
+    /// Templates that ended up calling themselves, by slug.
+    pub looped: BTreeSet<String>,
 }
+
+/// Field labels in the reader's language, per template slug: what a
+/// translation of a template supplies instead of code of its own.
+pub type Labels = HashMap<String, HashMap<String, String>>;
 
 /// The slug a template name stands for: `Infobox VTuber`, `template:infobox_vtuber`
 /// and `Шаблон:Infobox VTuber` are all `infobox-vtuber`. `None` for a name no
@@ -92,12 +196,24 @@ pub fn template_slug(name: &str) -> Option<String> {
 
 /// Expands every call in `source` with `templates`, keyed by slug.
 pub fn expand(source: &str, templates: &HashMap<String, String>, notes: &Notes) -> Expansion {
+    expand_labeled(source, templates, &Labels::new(), notes)
+}
+
+/// [`expand`], with `{{#label:key|default}}` read from `labels`.
+pub fn expand_labeled(
+    source: &str,
+    templates: &HashMap<String, String>,
+    labels: &Labels,
+    notes: &Notes,
+) -> Expansion {
     let mut run = Run {
         templates,
+        labels,
         notes,
         calls: 0,
         used: BTreeSet::new(),
         missing: BTreeSet::new(),
+        looped: BTreeSet::new(),
         stack: Vec::new(),
     };
     let text = run.text(source, 0);
@@ -105,28 +221,69 @@ pub fn expand(source: &str, templates: &HashMap<String, String>, notes: &Notes) 
         text,
         used: run.used,
         missing: run.missing,
+        looped: run.looped,
     }
 }
 
 /// A template's source as its own page shows it: the documentation in, the
 /// parts meant for other pages out, and each parameter at its default.
 pub fn template_view(source: &str) -> String {
-    let shown = unwrap_tag(&drop_tag(source, "includeonly"), "noinclude");
+    let shown = unwrap_tag(
+        &drop_tag(
+            &drop_tag(&drop_tag(source, "includeonly"), "labels"),
+            "params",
+        ),
+        "noinclude",
+    );
     substitute(&shown, &HashMap::new())
 }
 
 /// A template's source as another page receives it.
 fn for_inclusion(source: &str) -> String {
-    let body = unwrap_tag(&drop_tag(source, "noinclude"), "includeonly");
-    body.trim_end_matches(['\n', '\r']).to_string()
+    let body = unwrap_tag(
+        &drop_tag(
+            &drop_tag(&drop_tag(source, "noinclude"), "labels"),
+            "params",
+        ),
+        "includeonly",
+    );
+    // Line breaks around the blocks are layout of the source, not of the call:
+    // `<params>` on its own lines must not open a paragraph in every page.
+    body.trim_matches(['\n', '\r']).to_string()
+}
+
+/// The `<labels>` block of a template version: one `key = text` a line;
+/// blank lines and lines starting with `#` are skipped.
+pub fn labels_of(source: &str) -> HashMap<String, String> {
+    block_lines(source, "labels").into_iter().collect()
+}
+
+/// Whether a template version carries code of its own: anything but its
+/// documentation, its labels and comments. A translation must not, so every
+/// language runs the same template.
+pub fn has_code(source: &str) -> bool {
+    let rest = drop_tag(
+        &drop_tag(&drop_tag(source, "noinclude"), "labels"),
+        "params",
+    );
+    let mut rest = rest.as_str();
+    let mut left = String::new();
+    while let Some(at) = rest.find("<!--") {
+        left.push_str(&rest[..at]);
+        rest = rest[at..].find("-->").map_or("", |e| &rest[at + e + 3..]);
+    }
+    left.push_str(rest);
+    !left.trim().is_empty()
 }
 
 struct Run<'a> {
     templates: &'a HashMap<String, String>,
+    labels: &'a Labels,
     notes: &'a Notes,
     calls: usize,
     used: BTreeSet<String>,
     missing: BTreeSet<String>,
+    looped: BTreeSet<String>,
     stack: Vec<String>,
 }
 
@@ -206,6 +363,27 @@ impl Run<'_> {
         if self.calls > CALLS_MAX || depth >= DEPTH_MAX {
             return self.notes.limit.clone();
         }
+        // `{{Name` + a ```yaml block + `}}`: the fields as YAML.
+        if let Some((name, yaml)) = data_call(inner) {
+            let Some(slug) = template_slug(name) else {
+                return format!("{{{{{inner}}}}}");
+            };
+            let fields = match yaml::parse(yaml) {
+                Ok(fields) => fields,
+                Err(err) => {
+                    return self
+                        .notes
+                        .bad_data
+                        .replace("{line}", &err.line.to_string())
+                        .replace("{reason}", err.reason);
+                }
+            };
+            let args = fields
+                .into_iter()
+                .map(|(key, value)| (key, self.text(&value, depth + 1).trim().to_string()))
+                .collect();
+            return self.include(slug, args, depth);
+        }
         let parts = split_top(inner, '|');
         let head = parts[0].trim();
         if parts.len() == 1 {
@@ -221,15 +399,9 @@ impl Run<'_> {
         let Some(slug) = template_slug(head) else {
             return format!("{{{{{inner}}}}}");
         };
-        if self.stack.contains(&slug) {
-            return self.note(&self.notes.looped, &slug);
+        if !self.templates.contains_key(&slug) || self.stack.contains(&slug) {
+            return self.include(slug, HashMap::new(), depth);
         }
-        let Some(source) = self.templates.get(&slug) else {
-            self.missing.insert(slug.clone());
-            return self.note(&self.notes.missing, &slug);
-        };
-        self.used.insert(slug.clone());
-
         let mut args: HashMap<String, String> = HashMap::new();
         let mut position = 0;
         for part in &parts[1..] {
@@ -244,10 +416,60 @@ impl Run<'_> {
                 }
             }
         }
+        self.include(slug, args, depth)
+    }
+
+    /// The template at `slug` with `args`, or the note for why it cannot be:
+    /// missing, or already being expanded. With a `<params>` schema, a call
+    /// that brings fields the template does not know, or leaves out required
+    /// ones, gets a note after the template saying which.
+    fn include(&mut self, slug: String, args: HashMap<String, String>, depth: usize) -> String {
+        if self.stack.contains(&slug) {
+            self.looped.insert(slug.clone());
+            return self.note(&self.notes.looped, &slug);
+        }
+        let Some(source) = self.templates.get(&slug) else {
+            self.missing.insert(slug.clone());
+            return self.note(&self.notes.missing, &slug);
+        };
+        self.used.insert(slug.clone());
+        let params = params_of(source);
         let body = substitute(&for_inclusion(source), &args);
         self.stack.push(slug);
-        let expanded = self.text(&body, depth + 1);
+        let mut expanded = self.text(&body, depth + 1);
         self.stack.pop();
+        if !params.is_empty() {
+            let known = |key: &str| params.iter().any(|p| p.name == key);
+            let mut unknown: Vec<&str> = args
+                .keys()
+                .map(String::as_str)
+                .filter(|key| !known(key) && key.parse::<usize>().is_err())
+                .collect();
+            unknown.sort_unstable();
+            let missing: Vec<&str> = params
+                .iter()
+                .filter(|p| p.required && args.get(&p.name).is_none_or(|v| v.trim().is_empty()))
+                .map(|p| p.name.as_str())
+                .collect();
+            if !unknown.is_empty() {
+                expanded.push_str("\n\n");
+                expanded.push_str(
+                    &self
+                        .notes
+                        .unknown_fields
+                        .replace("{names}", &unknown.join(", ")),
+                );
+            }
+            if !missing.is_empty() {
+                expanded.push_str("\n\n");
+                expanded.push_str(
+                    &self
+                        .notes
+                        .missing_fields
+                        .replace("{names}", &missing.join(", ")),
+                );
+            }
+        }
         expanded
     }
 
@@ -308,6 +530,21 @@ impl Run<'_> {
                 default
                     .map(|d| self.text(d, depth + 1).trim().to_string())
                     .unwrap_or_default()
+            }
+            // `{{#label: debut | Debut}}`: the field's label from the template's
+            // translation in the page language, else the text after the bar.
+            "label" => {
+                let key = self.text(first, depth + 1).trim().to_string();
+                let translated = self
+                    .stack
+                    .last()
+                    .and_then(|slug| self.labels.get(slug))
+                    .and_then(|labels| labels.get(&key))
+                    .cloned();
+                match translated {
+                    Some(text) => self.text(&text, depth + 1).trim().to_string(),
+                    None => arg(self, 0),
+                }
             }
             _ => String::new(),
         }
@@ -523,6 +760,124 @@ mod tests {
 
     fn run(source: &str, templates: &[(&str, &str)]) -> Expansion {
         expand(source, &with(templates), &Notes::default())
+    }
+
+    #[test]
+    fn a_label_reads_the_translation_then_its_default() {
+        let card = "<includeonly>{{#label:debut|Debut}} = {{{debut|}}}</includeonly>";
+        let templates = with(&[("card", card)]);
+        let plain = expand("{{card|debut=2021}}", &templates, &Notes::default());
+        assert_eq!(plain.text, "Debut = 2021");
+        let mut labels = Labels::new();
+        labels.insert(
+            "card".into(),
+            HashMap::from([("debut".into(), "Дебют".into())]),
+        );
+        let ru = expand_labeled(
+            "{{card|debut=2021}}",
+            &templates,
+            &labels,
+            &Notes::default(),
+        );
+        assert_eq!(ru.text, "Дебют = 2021");
+        // a label belongs to its own template, not to one it happens to call
+        labels.insert(
+            "other".into(),
+            HashMap::from([("debut".into(), "нет".into())]),
+        );
+        let still = expand_labeled(
+            "{{card|debut=2021}}",
+            &templates,
+            &labels,
+            &Notes::default(),
+        );
+        assert_eq!(still.text, "Дебют = 2021");
+    }
+
+    #[test]
+    fn labels_come_from_their_block() {
+        let source = "<noinclude>docs</noinclude>\n<labels>\n# a comment\ndebut = Дебют\nfans = Фанаты\n\n</labels>";
+        let labels = labels_of(source);
+        assert_eq!(labels.get("debut").map(String::as_str), Some("Дебют"));
+        assert_eq!(labels.get("fans").map(String::as_str), Some("Фанаты"));
+        assert_eq!(labels.len(), 2);
+    }
+
+    #[test]
+    fn a_translation_without_code_is_told_apart() {
+        assert!(!has_code(
+            "<!-- title: Карточка -->\n<noinclude>Описание</noinclude>\n<labels>\na = б\n</labels>\n"
+        ));
+        assert!(has_code("<noinclude>Описание</noinclude>\n{{{name|}}}"));
+        assert!(has_code("<includeonly>x</includeonly>"));
+    }
+
+    #[test]
+    fn labels_and_docs_never_reach_the_page() {
+        let templates = with(&[(
+            "card",
+            "<labels>\na = b\n</labels><noinclude>docs</noinclude>body",
+        )]);
+        assert_eq!(
+            expand("{{card}}", &templates, &Notes::default()).text,
+            "body"
+        );
+        assert_eq!(template_view("<labels>\na = b\n</labels>docs"), "docs");
+    }
+
+    #[test]
+    fn fields_can_come_as_yaml() {
+        let card = "<includeonly>{{{name|}}} / {{{aliases|}}} / {{{bio|}}}</includeonly>";
+        let source =
+            "{{Card\n```yaml\nname: Filian\naliases:\n  - Fil\n  - Cat\nbio: \"a | pipe\"\n```\n}}";
+        assert_eq!(
+            run(source, &[("card", card)]).text,
+            "Filian / Fil, Cat / a | pipe"
+        );
+    }
+
+    #[test]
+    fn broken_yaml_says_where() {
+        let source = "{{Card\n```yaml\nname: Filian\nbad: &x y\n```\n}}";
+        assert_eq!(
+            run(source, &[("card", "x")]).text,
+            "**YAML, line 2: anchors, aliases, tags and inline lists are not supported: put the text in quotes**"
+        );
+    }
+
+    #[test]
+    fn params_flag_unknown_and_missing_fields() {
+        let card = "<params>\nname: text required\ndebut: date\n</params><includeonly>{{{name|}}}</includeonly>";
+        let text = run("{{card|debut=2021|colour=red}}", &[("card", card)]).text;
+        assert!(
+            text.contains("Fields this template does not have: colour"),
+            "{text}"
+        );
+        assert!(text.contains("Required fields left empty: name"), "{text}");
+        let fine = run("{{card|name=Fil}}", &[("card", card)]).text;
+        assert_eq!(fine, "Fil");
+        assert_eq!(
+            params_of(card),
+            vec![
+                Param {
+                    name: "name".into(),
+                    kind: "text".into(),
+                    required: true
+                },
+                Param {
+                    name: "debut".into(),
+                    kind: "date".into(),
+                    required: false
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_template_that_reaches_itself_is_reported() {
+        let looped = run("{{a}}", &[("a", "x{{b}}"), ("b", "y{{a}}")]);
+        assert!(looped.looped.contains("a"));
+        assert!(run("{{a}}", &[("a", "x")]).looped.is_empty());
     }
 
     #[test]

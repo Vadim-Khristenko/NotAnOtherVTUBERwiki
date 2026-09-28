@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.title, p.slug, p.namespace::text AS \"namespace!\"\n           FROM template_uses u JOIN pages p ON p.id = u.page_id\n           WHERE u.wiki_id = $1 AND u.template_slug = $2 AND p.deleted_at IS NULL\n           ORDER BY p.title LIMIT $3",
+  "query": "SELECT p.title, p.slug, p.namespace::text AS \"namespace!\"\n           FROM template_uses u JOIN pages p ON p.id = u.page_id\n           WHERE u.wiki_id = $1 AND u.template_slug = $2 AND p.deleted_at IS NULL\n             AND NOT (p.namespace = 'template' AND p.slug = $2)\n           ORDER BY p.title LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -45,5 +45,5 @@
       null
     ]
   },
-  "hash": "d41a14951aeacf7162acd984e0646a03aad2fbe92b283a02317e358e4eca1592"
+  "hash": "2dfc311e4bd61db64c6f0cf7d92c5a0d43bf23c86d36c570c352414abbc8651b"
 }

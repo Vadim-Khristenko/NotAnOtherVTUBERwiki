@@ -695,8 +695,73 @@ pub async fn page(
     let template = match split_path(&slug) {
         ("template", bare) => {
             let (total, pages) = crate::templates::uses(&state, &ctx, bare).await?;
+            let wiki = crate::templates::Wiki::of(&ctx);
+            let main = crate::templates::main_version(&state.db, &wiki, bare).await?;
+            let is_starter = found
+                .body_md
+                .lines()
+                .next()
+                .is_some_and(|l| crate::templates::starter_label(l).is_some());
+            // The name to call it by: the main title when it spells this slug.
+            let main_title = main
+                .as_ref()
+                .map_or(found.title.as_str(), |m| m.title.as_str());
+            let name =
+                if naw_markdown::transclude::template_slug(main_title).as_deref() == Some(bare) {
+                    main_title.to_string()
+                } else {
+                    bare.to_string()
+                };
+            let code = main
+                .as_ref()
+                .map_or(found.body_md.as_str(), |m| m.body.as_str());
+            let params = naw_markdown::transclude::params_of(code);
+            let defaults = crate::templates::label_defaults(code);
+            let translated = naw_markdown::transclude::labels_of(&found.body_md);
+            let fields: Vec<minijinja::Value> = params
+                .iter()
+                .map(|p| {
+                    let label = translated
+                        .get(&p.name)
+                        .or_else(|| defaults.get(&p.name))
+                        .cloned()
+                        .unwrap_or_default();
+                    minijinja::context! {
+                        name => p.name.clone(),
+                        kind => ctx.t(&format!("template.kind_{}", p.kind)),
+                        required => p.required,
+                        label => label,
+                    }
+                })
+                .collect();
+            let width = params
+                .iter()
+                .map(|p| p.name.chars().count())
+                .max()
+                .unwrap_or(0);
+            let yaml_example = (!params.is_empty()).then(|| {
+                let lines: Vec<String> = params.iter().map(|p| format!("{}:", p.name)).collect();
+                format!("{{{{{name}\n```yaml\n{}\n```\n}}}}", lines.join("\n"))
+            });
+            let pipes_example = (!params.is_empty()).then(|| {
+                let lines: Vec<String> = params
+                    .iter()
+                    .map(|p| format!("| {:width$} =", p.name))
+                    .collect();
+                format!("{{{{{name}\n{}\n}}}}", lines.join("\n"))
+            });
+            let translation = main
+                .as_ref()
+                .filter(|m| m.locale != ctx.content_locale && !is_starter)
+                .map(|m| ctx.link_for(&m.locale, &format!("/{TEMPLATE_PREFIX}{bare}")));
             Some(minijinja::context! {
-                call => format!("{{{{{}}}}}", found.title.trim_start_matches("Template:").trim()),
+                call => format!("{{{{{name}}}}}"),
+                starter => is_starter,
+                fields => fields,
+                yaml_example => yaml_example,
+                pipes_example => pipes_example,
+                main_href => translation,
+                docs_href => format!("{}/blob/dev/docs/templates.md", crate::about::SOURCE_URL),
                 uses_total => total,
                 uses => pages.into_iter().map(|u| minijinja::context! { title => u.title, href => u.href }).collect::<Vec<_>>(),
                 uses_shown => crate::templates::USES_SHOWN,
@@ -807,6 +872,93 @@ fn chosen_locale(ctx: &Ctx, raw: &str) -> String {
     } else {
         ctx.content_locale.clone()
     }
+}
+
+/// The new-page editor again, with everything the author wrote and the
+/// reason it was not saved on top.
+fn new_form_again(
+    ctx: &Ctx,
+    form: &NewForm,
+    slug: &str,
+    message: &str,
+    slug_invalid: bool,
+) -> Result<Response, AppError> {
+    let locale = chosen_locale(ctx, &form.locale);
+    let view = FormView {
+        heading: &ctx.t("editor.new_page"),
+        action: &ctx.link("/new"),
+        form_locale: Some(&locale),
+        show_slug: true,
+        slug,
+        title_value: &form.title,
+        summary_value: &form.summary,
+        body_md: &form.body_md,
+        base_revision: "",
+        locked: false,
+        fixed_title: false,
+        back_href: None,
+        translation_of: None,
+    };
+    let mut response = render_form_with(
+        ctx,
+        &view,
+        minijinja::context! { form_error => message, slug_invalid => slug_invalid },
+    )?;
+    *response.status_mut() = StatusCode::CONFLICT;
+    Ok(response)
+}
+
+/// The editor of an existing page again, with the author's text and the
+/// reason it was not saved on top.
+fn edit_form_again(
+    ctx: &Ctx,
+    form: &EditForm,
+    slug: &str,
+    heading_title: &str,
+    message: &str,
+) -> Result<Response, AppError> {
+    let view = FormView {
+        heading: &ctx.t_with("editor.editing", &[("page", heading_title)]),
+        action: &ctx.link(&format!("/{slug}/edit")),
+        form_locale: Some(&ctx.content_locale),
+        show_slug: false,
+        slug,
+        title_value: &form.title,
+        summary_value: &form.summary,
+        body_md: &form.body_md,
+        base_revision: &form.base_revision,
+        locked: false,
+        fixed_title: false,
+        back_href: None,
+        translation_of: None,
+    };
+    let mut response = render_form_with(ctx, &view, minijinja::context! { form_error => message })?;
+    *response.status_mut() = StatusCode::CONFLICT;
+    Ok(response)
+}
+
+/// Why a template draft cannot be saved, in words, or `None` (see
+/// [`crate::templates::refusal`]).
+async fn template_refusal(
+    state: &AppState,
+    ctx: &Ctx,
+    bare: &str,
+    locale: &str,
+    body: &str,
+) -> Result<Option<String>, AppError> {
+    let wiki = crate::templates::Wiki::of(ctx);
+    let notes = crate::templates::notes(ctx);
+    let Some(key) = crate::templates::refusal(&state.db, &wiki, &notes, bare, locale, body).await?
+    else {
+        return Ok(None);
+    };
+    let main = crate::templates::main_locale(&state.db, &wiki, bare)
+        .await?
+        .unwrap_or_else(|| ctx.wiki.default_locale.clone());
+    let main_href = ctx.link_for(&main, &format!("/{TEMPLATE_PREFIX}{bare}"));
+    Ok(Some(
+        ctx.t_with(key, &[("name", bare), ("main", &main_href)]),
+    ))
 }
 
 /// Validated form values, shared by create and save.
@@ -1017,29 +1169,8 @@ pub async fn create_page(
         ));
     }
     if let Some(key) = reserved(&slug, |code| ctx.skin.messages.has(code)) {
-        // Back to the form with everything the author wrote, and the reason on top.
-        let view = FormView {
-            heading: &ctx.t("editor.new_page"),
-            action: &ctx.link("/new"),
-            form_locale: Some(&chosen_locale(&ctx, &form.locale)),
-            show_slug: true,
-            slug: &slug,
-            title_value: &form.title,
-            summary_value: &form.summary,
-            body_md: &form.body_md,
-            base_revision: "",
-            locked: false,
-            fixed_title: false,
-            back_href: None,
-            translation_of: None,
-        };
-        let mut response = render_form_with(
-            &ctx,
-            &view,
-            minijinja::context! { form_error => ctx.t_with(key, &[("slug", &slug)]), slug_invalid => true },
-        )?;
-        *response.status_mut() = StatusCode::CONFLICT;
-        return Ok(response);
+        let message = ctx.t_with(key, &[("slug", &slug)]);
+        return new_form_again(&ctx, &form, &slug, &message, true);
     }
     let (namespace, bare) = split_path(&slug);
     // A description needs its file: there is no page for a file never uploaded.
@@ -1069,6 +1200,11 @@ pub async fn create_page(
     };
     draft.body_md = crate::media::localize(&state, &ctx, draft.body_md).await;
     let locale = chosen_locale(&ctx, &form.locale);
+    if namespace == "template"
+        && let Some(message) = template_refusal(&state, &ctx, bare, &locale, &draft.body_md).await?
+    {
+        return new_form_again(&ctx, &form, &slug, &message, false);
+    }
 
     // The unique index is the real guard; this answers the common case, and an
     // archived slug stays taken so a restore lands on its own address.
@@ -1275,6 +1411,12 @@ pub async fn save_page(
 
     // Before the no-change check: a move without a text edit is still a change.
     let target_locale = chosen_locale(&ctx, &form.locale);
+    if let ("template", bare) = split_path(&slug)
+        && let Some(message) =
+            template_refusal(&state, &ctx, bare, &target_locale, &draft.body_md).await?
+    {
+        return edit_form_again(&ctx, &form, &slug, &found.title, &message);
+    }
     let moved = target_locale != locale;
     if moved {
         let (namespace, bare) = split_path(&slug);

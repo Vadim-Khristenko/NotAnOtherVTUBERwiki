@@ -9,7 +9,7 @@ use crate::pages::ENGINE_VERSION;
 use crate::resolve::Ctx;
 
 /// The engine's public source.
-const SOURCE_URL: &str = "https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki";
+pub(crate) const SOURCE_URL: &str = "https://github.com/Vadim-Khristenko/NotAnOtherVTUBERwiki";
 
 /// The About page's slug, from the wiki's settings.
 pub(crate) fn slug(ctx: &Ctx) -> String {

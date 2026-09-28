@@ -72,9 +72,33 @@
 {% if template is defined and template %}
 {# A template's own page: how to call it and which pages it would change. #}
 <section class="template-info" aria-labelledby="template-info-title">
-  <h2 id="template-info-title"><svg class="icon" aria-hidden="true"><use href="#i-template" /></svg>{{ t("template.info_title") }}</h2>
+  <h2 id="template-info-title"><svg class="icon" aria-hidden="true"><use href="#i-template" /></svg>{% if template.main_href %}{{ t("template.translation_title") }}{% else %}{{ t("template.info_title") }}{% endif %}</h2>
+  {% if template.main_href %}
+  <p class="notice">{{ t("template.translation_note") }} <a href="{{ template.main_href }}">{{ t("template.main_version") }}</a></p>
+  {% endif %}
+  {% if not template.starter %}
   <p>{{ t("template.how_to_call") }} <code class="template-call">{{ template.call }}</code></p>
-  <p class="field-note">{{ t("template.params_note") }}</p>
+  {% if template.fields %}
+  <h3>{{ t("template.fields") }}</h3>
+  <div class="table-wrap">
+  <table class="template-fields">
+    <thead><tr><th scope="col">{{ t("template.field_name") }}</th><th scope="col">{{ t("template.field_label") }}</th><th scope="col">{{ t("template.field_kind") }}</th></tr></thead>
+    <tbody>
+    {% for f in template.fields %}
+      <tr><td><code>{{ f.name }}</code>{% if f.required %} <span class="tag">{{ t("template.field_required") }}</span>{% endif %}</td><td>{{ f.label }}</td><td>{{ f.kind }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p>{{ t("template.call_pipes") }}</p>
+  <pre class="template-example"><code>{{ template.pipes_example }}</code></pre>
+  <p>{{ t("template.call_yaml") }}</p>
+  <pre class="template-example"><code>{{ template.yaml_example }}</code></pre>
+  {% else %}
+  <p class="field-note">{{ t("template.no_params") }}</p>
+  {% endif %}
+  {% endif %}
+  <p class="field-note"><a href="{{ template.docs_href }}" rel="noopener">{{ t("template.how_to_write") }} ↗</a></p>
   <h3>{{ tn("template.used_on", template.uses_total) }}</h3>
   {% if template.uses %}
   <ul class="template-uses">

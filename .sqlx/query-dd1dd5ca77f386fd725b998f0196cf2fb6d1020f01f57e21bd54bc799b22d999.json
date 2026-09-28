@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(p.locale, '') AS \"locale!\" FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.slug = $2\n             AND p.deleted_at IS NULL\n           ORDER BY (COALESCE(p.locale, '') = $3) DESC, p.created_at\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "locale!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "dd1dd5ca77f386fd725b998f0196cf2fb6d1020f01f57e21bd54bc799b22d999"
+}
