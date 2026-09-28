@@ -4,7 +4,7 @@
   change to a page the reader may not edit. The kinds are radio buttons that
   work without script; the script only hides the fields a kind does not use.
 
-  subject_title, subject_href, about_user, action, kinds (id, label, note,
+  subject_title, subject_href, about_user, about_file, action, kinds (id, label, note,
   current), reasons (id, label, current), message, proposed, revision,
   problem, message_max
 #}
@@ -12,7 +12,7 @@
 {% block body %}
 <nav class="crumbs"><a href="{{ subject_href }}">{{ subject_title }}</a> / {{ t("report.crumb") }}</nav>
 <h1>{{ t("report.title", subject=subject_title) }}</h1>
-<p class="lede">{% if about_user %}{{ t("report.lede_user") }}{% else %}{{ t("report.lede") }}{% endif %}</p>
+<p class="lede">{% if about_user %}{{ t("report.lede_user") }}{% elif about_file %}{{ t("report.lede_file") }}{% else %}{{ t("report.lede") }}{% endif %}</p>
 
 {% if problem %}<p class="notice notice-error" role="alert">{{ problem }}</p>{% endif %}
 

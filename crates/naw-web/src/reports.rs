@@ -56,13 +56,17 @@ enum Subject {
         id: Uuid,
         username: String,
     },
+    /// An uploaded file, by its page path (`image:ferris.png`).
+    File {
+        path: String,
+    },
 }
 
 impl Subject {
-    /// The subject as stored: the page path, or `user:name`.
+    /// The subject as stored: the page or file path, or `user:name`.
     fn key(&self) -> String {
         match self {
-            Self::Page { path, .. } => path.clone(),
+            Self::Page { path, .. } | Self::File { path } => path.clone(),
             Self::User { username, .. } => format!("user:{username}"),
         }
     }
@@ -71,12 +75,13 @@ impl Subject {
         match self {
             Self::Page { found, .. } => found.title.clone(),
             Self::User { username, .. } => username.clone(),
+            Self::File { path } => path.clone(),
         }
     }
 
     fn href(&self, ctx: &Ctx) -> String {
         match self {
-            Self::Page { path, .. } => ctx.link(&format!("/{path}")),
+            Self::Page { path, .. } | Self::File { path } => ctx.link(&format!("/{path}")),
             Self::User { username, .. } => format!("/user/{username}"),
         }
     }
@@ -91,6 +96,8 @@ impl Subject {
         match self {
             Self::Page { .. } => &KINDS,
             Self::User { .. } => &KINDS[1..2],
+            // A file has no text to change: a mistake in it, or a complaint.
+            Self::File { .. } => &KINDS[..2],
         }
     }
 }
@@ -130,6 +137,19 @@ async fn page_subject(
     let slug = slug.trim().to_lowercase();
     if !pages::slug_is_valid(&slug) {
         return Ok(None);
+    }
+    if let Some((_, name)) = crate::files::split(&slug) {
+        // The file itself, under its own prefix, with or without a description.
+        let kind = sqlx::query_scalar!(
+            "SELECT kind FROM media WHERE wiki_id = $1 AND name = $2",
+            ctx.wiki.id,
+            name
+        )
+        .fetch_optional(&state.db)
+        .await?;
+        return Ok(kind.map(|kind| Subject::File {
+            path: format!("{}:{name}", crate::files::prefix_of(&kind)),
+        }));
     }
     Ok(
         pages::find_page(&state.db, ctx.wiki.id, &slug, &ctx.content_locale)
@@ -202,7 +222,8 @@ fn render_form(
             }
         })
         .collect::<Vec<_>>();
-    let is_page = matches!(subject, Subject::Page { .. });
+    let about_user = matches!(subject, Subject::User { .. });
+    let about_file = matches!(subject, Subject::File { .. });
     let template = ctx
         .skin
         .env
@@ -216,7 +237,8 @@ fn render_form(
                 version => ENGINE_VERSION,
                 subject_title => subject.title(),
                 subject_href => subject.href(ctx),
-                about_user => !is_page,
+                about_user => about_user,
+                about_file => about_file,
                 action => subject.action(ctx),
                 kinds => kinds,
                 reasons => reasons,
@@ -255,7 +277,7 @@ fn show_form(ctx: &Ctx, subject: Subject, query: &FormQuery) -> Result<Response,
             }),
             found.revision_id.to_string(),
         ),
-        Subject::User { .. } => (None, String::new()),
+        Subject::User { .. } | Subject::File { .. } => (None, String::new()),
     };
     render_form(
         ctx,
@@ -367,7 +389,7 @@ async fn send(
             Some(found.id),
             pages::parse_uuid(&form.revision).or(Some(found.revision_id)),
         ),
-        Subject::User { .. } => (None, None),
+        Subject::User { .. } | Subject::File { .. } => (None, None),
     };
     let id = Uuid::new_v4();
     // The revision must be this page's: the form field is not trusted.
@@ -393,7 +415,7 @@ async fn send(
     .await?;
     let about_user = match &subject {
         Subject::User { id, .. } => Some(*id),
-        Subject::Page { .. } => None,
+        Subject::Page { .. } | Subject::File { .. } => None,
     };
     crate::audit::record_or_log(
         &state.db,
