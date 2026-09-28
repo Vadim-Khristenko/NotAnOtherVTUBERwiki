@@ -1,0 +1,131 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT v.id, v.storage_key, v.filename, v.mime, v.size_bytes, v.width, v.height,\n                  v.comment, v.created_at,\n                  (SELECT u.username FROM users u WHERE u.id = v.uploader_id) AS \"uploader?\"\n           FROM media_versions v WHERE v.media_id = $1\n           ORDER BY v.created_at DESC, v.id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "media_versions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "storage_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_versions",
+            "name": "storage_key"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "filename",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_versions",
+            "name": "filename"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "mime",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_versions",
+            "name": "mime"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "size_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_versions",
+            "name": "size_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media_versions",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media_versions",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "comment",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_versions",
+            "name": "comment"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "media_versions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "uploader?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "fad162093d5aaabb49fcd6b7ae7bfad8b2404c1108c17b66f19ee5290139a9ba"
+}

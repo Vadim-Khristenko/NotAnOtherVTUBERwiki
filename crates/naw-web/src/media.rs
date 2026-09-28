@@ -156,7 +156,7 @@ pub fn sniff(data: &[u8]) -> Option<Kind> {
 }
 
 /// The served type, from an extension `sniff` handed out.
-fn mime_for(file: &str) -> Option<Kind> {
+pub(crate) fn mime_for(file: &str) -> Option<Kind> {
     kind_of(file.rsplit_once('.')?.1)
 }
 
@@ -213,16 +213,21 @@ impl Refusal {
 const DAILY_UPLOADS: i64 = 300;
 const DAILY_UPLOAD_BYTES: i64 = 2 * 1024 * 1024 * 1024;
 
-async fn within_daily_quota(state: &AppState, ctx: &crate::resolve::Ctx) -> Result<bool, AppError> {
+pub(crate) async fn within_daily_quota(
+    state: &AppState,
+    ctx: &crate::resolve::Ctx,
+) -> Result<bool, AppError> {
     if ctx.actor.can(Capability::WikiSettings) {
         return Ok(true);
     }
     let Some(me) = ctx.actor.user_id else {
         return Ok(false);
     };
+    // Every version counts, so replacing a file over and over uses it up too.
     let used = sqlx::query!(
-        r#"SELECT count(*) AS "files!", COALESCE(sum(size_bytes), 0)::bigint AS "bytes!"
-           FROM media WHERE wiki_id = $1 AND uploader_id = $2 AND created_at > now() - interval '1 day'"#,
+        r#"SELECT count(*) AS "files!", COALESCE(sum(v.size_bytes), 0)::bigint AS "bytes!"
+           FROM media_versions v JOIN media m ON m.id = v.media_id
+           WHERE m.wiki_id = $1 AND v.uploader_id = $2 AND v.created_at > now() - interval '1 day'"#,
         ctx.wiki.id,
         me
     )
@@ -316,7 +321,7 @@ pub async fn read_file_field(
 }
 
 /// The base name without control characters, at most 120 characters.
-fn clean_filename(raw: &str) -> String {
+pub(crate) fn clean_filename(raw: &str) -> String {
     let base = raw.rsplit(['/', '\\']).next().unwrap_or(raw);
     let cleaned: String = base.chars().filter(|c| !c.is_control()).take(120).collect();
     if cleaned.trim().is_empty() {
@@ -351,6 +356,7 @@ fn page_for(class: &str, name: &str) -> String {
 /// GET /media/{prefix}/{file}
 pub async fn serve(
     State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
     Path((prefix, file)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
@@ -375,11 +381,24 @@ pub async fn serve(
     } else {
         return Ok(crate::errors::not_found());
     };
+    // A hidden file is kept from readers; its wiki's moderators still see it,
+    // and nobody may keep a copy.
+    let mut private = false;
+    if key.starts_with("media/") && !crate::file_actions::servable(&state.db, &key).await? {
+        let ctx = crate::resolve::required(&state, &headers, user.as_ref()).await?;
+        match ctx {
+            Ok(ctx) if crate::file_actions::staff_may_see(&state.db, &ctx, &key).await? => {
+                private = true;
+            }
+            _ => return Ok(crate::errors::not_found()),
+        }
+    }
     let etag = format!("\"{stem}\"");
-    if headers
-        .get(header::IF_NONE_MATCH)
-        .and_then(|v| v.to_str().ok())
-        == Some(etag.as_str())
+    if !private
+        && headers
+            .get(header::IF_NONE_MATCH)
+            .and_then(|v| v.to_str().ok())
+            == Some(etag.as_str())
     {
         return Ok(StatusCode::NOT_MODIFIED.into_response());
     }
@@ -408,7 +427,11 @@ pub async fn serve(
     h.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     h.insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=31536000, immutable"),
+        HeaderValue::from_static(if private {
+            "private, no-store"
+        } else {
+            "public, max-age=31536000, immutable"
+        }),
     );
     h.insert(
         header::CONTENT_SECURITY_POLICY,
@@ -488,7 +511,11 @@ async fn render_page(
     Ok(crate::pages::private_page(status, html))
 }
 
-fn refusal_message(state: &AppState, ctx: &crate::resolve::Ctx, refusal: Refusal) -> String {
+pub(crate) fn refusal_message(
+    state: &AppState,
+    ctx: &crate::resolve::Ctx,
+    refusal: Refusal,
+) -> String {
     let max = naw_core::html::mib(state.config.upload_max_bytes).to_string();
     ctx.t_with(
         &format!("media.refused_{}", refusal.slug()),
@@ -541,13 +568,15 @@ async fn record(
     let mut name = None;
     for n in 1..=100 {
         let candidate = crate::files::numbered(&stem, n, stored.kind.ext);
+        let id = Uuid::new_v4();
+        let mut tx = state.db.begin().await?;
         let inserted = sqlx::query_scalar!(
             "INSERT INTO media (id, wiki_id, uploader_id, storage_key, filename, mime, size_bytes,
                                 width, height, name, kind)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              ON CONFLICT DO NOTHING
              RETURNING name",
-            Uuid::new_v4(),
+            id,
             ctx.wiki.id,
             ctx.actor.user_id,
             stored.key,
@@ -559,12 +588,24 @@ async fn record(
             candidate,
             stored.kind.class
         )
-        .fetch_optional(&state.db)
+        .fetch_optional(&mut *tx)
         .await?;
         if inserted.is_some() {
+            // Its first version, so the history starts where the file does.
+            crate::file_actions::add_version(
+                &mut tx,
+                id,
+                stored,
+                filename,
+                ctx.actor.user_id,
+                None,
+            )
+            .await?;
+            tx.commit().await?;
             name = inserted;
             break;
         }
+        tx.rollback().await?;
         // Either these bytes are here already, or the name is taken.
         if let Some(existing) = sqlx::query_scalar!(
             "SELECT name FROM media WHERE wiki_id = $1 AND storage_key = $2",

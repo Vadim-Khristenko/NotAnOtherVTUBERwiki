@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT count(*) AS \"files!\", COALESCE(sum(size_bytes), 0)::bigint AS \"bytes!\"\n           FROM media WHERE wiki_id = $1 AND uploader_id = $2 AND created_at > now() - interval '1 day'",
+  "query": "SELECT count(*) AS \"files!\", COALESCE(sum(v.size_bytes), 0)::bigint AS \"bytes!\"\n           FROM media_versions v JOIN media m ON m.id = v.media_id\n           WHERE m.wiki_id = $1 AND v.uploader_id = $2 AND v.created_at > now() - interval '1 day'",
   "describe": {
     "columns": [
       {
@@ -27,5 +27,5 @@
       null
     ]
   },
-  "hash": "aa8e4c864bf82524e744e3c637f5cd1a43ff1eb6d001485c38226b73169d4a8d"
+  "hash": "ca36f587c2cec09f262c0fa395c8c88bae6e7c1b380f7ce8869c15f5d77b717a"
 }

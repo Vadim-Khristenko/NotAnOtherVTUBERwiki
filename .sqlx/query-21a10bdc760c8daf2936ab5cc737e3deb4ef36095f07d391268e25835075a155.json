@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT k AS \"k!\" FROM unnest($1::text[]) AS k\n           WHERE NOT EXISTS (SELECT 1 FROM media_versions v WHERE v.storage_key = k)\n             AND NOT EXISTS (SELECT 1 FROM media m WHERE m.storage_key = k)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "k!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "21a10bdc760c8daf2936ab5cc737e3deb4ef36095f07d391268e25835075a155"
+}

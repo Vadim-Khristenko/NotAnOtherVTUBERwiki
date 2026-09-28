@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media SET hidden_at = NULL, hidden_by = NULL, hidden_reason = NULL WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9b5a3e250d94adb6198439340ff85d52f2aa95ad38997e2505d6ff3b5eeb1b8b"
+}

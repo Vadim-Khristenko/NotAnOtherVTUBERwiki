@@ -27,6 +27,7 @@ mod drafts;
 mod emotes;
 mod errors;
 mod fetch;
+mod file_actions;
 mod files;
 mod history;
 pub mod indexing;
@@ -258,6 +259,15 @@ fn routes(state: AppState) -> Router {
         .route("/{slug}/revert", post(history::revert))
         .route("/{slug}/patrol", post(history::patrol))
         .route("/{slug}/protect", post(protect::set))
+        .route(
+            "/{slug}/new-version",
+            post(file_actions::new_version).layer(axum::extract::DefaultBodyLimit::max(
+                state.config.upload_max_bytes + 64 * 1024,
+            )),
+        )
+        .route("/{slug}/restore-version", post(file_actions::restore))
+        .route("/{slug}/visibility", post(file_actions::visibility))
+        .route("/{slug}/delete-file", post(file_actions::delete))
         .route(
             "/{slug}/report",
             get(reports::page_form)

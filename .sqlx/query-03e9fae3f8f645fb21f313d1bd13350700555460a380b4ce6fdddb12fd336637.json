@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT storage_key, name, kind FROM media WHERE wiki_id = $1 AND name = ANY($2)",
+  "query": "SELECT storage_key, name, kind, (hidden_at IS NOT NULL) AS \"hidden!\"\n           FROM media WHERE wiki_id = $1 AND name = ANY($2)",
   "describe": {
     "columns": [
       {
@@ -35,6 +35,12 @@
             "name": "kind"
           }
         }
+      },
+      {
+        "ordinal": 3,
+        "name": "hidden!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -46,8 +52,9 @@
     "nullable": [
       false,
       false,
-      false
+      false,
+      null
     ]
   },
-  "hash": "b60b56d17ecd84ad8ec7e470a9f52c67448fa8b514033c4b6d27d0cae12a8487"
+  "hash": "03e9fae3f8f645fb21f313d1bd13350700555460a380b4ce6fdddb12fd336637"
 }

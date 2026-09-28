@@ -8,9 +8,22 @@
   `url`          the file; `slug` this page's path (image:name.png)
   `description`  the description page, rendered, or none
   `uses`         pages that show the file: title, href
+  `versions`     every upload under this name, newest first: id, url,
+                 filename, mime, size, width, height, comment, at, uploader,
+                 current, may_restore
+  `may_replace`  may upload a new version; `may_hide`, `may_delete` staff
+  `hidden`       the day a moderator hid it, with hidden_by, hidden_reason
 #}
 {% block body %}
 <h1 class="file-heading">{{ heading }}</h1>
+
+{% if hidden %}
+<div class="notice notice-warn file-hidden" role="status">
+  <strong>{{ t("file.hidden_banner", when=hidden) }}</strong>
+  {% if hidden_by %}<span>{{ t("file.hidden_by", who=hidden_by) }}</span>{% endif %}
+  {% if hidden_reason %}<span>{{ t("file.hidden_reason", reason=hidden_reason) }}</span>{% endif %}
+</div>
+{% endif %}
 
 <figure class="file-preview file-{{ kind }}">
   {% if kind == "image" %}
@@ -80,6 +93,88 @@
   <p class="muted-cell">{{ t("file.unused") }}</p>
   {% endif %}
 </section>
+
+<section class="file-versions" id="file-versions" aria-labelledby="file-versions-title">
+  <h2 id="file-versions-title">{{ t("file.versions") }}</h2>
+  <table class="admin-table file-version-table">
+    <thead><tr>
+      <th scope="col">{{ t("file.version_when") }}</th>
+      <th scope="col">{{ t("file.version_file") }}</th>
+      <th scope="col">{{ t("file.uploaded_by") }}</th>
+      <th scope="col">{{ t("file.version_note") }}</th>
+      <th scope="col"><span class="visually-hidden">{{ t("file.version_actions") }}</span></th>
+    </tr></thead>
+    <tbody>
+    {% for v in versions %}
+    <tr{% if v.current %} class="file-version-current"{% endif %}>
+      <td>{{ v.at }}{% if v.current %} <span class="tag">{{ t("file.version_current") }}</span>{% endif %}</td>
+      <td data-label="{{ t('file.version_file') }}">
+        <a href="{{ v.url }}"{% if kind == "document" %} download{% endif %}><code>{{ v.mime }}</code></a>
+        <span class="muted-cell">{{ v.size }}{% if v.width and v.height %} · {{ t("file.dimensions_value", w=v.width, h=v.height) }}{% endif %}</span>
+      </td>
+      <td data-label="{{ t('file.uploaded_by') }}">{% if v.uploader %}<a href="/user/{{ v.uploader }}"><bdi>{{ v.uploader }}</bdi></a>{% else %}<span class="muted-cell">{{ t("file.anonymous") }}</span>{% endif %}</td>
+      <td data-label="{{ t('file.version_note') }}">{% if v.comment %}{{ v.comment }}{% else %}<span class="muted-cell"><bdi>{{ v.filename }}</bdi></span>{% endif %}</td>
+      <td class="action-cell">{% if v.may_restore %}
+        <form method="post" action="{{ base }}/{{ slug }}/restore-version" class="inline-form">
+          <input type="hidden" name="version" value="{{ v.id }}" />
+          <button type="submit" class="button-preview">{{ t("file.restore") }}</button>
+        </form>
+      {% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {% if may_replace %}
+  <details class="file-new-version">
+    <summary>{{ t("file.new_version") }}</summary>
+    <form method="post" action="{{ base }}/{{ slug }}/new-version" enctype="multipart/form-data" class="stack-form">
+      <p class="field-note">{{ t("file.new_version_note_" ~ kind, max=upload_max) }}</p>
+      <label class="field">{{ t("file.new_version_file") }}
+        <input class="field-input" type="file" name="file" required />
+      </label>
+      <label class="field">{{ t("file.version_note") }}
+        <input class="field-input" type="text" name="comment" maxlength="300" placeholder="{{ t('file.new_version_comment_hint') }}" />
+      </label>
+      <p><button type="submit" class="button-save">{{ t("file.new_version_send") }}</button></p>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
+{% if may_hide or may_delete %}
+<section class="file-staff" aria-labelledby="file-staff">
+  <h2 id="file-staff">{{ t("file.staff") }}</h2>
+  {% if may_hide %}
+  <form method="post" action="{{ base }}/{{ slug }}/visibility" class="stack-form">
+    {% if hidden %}
+    <input type="hidden" name="action" value="show" />
+    <p class="field-note">{{ t("file.show_note") }}</p>
+    <p><button type="submit" class="button-preview">{{ t("file.show") }}</button></p>
+    {% else %}
+    <input type="hidden" name="action" value="hide" />
+    <p class="field-note">{{ t("file.hide_note") }}</p>
+    <label class="field">{{ t("file.hide_reason") }}
+      <input class="field-input" type="text" name="reason" maxlength="300" />
+    </label>
+    <p><button type="submit" class="button-preview">{{ t("file.hide") }}</button></p>
+    {% endif %}
+  </form>
+  {% endif %}
+  {% if may_delete %}
+  <details class="file-delete">
+    <summary>{{ t("file.delete") }}</summary>
+    <form method="post" action="{{ base }}/{{ slug }}/delete-file" class="stack-form">
+      <p class="field-note">{{ t("file.delete_note") }}</p>
+      <label class="field">{{ t("file.delete_confirm", name=file_name) }}
+        <input class="field-input" type="text" name="confirm" required autocomplete="off" spellcheck="false" />
+      </label>
+      <p><button type="submit" class="button-save button-danger">{{ t("file.delete_send") }}</button></p>
+    </form>
+  </details>
+  {% endif %}
+</section>
+{% endif %}
 
 <p class="page-meta">
   <span class="page-meta-report">

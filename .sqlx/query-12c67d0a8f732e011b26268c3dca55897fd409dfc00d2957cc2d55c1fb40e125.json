@@ -1,0 +1,187 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id, m.storage_key, m.name, m.kind, m.mime, m.filename, m.size_bytes, m.width,\n                  m.height, m.created_at, m.uploader_id, m.hidden_at, m.hidden_reason,\n                  (SELECT u.username FROM users u WHERE u.id = m.uploader_id) AS \"uploader?\",\n                  (SELECT u.username FROM users u WHERE u.id = m.hidden_by) AS \"hidden_by?\"\n           FROM media m\n           WHERE m.wiki_id = $1 AND m.name = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "storage_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "storage_key"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "mime",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "mime"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "filename",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "filename"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "size_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "size_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "uploader_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "uploader_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "hidden_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "hidden_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "hidden_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "hidden_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "uploader?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "hidden_by?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "12c67d0a8f732e011b26268c3dca55897fd409dfc00d2957cc2d55c1fb40e125"
+}

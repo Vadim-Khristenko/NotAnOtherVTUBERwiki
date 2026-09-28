@@ -1,0 +1,84 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, kind, storage_key, uploader_id, (hidden_at IS NOT NULL) AS \"hidden!\"\n           FROM media WHERE wiki_id = $1 AND name = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "storage_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "storage_key"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "uploader_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "media",
+            "name": "uploader_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "hidden!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "75ca2a49629ced4991c2441f0430a469ef25b489f27e5b259da7e538caef6ebb"
+}

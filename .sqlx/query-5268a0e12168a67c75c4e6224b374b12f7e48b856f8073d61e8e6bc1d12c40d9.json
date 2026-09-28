@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.title, p.slug, p.namespace::text AS \"namespace!\"\n           FROM file_uses f JOIN pages p ON p.id = f.page_id\n           WHERE f.wiki_id = $1 AND f.storage_key = $2 AND p.deleted_at IS NULL\n           ORDER BY p.title LIMIT $3",
+  "query": "SELECT DISTINCT p.title, p.slug, p.namespace::text AS \"namespace!\"\n           FROM file_uses f JOIN pages p ON p.id = f.page_id\n           WHERE f.wiki_id = $1 AND p.deleted_at IS NULL\n             AND f.storage_key IN (SELECT v.storage_key FROM media_versions v WHERE v.media_id = $2)\n           ORDER BY p.title LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -35,7 +35,7 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Text",
+        "Uuid",
         "Int8"
       ]
     },
@@ -45,5 +45,5 @@
       null
     ]
   },
-  "hash": "fa8704e10f1bd70abb9e594e37e0e4492782d1520264bb119cca8857e4ea8a22"
+  "hash": "5268a0e12168a67c75c4e6224b374b12f7e48b856f8073d61e8e6bc1d12c40d9"
 }

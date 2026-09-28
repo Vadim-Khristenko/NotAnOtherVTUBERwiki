@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use uuid::Uuid;
 
@@ -19,6 +19,7 @@ use naw_core::error::AppError;
 use naw_core::state::AppState;
 
 use crate::pages::{self, ENGINE_VERSION};
+use crate::perm::Capability;
 use crate::resolve::Ctx;
 
 /// Path prefixes, each with the kind of file it shows.
@@ -141,6 +142,7 @@ struct File {
     storage_key: String,
     name: String,
     kind: String,
+    hidden: bool,
 }
 
 async fn files_named(
@@ -149,7 +151,8 @@ async fn files_named(
     names: &[String],
 ) -> Result<HashMap<String, File>, AppError> {
     let rows = sqlx::query!(
-        "SELECT storage_key, name, kind FROM media WHERE wiki_id = $1 AND name = ANY($2)",
+        r#"SELECT storage_key, name, kind, (hidden_at IS NOT NULL) AS "hidden!"
+           FROM media WHERE wiki_id = $1 AND name = ANY($2)"#,
         wiki_id,
         names
     )
@@ -164,6 +167,7 @@ async fn files_named(
                     storage_key: row.storage_key,
                     name: row.name,
                     kind: row.kind,
+                    hidden: row.hidden,
                 },
             )
         })
@@ -172,7 +176,7 @@ async fn files_named(
 
 /// Points `image:name` style destinations at the wiki's files: an image
 /// shows the file, a link goes to its page. A name with no file becomes a
-/// link to the page, which says so.
+/// link to the page, which says so, and so does a hidden file.
 pub(crate) async fn resolve(
     db: &sqlx::PgPool,
     wiki_id: Uuid,
@@ -201,7 +205,7 @@ pub(crate) async fn resolve(
             continue;
         };
         let target = match files.get(name) {
-            Some(file) if is_image => crate::media::url_for_key(&file.storage_key),
+            Some(file) if is_image && !file.hidden => crate::media::url_for_key(&file.storage_key),
             Some(file) => format!("/{}:{}", prefix_of(&file.kind), file.name),
             None => format!("/{lower}"),
         };
@@ -351,9 +355,10 @@ pub(crate) async fn page(
     name: &str,
 ) -> Result<Response, AppError> {
     let Some(file) = sqlx::query!(
-        r#"SELECT m.storage_key, m.name, m.kind, m.mime, m.filename, m.size_bytes, m.width,
-                  m.height, m.created_at,
-                  (SELECT u.username FROM users u WHERE u.id = m.uploader_id) AS "uploader?"
+        r#"SELECT m.id, m.storage_key, m.name, m.kind, m.mime, m.filename, m.size_bytes, m.width,
+                  m.height, m.created_at, m.uploader_id, m.hidden_at, m.hidden_reason,
+                  (SELECT u.username FROM users u WHERE u.id = m.uploader_id) AS "uploader?",
+                  (SELECT u.username FROM users u WHERE u.id = m.hidden_by) AS "hidden_by?"
            FROM media m
            WHERE m.wiki_id = $1 AND m.name = $2"#,
         ctx.wiki.id,
@@ -369,6 +374,28 @@ pub(crate) async fn page(
         return Ok(pages::see_other(&ctx.link(&format!("/{canonical}:{name}"))));
     }
     let path = format!("{canonical}:{name}");
+    let moderator = ctx.actor.can(Capability::PageDelete);
+    // A hidden file is gone for readers; moderators see it, marked.
+    if file.hidden_at.is_some() && !moderator {
+        return pages::notice(
+            ctx,
+            StatusCode::GONE,
+            &ctx.t("file.hidden_title"),
+            &ctx.t("file.hidden_body"),
+            &ctx.link("/"),
+            &ctx.t("error.back_to_wiki"),
+        );
+    }
+    let target = crate::file_actions::Target {
+        id: file.id,
+        name: file.name.clone(),
+        kind: file.kind.clone(),
+        storage_key: file.storage_key.clone(),
+        uploader_id: file.uploader_id,
+        hidden: file.hidden_at.is_some(),
+    };
+    let may_replace = crate::file_actions::may_replace(&ctx.actor, &target);
+    let versions = crate::file_actions::versions(&state.db, ctx, &target, may_replace).await?;
     let description = pages::find_page(&state.db, ctx.wiki.id, &path, &ctx.content_locale).await?;
     let description_html = match &description {
         Some(page) => Some(
@@ -378,13 +405,15 @@ pub(crate) async fn page(
         ),
         None => None,
     };
+    // A page saved before the newest version recorded an older one.
     let uses = sqlx::query!(
-        r#"SELECT p.title, p.slug, p.namespace::text AS "namespace!"
+        r#"SELECT DISTINCT p.title, p.slug, p.namespace::text AS "namespace!"
            FROM file_uses f JOIN pages p ON p.id = f.page_id
-           WHERE f.wiki_id = $1 AND f.storage_key = $2 AND p.deleted_at IS NULL
+           WHERE f.wiki_id = $1 AND p.deleted_at IS NULL
+             AND f.storage_key IN (SELECT v.storage_key FROM media_versions v WHERE v.media_id = $2)
            ORDER BY p.title LIMIT $3"#,
         ctx.wiki.id,
-        file.storage_key,
+        file.id,
         USES_SHOWN
     )
     .fetch_all(&state.db)
@@ -445,6 +474,15 @@ pub(crate) async fn page(
                 may_edit => may_edit,
                 add_description => ctx.link(&format!("/new?slug={path}")),
                 uses => uses,
+                versions => versions,
+                may_replace => may_replace,
+                may_hide => moderator,
+                may_delete => ctx.actor.can(Capability::AdminPanel),
+                hidden => file.hidden_at.map(|at| ctx.day(at)),
+                hidden_by => file.hidden_by,
+                hidden_reason => file.hidden_reason,
+                upload_max => naw_core::html::mib(state.config.upload_max_bytes).to_string(),
+                file_name => file.name,
             }
         })
         .map_err(pages::template_error)?;

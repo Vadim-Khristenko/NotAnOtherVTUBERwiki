@@ -173,6 +173,10 @@ The part that makes it a wiki rather than a blog.
       `/audio:…`, `/video:…`, `/file:…`, with the file or a player, what it is, who uploaded
       it, where it is used, and a description with its own history. Articles use a file by
       name, `![Ferris](image:ferris.png)`; audio and video play in place, PDFs download
+- [x] A file keeps its history: a new version under the same name (a better quality or
+      another format of the same kind) shows everywhere the file is used, and an older one
+      can be brought back. Readers report a file like a page; moderators hide it, admins
+      delete it with its stored copies. Still to come: thumbnails in several sizes
 - The other namespaces (`Talk:`, `Category:`) and `Module:` for components
 - [x] Template fields as a strict YAML block inside the call, checked against the
       template's own `<params>` schema; the template's page lists the fields and ready
