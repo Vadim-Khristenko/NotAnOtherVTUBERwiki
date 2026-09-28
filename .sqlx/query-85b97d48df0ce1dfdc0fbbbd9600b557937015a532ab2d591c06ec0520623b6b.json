@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COALESCE(locale, '') AS \"locale!\", title FROM pages\n           WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2 AND deleted_at IS NULL\n           ORDER BY (COALESCE(locale, '') = $3) DESC, locale",
+  "query": "SELECT COALESCE(locale, '') AS \"locale!\", title FROM pages\n           WHERE wiki_id = $1 AND namespace = ($4::text)::page_namespace AND slug = $2\n             AND deleted_at IS NULL\n           ORDER BY (COALESCE(locale, '') = $3) DESC, locale",
   "describe": {
     "columns": [
       {
@@ -25,6 +25,7 @@
       "Left": [
         "Uuid",
         "Text",
+        "Text",
         "Text"
       ]
     },
@@ -33,5 +34,5 @@
       false
     ]
   },
-  "hash": "f8dd7bfe5c0eff98f77dd673da58cb108f57d366628623c64ef337dd4c17e072"
+  "hash": "85b97d48df0ce1dfdc0fbbbd9600b557937015a532ab2d591c06ec0520623b6b"
 }

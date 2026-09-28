@@ -26,13 +26,17 @@ pub struct Version {
 
 /// Every language of the article at `slug`, the wiki's own first.
 pub async fn versions(state: &AppState, ctx: &Ctx, slug: &str) -> Result<Vec<Version>, AppError> {
+    // An article or a template: each keeps its versions in its own namespace.
+    let (namespace, bare) = pages::split_path(slug);
     let rows = sqlx::query!(
         r#"SELECT COALESCE(locale, '') AS "locale!", title FROM pages
-           WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2 AND deleted_at IS NULL
+           WHERE wiki_id = $1 AND namespace = ($4::text)::page_namespace AND slug = $2
+             AND deleted_at IS NULL
            ORDER BY (COALESCE(locale, '') = $3) DESC, locale"#,
         ctx.wiki.id,
-        slug,
-        ctx.wiki.default_locale
+        bare,
+        ctx.wiki.default_locale,
+        namespace
     )
     .fetch_all(&state.db)
     .await?;
@@ -147,7 +151,10 @@ pub async fn missing(
     let Some(source) = all.first() else {
         return Ok(None);
     };
-    let translate_href = ctx.actor.can(Capability::PageCreate).then(|| {
+    // The translate flow is for articles; a template gets its translation
+    // from New page, where the words-only rule is checked.
+    let article = pages::split_path(slug).0 == "main";
+    let translate_href = (article && ctx.actor.can(Capability::PageCreate)).then(|| {
         format!(
             "{}?from={}",
             ctx.link(&format!("/{slug}/translate")),
