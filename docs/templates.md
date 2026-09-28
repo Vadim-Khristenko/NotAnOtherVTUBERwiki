@@ -1,15 +1,22 @@
 # Templates
 
-A wiki has two kinds of pages under `template:`.
+A wiki has two kinds of templates.
 
-- A **template** is a component: an article calls it with `{{Name}}` and it
-  becomes part of that article. An infobox is a template.
-- A **starter** lays out a whole new page. **New page** offers it, and its
-  text is copied into the page being written. A starter is an ordinary
-  article with `<!-- starter: Label -->` on its first line.
+- A **template** (`/template:infobox-vtuber`) is a component: an article calls
+  it with `{{Name}}` and it becomes part of that article. An infobox is a
+  template.
+- A **page template** (`/page-template:vtuber-article`) lays out a whole new
+  page. **New page** offers it, and its text is copied into the page being
+  written. It is an ordinary article; `<!-- starter: Label -->` on its first
+  line names it on New page, and without that line its title does. Text in
+  `<noinclude>` stays on the page template and is not copied. Old links to
+  `/template:` a page template lived at redirect to its new address.
 
-Everything below is about templates, the components. A starter follows the
-rules of an article and is translated like one.
+Curators and up create and edit both kinds, since one edit changes many
+pages. Everything below is about templates, the components. A page template
+follows the rules of an article and is translated like one: where it has no
+version in the reader's language, a new page starts from the one in the
+wiki's language.
 
 ## The parts of a template
 

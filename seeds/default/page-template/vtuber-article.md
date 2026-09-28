@@ -3,15 +3,17 @@
 # Name
 
 {{Infobox VTuber
-| name        =
-| image       =
-| aliases     =
-| debut       =
-| language    =
-| platform    =
-| affiliation =
-| fans        =
-| channel     =
+```yaml
+name:
+image:
+aliases:
+debut:
+language:
+platform:
+affiliation:
+fans:
+channel:
+```
 }}
 
 **Name** is a VTuber who streams on ... since ...
@@ -41,5 +43,6 @@ What the fans are called, their jokes and projects.
 - 
 <noinclude>
 A starter: **New page** offers it as "VTuber article" and copies everything
-above this note into the new page, with the card ready to fill in.
+above this note into the new page, with the card ready to fill in. Fill the
+card's fields after the colons; a field left empty is not shown.
 </noinclude>

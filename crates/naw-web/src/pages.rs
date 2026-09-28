@@ -227,12 +227,32 @@ pub(crate) fn urlencode(value: &str) -> String {
 /// The prefix of a template's path: `/template:infobox-vtuber`.
 pub(crate) const TEMPLATE_PREFIX: &str = "template:";
 
+/// The prefix of a page template's path: `/page-template:vtuber-article`.
+/// A page template lays out a whole new page; a template is a component.
+pub(crate) const PAGE_TEMPLATE_PREFIX: &str = "page-template:";
+
+/// The path of a page from its namespace, as the database spells it, and its
+/// slug: the inverse of [`split_path`]. `None` for a profile, which lives at
+/// `/user/{name}`, or a namespace with no pages yet.
+pub(crate) fn path_of(namespace: &str, slug: &str) -> Option<String> {
+    match namespace {
+        "main" => Some(slug.to_string()),
+        "template" => Some(format!("{TEMPLATE_PREFIX}{slug}")),
+        "page_template" => Some(format!("{PAGE_TEMPLATE_PREFIX}{slug}")),
+        "file" => Some(format!("file:{slug}")),
+        _ => None,
+    }
+}
+
 /// A page path as its namespace, spelled as the database spells it, and the
 /// bare slug. An article has no prefix; a file's description page is
 /// `image:name.png` and its siblings (see `files`).
 pub(crate) fn split_path(path: &str) -> (&'static str, &str) {
     if let Some(slug) = path.strip_prefix(TEMPLATE_PREFIX) {
         return ("template", slug);
+    }
+    if let Some(slug) = path.strip_prefix(PAGE_TEMPLATE_PREFIX) {
+        return ("page_template", slug);
     }
     if let Some((_, name)) = crate::files::split(path) {
         return ("file", name);
@@ -537,6 +557,22 @@ pub(crate) struct FoundPage {
 
 /// Loads a live page by its path and its current revision; archived pages
 /// read as absent.
+/// Whether this wiki has a live page template at `slug`, in any language.
+async fn page_template_exists(
+    db: &sqlx::PgPool,
+    wiki_id: Uuid,
+    slug: &str,
+) -> Result<bool, AppError> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM pages WHERE wiki_id = $1 AND namespace = 'page_template'
+             AND slug = $2 AND deleted_at IS NULL) AS "exists!""#,
+        wiki_id,
+        slug
+    )
+    .fetch_one(db)
+    .await?)
+}
+
 pub(crate) async fn find_page(
     db: &sqlx::PgPool,
     wiki_id: Uuid,
@@ -564,7 +600,7 @@ pub(crate) async fn find_page(
     )
     .fetch_optional(db)
     .await?;
-    let floor = (namespace == "template").then_some(TEMPLATE_EDIT_FLOOR);
+    let floor = matches!(namespace, "template" | "page_template").then_some(TEMPLATE_EDIT_FLOOR);
     Ok(row.map(|row| FoundPage {
         id: row.id,
         title: row.title,
@@ -677,6 +713,17 @@ pub async fn page(
     }
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
+        // Page templates lived under /template: until they got a namespace of
+        // their own; an old link finds its page template.
+        if let ("template", bare) = split_path(&slug)
+            && page_template_exists(&state.db, ctx.wiki.id, bare).await?
+            && let Some(response) = redirect_response(
+                StatusCode::MOVED_PERMANENTLY,
+                &ctx.link(&format!("/{PAGE_TEMPLATE_PREFIX}{bare}")),
+            )
+        {
+            return Ok(response);
+        }
         // Offer the article in the languages it exists in, or to translate it.
         return Ok(
             match crate::translate::missing(&state, &ctx, &slug).await? {
@@ -693,6 +740,22 @@ pub async fn page(
     let (body_html, render_ms) = cached_body(&state, &ctx, &slug, &found.body_md).await?;
     // A template's page says how to use it and where it is used.
     let template = match split_path(&slug) {
+        // A page template's page: what it is and a way to start a page from it.
+        ("page_template", bare) => Some(minijinja::context! {
+            starter => true,
+            starter_label => found
+                .body_md
+                .lines()
+                .next()
+                .and_then(crate::templates::starter_label)
+                .unwrap_or_else(|| found.title.clone()),
+            new_href => ctx.link(&format!("/new?from={bare}")),
+            docs_href => format!("{}/blob/dev/docs/templates.md", crate::about::SOURCE_URL),
+            fields => Vec::<minijinja::Value>::new(),
+            uses => Vec::<minijinja::Value>::new(),
+            uses_total => 0,
+            uses_shown => 0,
+        }),
         ("template", bare) => {
             let (total, pages) = crate::templates::uses(&state, &ctx, bare).await?;
             let wiki = crate::templates::Wiki::of(&ctx);
@@ -1147,7 +1210,7 @@ pub async fn new_page(
                 label => s.label.clone(),
                 note => s.note.clone(),
                 href => ctx.link(&format!("/new?from={}", s.slug)),
-                page_href => ctx.link(&format!("/{TEMPLATE_PREFIX}{}", s.slug)),
+                page_href => ctx.link(&format!("/{PAGE_TEMPLATE_PREFIX}{}", s.slug)),
                 current => from.is_some_and(|f| f.slug == s.slug),
             }
         })
@@ -1248,7 +1311,9 @@ pub async fn create_page(
     {
         return Ok(crate::errors::not_found());
     }
-    if namespace == "template" && !ctx.actor.can_edit_page(Some(TEMPLATE_EDIT_FLOOR)) {
+    if matches!(namespace, "template" | "page_template")
+        && !ctx.actor.can_edit_page(Some(TEMPLATE_EDIT_FLOOR))
+    {
         return refuse(
             &ctx,
             &ctx.link("/new"),

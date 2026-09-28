@@ -421,11 +421,7 @@ pub(crate) async fn uses(
     let shown = rows
         .into_iter()
         .map(|row| {
-            let path = match row.namespace.as_str() {
-                "template" => format!("{}{}", crate::pages::TEMPLATE_PREFIX, row.slug),
-                "main" => row.slug.clone(),
-                _ => String::new(),
-            };
+            let path = crate::pages::path_of(&row.namespace, &row.slug).unwrap_or_default();
             Use {
                 href: if path.is_empty() {
                     format!("/user/{}", row.slug)
@@ -448,15 +444,15 @@ pub(crate) struct Starter {
     pub note: String,
 }
 
-/// Templates a new page can start from: those whose source begins with
-/// `<!-- starter: Label -->`. The comment never renders. Each comes in the
-/// reader's language when it has one, else the wiki's, else the first written.
+/// Page templates (`/page-template:...`) a new page can start from, named by
+/// their `<!-- starter: Label -->` line or else their title. Each comes in
+/// the reader's language when it has one, else the wiki's, else the first
+/// written.
 pub(crate) async fn starters(state: &AppState, ctx: &Ctx) -> Result<Vec<Starter>, AppError> {
     let rows = sqlx::query!(
-        r#"SELECT DISTINCT ON (p.slug) p.slug AS "slug!", r.body_md AS "body!"
+        r#"SELECT DISTINCT ON (p.slug) p.slug AS "slug!", p.title, r.body_md AS "body!"
            FROM pages p JOIN revisions r ON r.id = p.current_revision_id
-           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.deleted_at IS NULL
-             AND r.body_md LIKE '<!-- starter:%'
+           WHERE p.wiki_id = $1 AND p.namespace = 'page_template' AND p.deleted_at IS NULL
            ORDER BY p.slug, (COALESCE(p.locale, '') = $2) DESC,
                     (COALESCE(p.locale, '') = $3) DESC, p.created_at"#,
         ctx.wiki.id,
@@ -467,12 +463,15 @@ pub(crate) async fn starters(state: &AppState, ctx: &Ctx) -> Result<Vec<Starter>
     .await?;
     Ok(rows
         .into_iter()
-        .filter_map(|row| {
-            starter_label(&row.body).map(|label| Starter {
-                note: starter_note(&row.body),
-                slug: row.slug,
-                label,
-            })
+        .map(|row| Starter {
+            label: row
+                .body
+                .lines()
+                .next()
+                .and_then(starter_label)
+                .unwrap_or(row.title),
+            note: starter_note(&row.body),
+            slug: row.slug,
         })
         .collect())
 }
@@ -486,8 +485,8 @@ pub(crate) async fn starter_source(
 ) -> Result<Option<String>, AppError> {
     Ok(sqlx::query_scalar!(
         r#"SELECT r.body_md FROM pages p JOIN revisions r ON r.id = p.current_revision_id
-           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.slug = $2
-             AND p.deleted_at IS NULL AND r.body_md LIKE '<!-- starter:%'
+           WHERE p.wiki_id = $1 AND p.namespace = 'page_template' AND p.slug = $2
+             AND p.deleted_at IS NULL
            ORDER BY (COALESCE(p.locale, '') = $3) DESC, (COALESCE(p.locale, '') = $4) DESC,
                     p.created_at
            LIMIT 1"#,
@@ -937,6 +936,15 @@ mod db_tests {
         assert_eq!(render(&db, w, "ru", "en", yaml).await, "Филиан / 2021");
     }
 
+    /// Moves every page at `slug` to the page template namespace.
+    async fn to_page_template(db: &PgPool, slug: &str) {
+        sqlx::query("UPDATE pages SET namespace = 'page_template' WHERE slug = $1")
+            .bind(slug)
+            .execute(db)
+            .await
+            .expect("namespace");
+    }
+
     #[sqlx::test(migrations = "../../migrations")]
     async fn a_page_template_fills_a_new_page_in_any_language(db: PgPool) {
         let w = wiki(&db, "w", "en").await;
@@ -959,6 +967,7 @@ mod db_tests {
             20,
         )
         .await;
+        to_page_template(&db, "vtuber-article").await;
         let in_ru = Wiki {
             id: w,
             locale: "ru",
@@ -979,6 +988,7 @@ mod db_tests {
             10,
         )
         .await;
+        to_page_template(&db, "vtuber-article").await;
         let body = starter_source(&db, &in_ru, "vtuber-article")
             .await
             .expect("q")

@@ -94,11 +94,9 @@ fn index(ctx: &Ctx) -> minijinja::Value {
 
 /// Where a page of any namespace lives.
 fn href_of(ctx: &Ctx, namespace: &str, slug: &str) -> String {
-    match namespace {
-        "user" => format!("/user/{slug}"),
-        "template" => ctx.link(&format!("/template:{slug}")),
-        "file" => ctx.link(&format!("/file:{slug}")),
-        _ => ctx.link(&format!("/{slug}")),
+    match pages::path_of(namespace, slug) {
+        Some(path) => ctx.link(&format!("/{path}")),
+        None => format!("/user/{slug}"),
     }
 }
 
@@ -132,12 +130,7 @@ async fn recent_changes(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value,
             let href = href_of(ctx, &row.namespace, &row.slug);
             let delta = row.bytes - row.prev_bytes.unwrap_or(0);
             // A diff lives under the page's own path, which for a profile is not here.
-            let path = match row.namespace.as_str() {
-                "user" => None,
-                "template" => Some(format!("{}{}", pages::TEMPLATE_PREFIX, row.slug)),
-                "file" => Some(format!("file:{}", row.slug)),
-                _ => Some(row.slug.clone()),
-            };
+            let path = pages::path_of(&row.namespace, &row.slug);
             let diff = match (&path, row.prev_id) {
                 (Some(path), Some(prev)) => {
                     Some(ctx.link(&format!("/{path}/diff?from={prev}&to={}", row.id)))

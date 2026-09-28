@@ -391,11 +391,9 @@ pub(crate) async fn page(
     .await?
     .into_iter()
     .map(|row| {
-        let href = match row.namespace.as_str() {
-            "user" => format!("/user/{}", row.slug),
-            "template" => ctx.link(&format!("/template:{}", row.slug)),
-            "file" => ctx.link(&format!("/file:{}", row.slug)),
-            _ => ctx.link(&format!("/{}", row.slug)),
+        let href = match crate::pages::path_of(&row.namespace, &row.slug) {
+            Some(path) => ctx.link(&format!("/{path}")),
+            None => format!("/user/{}", row.slug),
         };
         minijinja::context! { title => row.title, href => href }
     })

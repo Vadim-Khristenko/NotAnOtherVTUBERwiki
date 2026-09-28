@@ -45,6 +45,11 @@ pub async fn run(pool: &PgPool, seed_dir: &str, opts: &SeedOptions) -> Result<()
     if std::path::Path::new(&template_dir).is_dir() {
         seed_files(pool, wiki_id, opts, &template_dir, "template").await?;
     }
+    // Page templates, which new articles start from, have a namespace of their own.
+    let page_template_dir = format!("{flavor_dir}/page-template");
+    if std::path::Path::new(&page_template_dir).is_dir() {
+        seed_files(pool, wiki_id, opts, &page_template_dir, "page_template").await?;
+    }
     // Seeded pages must be searchable.
     let indexed = naw_web::indexing::reindex(pool, Some(wiki_id)).await?;
     tracing::info!(

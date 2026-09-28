@@ -85,12 +85,7 @@ async fn index_one(db: &sqlx::PgPool, page_id: Uuid) -> Result<bool, AppError> {
     else {
         return Ok(false);
     };
-    let path = match row.namespace.as_str() {
-        "template" => format!("{}{}", crate::pages::TEMPLATE_PREFIX, row.slug),
-        "file" => format!("file:{}", row.slug),
-        "main" => row.slug.clone(),
-        _ => String::new(),
-    };
+    let path = crate::pages::path_of(&row.namespace, &row.slug).unwrap_or_default();
     let wiki = Wiki {
         id: row.wiki_id,
         locale: &row.locale,
