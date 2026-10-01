@@ -42,6 +42,11 @@ pub(crate) fn strip(path: &str) -> Option<&str> {
     ALIASES.iter().find_map(|p| path.strip_prefix(p))
 }
 
+/// [`strip`], and whether the prefix was the canonical one.
+pub(crate) fn strip_spelled(path: &str) -> Option<(&str, bool)> {
+    strip(path).map(|rest| (rest, path.starts_with(PREFIX)))
+}
+
 /// Replaces the categories `page_id` is in.
 pub(crate) async fn record(
     db: &sqlx::PgPool,
@@ -195,6 +200,7 @@ pub(crate) async fn route(
     ctx: &Ctx,
     headers: &HeaderMap,
     rest: &str,
+    canonical_prefix: bool,
     deep: bool,
 ) -> Result<Response, AppError> {
     let rest = rest.trim_matches('/');
@@ -205,7 +211,7 @@ pub(crate) async fn route(
     };
     let deep = deep || star;
     if let Some(key) = cats::key(rest) {
-        let spelled = !star && rest == key;
+        let spelled = canonical_prefix && !star && rest == key;
         if spelled {
             return page(state, ctx, headers, &key, deep).await;
         }

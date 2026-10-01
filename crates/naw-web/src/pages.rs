@@ -56,10 +56,10 @@ pub async fn fallback(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let path = crate::media::percent_decode(uri.path()).to_lowercase();
-    let Some(rest) = path
+    let Some((rest, canonical)) = path
         .strip_prefix('/')
-        .and_then(crate::categories::strip)
-        .filter(|rest| rest.contains('/') && !rest.contains('\0'))
+        .and_then(crate::categories::strip_spelled)
+        .filter(|(rest, _)| rest.contains('/') && !rest.contains('\0'))
     else {
         return Ok(crate::errors::not_found());
     };
@@ -67,7 +67,7 @@ pub async fn fallback(
     let deep = uri
         .query()
         .is_some_and(|q| q.split('&').any(|p| p == "all" || p.starts_with("all=")));
-    crate::categories::route(&state, &ctx, &headers, rest, deep).await
+    crate::categories::route(&state, &ctx, &headers, rest, canonical, deep).await
 }
 
 /// Renders `message.html`, the shared "we will not do that" page.
@@ -791,9 +791,10 @@ pub async fn page(
         );
     }
     // A category, in any spelling: it lists its pages under its description.
-    if let Some(rest) = crate::categories::strip(&slug) {
+    if let Some((rest, canonical)) = crate::categories::strip_spelled(&slug) {
         let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
-        return crate::categories::route(&state, &ctx, &headers, rest, query.all.is_some()).await;
+        let deep = query.all.is_some();
+        return crate::categories::route(&state, &ctx, &headers, rest, canonical, deep).await;
     }
     // Before the query: an embedded NUL in a text parameter is a 500.
     if !slug_is_valid(&slug) {
