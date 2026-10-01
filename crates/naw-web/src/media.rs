@@ -645,7 +645,7 @@ fn name_from_url(url: &str) -> String {
     clean_filename(&decoded)
 }
 
-fn percent_decode(raw: &str) -> String {
+pub(crate) fn percent_decode(raw: &str) -> String {
     let bytes = raw.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;

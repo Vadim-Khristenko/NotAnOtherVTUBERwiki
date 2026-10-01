@@ -1,0 +1,12 @@
+{#
+  The categories a page is in, under it: `categories` is a list of name,
+  href and trail, the category's levels (name, href), outermost first.
+#}
+{% if categories %}
+<nav class="category-box" aria-label="{{ t('category.box') }}">
+  <a class="category-box-label" href="{{ base }}/system:categories">{{ t("category.box") }}</a>
+  <ul role="list">{% for c in categories %}<li>
+    {%- for l in c.trail %}{% if not loop.first %}<span class="category-sep" aria-hidden="true"> › </span>{% endif %}<a href="{{ l.href }}">{{ l.name }}</a>{% endfor -%}
+  </li>{% endfor %}</ul>
+</nav>
+{% endif %}

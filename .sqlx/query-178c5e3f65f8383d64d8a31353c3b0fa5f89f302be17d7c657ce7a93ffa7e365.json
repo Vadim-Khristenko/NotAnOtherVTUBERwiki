@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.title, p.slug FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL\n             AND COALESCE(p.locale, '') = $2\n           ORDER BY lower(p.title), p.slug\n           LIMIT $3",
+  "query": "SELECT p.title, p.slug FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace = ($4::text)::page_namespace\n             AND p.deleted_at IS NULL\n             AND (NOT $5 OR COALESCE(p.locale, '') = $2)\n             AND lower(p.title) >= lower($6)\n           ORDER BY lower(p.title), p.slug\n           LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -30,7 +30,10 @@
       "Left": [
         "Uuid",
         "Text",
-        "Int8"
+        "Int8",
+        "Text",
+        "Bool",
+        "Text"
       ]
     },
     "nullable": [
@@ -38,5 +41,5 @@
       false
     ]
   },
-  "hash": "15372a7b9523a18e070f2a9b6b681bd333bffcf0c6953b505f5e3b9f46e46105"
+  "hash": "178c5e3f65f8383d64d8a31353c3b0fa5f89f302be17d7c657ce7a93ffa7e365"
 }

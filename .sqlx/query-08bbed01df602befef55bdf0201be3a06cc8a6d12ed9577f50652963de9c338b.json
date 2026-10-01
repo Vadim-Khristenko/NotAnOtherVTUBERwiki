@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO page_categories (page_id, wiki_id, category, name, sort_key)\n             SELECT $1, $2, k, n, s FROM unnest($3::text[], $4::text[], $5::text[]) AS t(k, n, s)\n             ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "TextArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "08bbed01df602befef55bdf0201be3a06cc8a6d12ed9577f50652963de9c338b"
+}

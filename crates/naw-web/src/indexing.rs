@@ -126,5 +126,7 @@ async fn index_one(db: &sqlx::PgPool, page_id: Uuid) -> Result<bool, AppError> {
     }
     crate::files::record_uses(&mut tx, row.wiki_id, page_id, &prepared.rendered.html).await?;
     tx.commit().await?;
+    // A template can put its pages in a category, so its edit moves them.
+    crate::categories::record_or_log(db, row.wiki_id, page_id, &prepared.categories).await;
     Ok(true)
 }

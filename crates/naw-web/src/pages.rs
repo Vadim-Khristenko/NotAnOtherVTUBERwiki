@@ -46,9 +46,28 @@ pub(crate) fn private_page(status: StatusCode, html: String) -> Response {
 }
 
 /// The router fallback, so a miss goes through the middleware and comes out
-/// as a themed 404.
-pub async fn fallback() -> Response {
-    crate::errors::not_found()
+/// as a themed 404. A category address with levels in it,
+/// `/category:streams/arg` or `/category:streams/arg/filian`, has more path
+/// segments than any route, and is answered here.
+pub async fn fallback(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    uri: axum::http::Uri,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let path = crate::media::percent_decode(uri.path()).to_lowercase();
+    let Some(rest) = path
+        .strip_prefix('/')
+        .and_then(crate::categories::strip)
+        .filter(|rest| rest.contains('/') && !rest.contains('\0'))
+    else {
+        return Ok(crate::errors::not_found());
+    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
+    let deep = uri
+        .query()
+        .is_some_and(|q| q.split('&').any(|p| p == "all" || p.starts_with("all=")));
+    crate::categories::route(&state, &ctx, &headers, rest, deep).await
 }
 
 /// Renders `message.html`, the shared "we will not do that" page.
@@ -240,6 +259,7 @@ pub(crate) fn path_of(namespace: &str, slug: &str) -> Option<String> {
         "template" => Some(format!("{TEMPLATE_PREFIX}{slug}")),
         "page_template" => Some(format!("{PAGE_TEMPLATE_PREFIX}{slug}")),
         "file" => Some(format!("file:{slug}")),
+        "category" => Some(format!("{}{slug}", crate::categories::PREFIX)),
         _ => None,
     }
 }
@@ -257,14 +277,19 @@ pub(crate) fn split_path(path: &str) -> (&'static str, &str) {
     if let Some((_, name)) = crate::files::split(path) {
         return ("file", name);
     }
+    if let Some(key) = crate::categories::strip(path) {
+        return ("category", key);
+    }
     ("main", path)
 }
 
 /// A page path: lowercase ASCII letters, digits and dashes, after an optional
-/// `template:` prefix, or a file page's name.
+/// `template:` prefix, or a file page's name, or a category's key, which may
+/// be in any script.
 pub(crate) fn slug_is_valid(path: &str) -> bool {
     match split_path(path) {
         ("file", _) => true,
+        ("category", key) => naw_markdown::categories::key(key).as_deref() == Some(key),
         (_, slug) => {
             !slug.is_empty()
                 && slug.len() <= SLUG_MAX
@@ -308,12 +333,31 @@ pub(crate) fn bad_request(message: &str) -> Response {
 /// A redirect, or `None` when `target` is not a valid header value (axum
 /// would turn that into a 500).
 pub(crate) fn redirect_response(status: StatusCode, target: &str) -> Option<Response> {
-    let location = axum::http::HeaderValue::from_str(target).ok()?;
+    // A category may be named in any script; a header carries ASCII only.
+    let location = axum::http::HeaderValue::from_str(&ascii_location(target)).ok()?;
     Response::builder()
         .status(status)
         .header(header::LOCATION, location)
         .body(Body::empty())
         .ok()
+}
+
+/// `target` with non-ASCII bytes and spaces percent-encoded, so
+/// `/category:витуберы` can go in a `Location` header. A control character
+/// stays as it is, and the header refuses it.
+pub(crate) fn ascii_location(target: &str) -> String {
+    if target.bytes().all(|b| b.is_ascii() && b != b' ') {
+        return target.to_string();
+    }
+    let mut out = String::with_capacity(target.len() * 3);
+    for byte in target.bytes() {
+        if byte.is_ascii() && byte != b' ' {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
 }
 
 /// What the document shell needs around a rendered body.
@@ -372,8 +416,29 @@ pub(crate) async fn cached_body(
     path: &str,
     body_md: &str,
 ) -> Result<(String, Option<u64>), AppError> {
+    let body = cached_body_full(state, ctx, path, body_md).await?;
+    Ok((body.html, body.render_ms))
+}
+
+/// A rendered body and the categories its expanded text puts it in.
+pub(crate) struct RenderedPage {
+    pub html: String,
+    /// `None` when the body came from cache.
+    pub render_ms: Option<u64>,
+    /// Templates add categories too, so they come from the expanded text.
+    pub categories: Vec<naw_markdown::categories::Membership>,
+}
+
+/// [`cached_body`], with the page's categories.
+pub(crate) async fn cached_body_full(
+    state: &AppState,
+    ctx: &Ctx,
+    path: &str,
+    body_md: &str,
+) -> Result<RenderedPage, AppError> {
     let wiki_id = ctx.wiki.id;
     let expanded = crate::templates::expand(state, ctx, path, body_md).await?;
+    let categories = naw_markdown::categories::of(&expanded.text);
     let body_md = expanded.text.as_str();
     let key = naw_markdown::content_hash(body_md);
     if let Some(row) = sqlx::query!(
@@ -386,7 +451,11 @@ pub(crate) async fn cached_body(
     .await?
     {
         let html = crate::emotes::expand(state, wiki_id, row.html).await?;
-        return Ok((html, None));
+        return Ok(RenderedPage {
+            html,
+            render_ms: None,
+            categories,
+        });
     }
     let rendered = render_prepared(&state.db, wiki_id, expanded)
         .await?
@@ -402,7 +471,11 @@ pub(crate) async fn cached_body(
     .execute(&state.db)
     .await?;
     let html = crate::emotes::expand(state, wiki_id, rendered.html).await?;
-    Ok((html, Some(rendered.render_ms)))
+    Ok(RenderedPage {
+        html,
+        render_ms: Some(rendered.render_ms),
+        categories,
+    })
 }
 
 /// A body about to be saved, with its templates expanded and rendered once:
@@ -412,6 +485,8 @@ pub(crate) struct Prepared {
     pub rendered: naw_markdown::RenderedBody,
     /// Templates the body uses.
     pub used: Vec<String>,
+    /// Categories the expanded body puts the page in.
+    pub categories: Vec<naw_markdown::categories::Membership>,
 }
 
 /// Expands and renders `body_md` for a save. The render runs on a blocking
@@ -433,6 +508,7 @@ pub(crate) async fn render_prepared(
     expanded: crate::templates::Expanded,
 ) -> Result<Prepared, AppError> {
     let text = expanded.text;
+    let categories = naw_markdown::categories::of(&text);
     let mut rendered = tokio::task::spawn_blocking(move || naw_markdown::render_body(&text))
         .await
         .map_err(|err| {
@@ -444,6 +520,7 @@ pub(crate) async fn render_prepared(
     Ok(Prepared {
         rendered,
         used: expanded.used,
+        categories,
     })
 }
 
@@ -482,6 +559,7 @@ pub(crate) async fn index(
 pub(crate) async fn after_save(state: &AppState, ctx: &Ctx, page_id: Uuid, prepared: &Prepared) {
     let wiki_id = ctx.wiki.id;
     crate::templates::record_uses(state, wiki_id, page_id, &prepared.used).await;
+    crate::categories::record_or_log(&state.db, wiki_id, page_id, &prepared.categories).await;
     let files: Result<(), AppError> = async {
         let mut conn = state.db.acquire().await?;
         crate::files::record_uses(&mut conn, wiki_id, page_id, &prepared.rendered.html).await
@@ -659,6 +737,14 @@ fn jump_target(slug: &str, query: &PageQuery) -> Option<String> {
 pub struct PageQuery {
     #[serde(default)]
     jump_to: Option<String>,
+    /// All pages: where the list starts, and which namespace it lists.
+    #[serde(default)]
+    from: Option<String>,
+    #[serde(default)]
+    ns: Option<String>,
+    /// A category: list the pages of everything inside it too.
+    #[serde(default)]
+    all: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -694,9 +780,20 @@ pub async fn page(
         && name.chars().all(|c| c.is_ascii_lowercase() || c == '-')
     {
         let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
-        return Ok(crate::system::page(&state, &ctx, &headers, name)
-            .await?
-            .unwrap_or_else(crate::errors::not_found));
+        let system_query = crate::system::Query {
+            from: query.from.clone(),
+            ns: query.ns.clone(),
+        };
+        return Ok(
+            crate::system::page(&state, &ctx, &headers, name, &system_query)
+                .await?
+                .unwrap_or_else(crate::errors::not_found),
+        );
+    }
+    // A category, in any spelling: it lists its pages under its description.
+    if let Some(rest) = crate::categories::strip(&slug) {
+        let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
+        return crate::categories::route(&state, &ctx, &headers, rest, query.all.is_some()).await;
     }
     // Before the query: an embedded NUL in a text parameter is a 500.
     if !slug_is_valid(&slug) {
@@ -737,7 +834,14 @@ pub async fn page(
     {
         return Ok(response);
     }
-    let (body_html, render_ms) = cached_body(&state, &ctx, &slug, &found.body_md).await?;
+    let RenderedPage {
+        html: body_html,
+        render_ms,
+        categories,
+    } = cached_body_full(&state, &ctx, &slug, &found.body_md).await?;
+    // A template edit can change a page's categories without a save.
+    crate::categories::sync(&state.db, ctx.wiki.id, found.id, &categories).await;
+    let category_links = crate::categories::links(&ctx, &categories);
     // A template's page says how to use it and where it is used.
     let template = match split_path(&slug) {
         // A page template's page: what it is and a way to start a page from it.
@@ -873,6 +977,7 @@ pub async fn page(
             extra: minijinja::context! {
                 slug => slug.clone(),
                 template => template,
+                categories => category_links,
                 about => about,
                 locked => found.locked,
                 updated_at => found.updated_at.format("%Y-%m-%d %H:%M UTC").to_string(),
@@ -2068,7 +2173,32 @@ mod tests {
     fn query(jump_to: Option<&str>) -> PageQuery {
         PageQuery {
             jump_to: jump_to.map(str::to_string),
+            from: None,
+            ns: None,
+            all: None,
         }
+    }
+
+    #[test]
+    fn a_category_address_is_one_segment_in_any_script() {
+        assert_eq!(
+            split_path("category:streams:arg"),
+            ("category", "streams:arg")
+        );
+        assert_eq!(split_path("категория:витуберы"), ("category", "витуберы"));
+        assert!(slug_is_valid("category:streams:arg"));
+        assert!(slug_is_valid("category:витуберы"));
+        assert!(!slug_is_valid("category:Streams"), "only the key itself");
+        assert!(!slug_is_valid("category:"));
+        assert_eq!(
+            path_of("category", "streams:arg").as_deref(),
+            Some("category:streams:arg")
+        );
+        assert_eq!(
+            ascii_location("/category:витуберы?all=1"),
+            "/category:%D0%B2%D0%B8%D1%82%D1%83%D0%B1%D0%B5%D1%80%D1%8B?all=1"
+        );
+        assert_eq!(ascii_location("/plain"), "/plain");
     }
 
     #[test]

@@ -1,0 +1,49 @@
+# Russian interface messages: categories.
+#
+# Keys here are asked for as category.<key>. The file name is the prefix.
+
+heading = "Категория: {name}"
+all = "Категории"
+box = "Категории"
+edit = "Править описание"
+history = "История описания"
+no_description = "У этой категории пока нет описания: что в неё входит, а что нет."
+create = "Написать описание"
+no_pages = "В этой категории пока нет страниц."
+how_to_add = "Чтобы добавить страницу в эту категорию, напишите в ней в любом месте:"
+how_to_nest = "Категория внутри этой пишется через косую черту:"
+which_pages = "Какие страницы"
+direct = "В этой категории"
+deep = "Вместе со всем, что внутри"
+empty_title = "Эта категория пуста"
+empty_body = "В ней нет страниц и нет описания. Добавьте {code} на страницу или сначала опишите категорию."
+kind_template = "шаблон"
+kind_page_template = "шаблон страницы"
+kind_user = "профиль"
+kind_talk = "обсуждение"
+kind_project = "проект"
+kind_module = "модуль"
+
+[subcategories]
+one = "{n} подкатегория"
+few = "{n} подкатегории"
+many = "{n} подкатегорий"
+other = "{n} подкатегории"
+
+[members]
+one = "{n} страница"
+few = "{n} страницы"
+many = "{n} страниц"
+other = "{n} страницы"
+
+[pages]
+one = "{n} страница"
+few = "{n} страницы"
+many = "{n} страниц"
+other = "{n} страницы"
+
+[files]
+one = "{n} файл"
+few = "{n} файла"
+many = "{n} файлов"
+other = "{n} файла"

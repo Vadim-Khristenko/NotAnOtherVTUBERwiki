@@ -1,0 +1,41 @@
+# English interface messages: categories.
+#
+# Keys here are asked for as category.<key>. The file name is the prefix.
+
+heading = "Category: {name}"
+all = "Categories"
+box = "Categories"
+edit = "Edit the description"
+history = "Description history"
+no_description = "This category has no description yet: what belongs in it and what does not."
+create = "Write a description"
+no_pages = "No page is in this category yet."
+how_to_add = "To put a page in this category, add this line anywhere in it:"
+how_to_nest = "A category inside this one is written with a slash:"
+which_pages = "Which pages"
+direct = "In this category"
+deep = "With everything inside it"
+empty_title = "This category is empty"
+empty_body = "No page is in it and it has no description. Add {code} to a page, or describe the category first."
+kind_template = "template"
+kind_page_template = "page template"
+kind_user = "profile"
+kind_talk = "talk"
+kind_project = "project"
+kind_module = "module"
+
+[subcategories]
+one = "{n} subcategory"
+other = "{n} subcategories"
+
+[members]
+one = "{n} page"
+other = "{n} pages"
+
+[pages]
+one = "{n} page"
+other = "{n} pages"
+
+[files]
+one = "{n} file"
+other = "{n} files"

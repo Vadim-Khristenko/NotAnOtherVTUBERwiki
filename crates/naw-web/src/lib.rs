@@ -18,6 +18,7 @@ mod admin_user;
 mod audit;
 mod auth;
 pub mod bootstrap;
+mod categories;
 mod chrome;
 mod csp;
 mod csrf;

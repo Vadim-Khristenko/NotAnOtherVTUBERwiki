@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT ON (pc.category) pc.category, pc.name\n           FROM page_categories pc JOIN pages p ON p.id = pc.page_id\n           WHERE pc.wiki_id = $1 AND (pc.category = $2 OR pc.category LIKE $3)\n             AND p.deleted_at IS NULL\n           ORDER BY pc.category, pc.name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "page_categories",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "page_categories",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "2009040f4d6904e45da773e74acc39e38f59680c14535246b406a6ecef1780aa"
+}

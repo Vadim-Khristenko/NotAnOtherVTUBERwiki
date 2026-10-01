@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT upper(left(p.title, 1)) AS \"letter!\" FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace = ($3::text)::page_namespace\n             AND p.deleted_at IS NULL AND (NOT $4 OR COALESCE(p.locale, '') = $2)\n           ORDER BY 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "letter!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "420d6c97d21b7429c29da2db61419e321c5092cf17ee20c6b7061b426fdad411"
+}

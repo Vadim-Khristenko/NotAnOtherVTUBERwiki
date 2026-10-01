@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT ON (p.slug) p.slug, p.title,\n                  (SELECT count(DISTINCT tu.page_id) FROM template_uses tu\n                   WHERE tu.wiki_id = p.wiki_id AND tu.template_slug = p.slug) AS \"uses!\"\n           FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.deleted_at IS NULL\n           ORDER BY p.slug, (COALESCE(p.locale, '') = $2) DESC\n           LIMIT 1000",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "uses!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "1e9c10512806817379b2551b76b18a5f0025455f3fb25da531780c713d746301"
+}

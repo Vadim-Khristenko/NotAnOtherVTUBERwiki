@@ -176,6 +176,7 @@
 </section>
 {% endif %}
 
+{% if categories is defined %}{% include "_categories.html" %}{% endif %}
 <p class="page-meta">
   <span class="page-meta-report">
     <a href="{{ base }}/{{ slug }}/report?kind=mistake" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-flag" /></svg>{{ t("file.report_mistake") }}</a>

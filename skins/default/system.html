@@ -1,13 +1,17 @@
 {% extends "layout.html" %}
 {#
-  Special pages, one template: `view` picks the part.
+  Special pages, one template: `view` names the page and `about` says what
+  it is. The part shown follows what the page brings:
 
-  index           entries: href, icon, title, about, path
+  index           groups: title, entries (href, icon, title, about, path)
   recent-changes  changes: title, href, diff, history, author, summary, is_minor,
                   is_new, delta, delta_big, locale, day, time
-  all-pages       pages: title, href, letter; total, all_pages_max
-  files           files: url, page, name, kind, width, height
+  all-pages       pages: title, href, letter; total, tabs (label, count, href,
+                  current), letters (letter, href), ns, from, next, first, action
+  files           files: url, page, name, kind, width, height (also unused-files)
   statistics      figures: label, value
+  any list        rows: title, href, meta, tag, action_href, action_label;
+                  list_max, at_limit
 #}
 {% block body %}
 <nav class="crumbs"><a href="{{ base }}/system">{{ t("system.index") }}</a>{% if view != "index" %} / {{ heading }}{% endif %}</nav>
@@ -15,19 +19,24 @@
 
 {% if view == "index" %}
 <p class="muted-cell">{{ t("system.index_about") }}</p>
-<ul class="system-grid" role="list">
-  {% for e in entries %}
-  <li><a class="system-card" href="{{ e.href }}">
-    <svg class="icon" aria-hidden="true"><use href="#i-{{ e.icon }}" /></svg>
-    <span class="system-card-title">{{ e.title }}</span>
-    <span class="system-card-about">{{ e.about }}</span>
-    <code class="system-card-path">{{ e.path }}</code>
-  </a></li>
-  {% endfor %}
-</ul>
+{% for g in groups %}
+<section class="system-group" aria-labelledby="system-group-{{ loop.index }}">
+  <h2 id="system-group-{{ loop.index }}">{{ g.title }}</h2>
+  <ul class="system-grid" role="list">
+    {% for e in g.entries %}
+    <li><a class="system-card" href="{{ e.href }}">
+      <svg class="icon" aria-hidden="true"><use href="#i-{{ e.icon }}" /></svg>
+      <span class="system-card-title">{{ e.title }}</span>
+      <span class="system-card-about">{{ e.about }}</span>
+      <code class="system-card-path">{{ e.path }}</code>
+    </a></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}
 
 {% elif view == "recent-changes" %}
-<p class="muted-cell">{{ t("system.recent_changes_about") }}</p>
+<p class="muted-cell">{{ about }}</p>
 {% if changes %}
 {% for c in changes %}
 {% if loop.first or c.day != loop.previtem.day %}
@@ -62,21 +71,45 @@
 {% endif %}
 
 {% elif view == "all-pages" %}
-<p class="muted-cell">{{ tn("system.pages_count", total) }}{% if total >= all_pages_max %} {{ t("system.first_only", n=all_pages_max) }}{% endif %}</p>
+<nav class="all-pages-tabs" aria-label="{{ t('system.namespaces') }}">
+  {% for tab in tabs %}<a href="{{ tab.href }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }} <span class="all-pages-count">{{ tab.count }}</span></a>{% endfor %}
+</nav>
+<form class="all-pages-jump" method="get" action="{{ action }}" role="search">
+  {% if ns != "main" %}<input type="hidden" name="ns" value="{{ ns }}" />{% endif %}
+  <label class="visually-hidden" for="all-pages-from">{{ t("system.jump_label") }}</label>
+  <input id="all-pages-from" class="field-input" type="search" name="from" value="{{ from }}" placeholder="{{ t('system.jump_label') }}" maxlength="100" />
+  <button type="submit" class="button-preview">{{ t("system.jump") }}</button>
+</form>
+{% if letters %}
+<nav class="all-pages-letters" aria-label="{{ t('system.letters') }}">
+  {% for l in letters %}<a href="{{ l.href }}">{{ l.letter }}</a>{% endfor %}
+</nav>
+{% endif %}
+<p class="muted-cell">{{ tn("system.pages_count", total) }}{% if from %} · {{ t("system.from_here", from=from) }}{% endif %}</p>
+{% if pages %}
+<div class="category-columns">
 {% for p in pages %}
 {% if loop.first or p.letter != loop.previtem.letter %}
-{% if not loop.first %}</ul>{% endif %}
-<h2 class="history-day" id="letter-{{ loop.index }}">{{ p.letter }}</h2>
-<ul class="template-uses">
+{% if not loop.first %}</ul></div>{% endif %}
+<div class="category-group"><h2 class="category-letter">{{ p.letter }}</h2>
+<ul role="list">
 {% endif %}
   <li><a href="{{ p.href }}">{{ p.title }}</a></li>
-{% if loop.last %}</ul>{% endif %}
+{% if loop.last %}</ul></div>{% endif %}
+{% endfor %}
+</div>
 {% else %}
 <p class="notice">{{ t("system.nothing_yet") }}</p>
-{% endfor %}
+{% endif %}
+{% if next or first %}
+<nav class="all-pages-more">
+  {% if first %}<a class="button-preview" href="{{ first }}">{{ t("system.to_start") }}</a>{% endif %}
+  {% if next %}<a class="button-preview" href="{{ next }}">{{ t("system.next_page") }}</a>{% endif %}
+</nav>
+{% endif %}
 
-{% elif view == "files" %}
-<p class="muted-cell">{{ t("system.files_about") }}</p>
+{% elif view == "files" or view == "unused-files" %}
+<p class="muted-cell">{{ about }}</p>
 {% if files %}
 <ul class="media-grid" role="list">
   {% for f in files %}
@@ -97,5 +130,23 @@
 <dl class="stat-grid">
   {% for f in figures %}<div class="stat"><dt>{{ f.label }}</dt><dd>{{ f.value }}</dd></div>{% endfor %}
 </dl>
+
+{% elif rows is defined %}
+<p class="muted-cell">{{ about }}</p>
+{% if rows %}
+<ol class="system-list" role="list">
+  {% for r in rows %}
+  <li>
+    <a class="system-list-title" href="{{ r.href }}">{{ r.title }}</a>
+    {%- if r.tag %} <span class="tag">{{ r.tag }}</span>{% endif %}
+    <span class="system-list-meta">{{ r.meta }}</span>
+    {%- if r.action_href %} <a class="system-list-action" href="{{ r.action_href }}">{{ r.action_label }}</a>{% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% if at_limit %}<p class="muted-cell">{{ t("system.first_only", n=list_max) }}</p>{% endif %}
+{% else %}
+<p class="notice">{{ t("system.nothing_yet") }}</p>
+{% endif %}
 {% endif %}
 {% endblock %}

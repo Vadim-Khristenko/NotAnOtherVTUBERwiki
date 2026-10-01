@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.title, p.slug, p.updated_at FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL\n             AND COALESCE(p.locale, '') = $2\n             AND NOT EXISTS (SELECT 1 FROM page_categories pc WHERE pc.page_id = p.id)\n           ORDER BY lower(p.title) LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "52e6722d0de2f9f58f0892d8d795e10d41fbe4486ffff8260700fca98efccd70"
+}

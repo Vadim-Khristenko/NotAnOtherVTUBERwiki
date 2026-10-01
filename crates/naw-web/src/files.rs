@@ -397,13 +397,17 @@ pub(crate) async fn page(
     let may_replace = crate::file_actions::may_replace(&ctx.actor, &target);
     let versions = crate::file_actions::versions(&state.db, ctx, &target, may_replace).await?;
     let description = pages::find_page(&state.db, ctx.wiki.id, &path, &ctx.content_locale).await?;
-    let description_html = match &description {
-        Some(page) => Some(
-            pages::cached_body(state, ctx, &path, &page.body_md)
-                .await?
-                .0,
-        ),
-        None => None,
+    // A description may put the file in categories, as an article would.
+    let (description_html, categories) = match &description {
+        Some(page) => {
+            let body = pages::cached_body_full(state, ctx, &path, &page.body_md).await?;
+            crate::categories::sync(&state.db, ctx.wiki.id, page.id, &body.categories).await;
+            (
+                Some(body.html),
+                crate::categories::links(ctx, &body.categories),
+            )
+        }
+        None => (None, Vec::new()),
     };
     // A page saved before the newest version recorded an older one.
     let uses = sqlx::query!(
@@ -470,6 +474,7 @@ pub(crate) async fn page(
                 embed => format!("![{alt}]({path})"),
                 link => format!("[{alt}]({path})"),
                 description => description_html,
+                categories => categories,
                 has_description => description.is_some(),
                 may_edit => may_edit,
                 add_description => ctx.link(&format!("/new?slug={path}")),

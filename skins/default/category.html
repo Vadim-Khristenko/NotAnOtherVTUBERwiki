@@ -1,0 +1,90 @@
+{% extends "layout.html" %}
+{#
+  A category: its description, when it has one, and what is in it.
+
+  `name`           the category's name; `code` the line that adds a page to it,
+                   `child_code` the line for a category inside it
+  `ancestors`      the levels above: name, href
+  `deep`           whether the pages of everything inside are listed too;
+                   `has_inside`, `direct_href`, `deep_href`
+  `description`    the description page, rendered, or none; `may_edit`,
+                   `may_create`, `create_href`
+  `subcategories`  title, href, count
+  `pages`          title, href, letter, locale (when not the reader's), kind
+                   (for a template or page template)
+  `files`          url, page, name, kind, width, height
+  `categories`     the categories this one is in
+#}
+{% block body %}
+<nav class="crumbs"><a href="{{ base }}/system:categories">{{ t("category.all") }}</a>{% for a in ancestors %} / <a href="{{ a.href }}">{{ a.name }}</a>{% endfor %} / {{ name }}</nav>
+<h1>{{ heading }}</h1>
+
+{% if description %}
+<div class="category-description">{{ description | safe }}</div>
+{% if may_edit %}<p class="page-actions file-actions">
+  <a class="page-action" href="{{ base }}/{{ slug }}/edit"><svg class="icon" aria-hidden="true"><use href="#i-pencil" /></svg>{{ t("category.edit") }}</a>
+  <a class="page-action" href="{{ base }}/{{ slug }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("category.history") }}</a>
+</p>{% endif %}
+{% else %}
+<p class="muted-cell">{{ t("category.no_description") }}</p>
+{% if may_create %}<p><a class="button-preview" href="{{ create_href }}">{{ t("category.create") }}</a></p>{% endif %}
+{% endif %}
+
+{% if subcategories %}
+<section class="category-section" aria-labelledby="category-subs">
+  <h2 id="category-subs">{{ tn("category.subcategories", subcategories | length) }}</h2>
+  <ul class="category-subs" role="list">
+    {% for s in subcategories %}<li><a href="{{ s.href }}"><svg class="icon" aria-hidden="true"><use href="#i-list-details" /></svg>{{ s.title }}</a> <span class="muted-cell">{{ tn("category.members", s.count) }}</span></li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="category-section" aria-labelledby="category-pages">
+  <h2 id="category-pages">{{ tn("category.pages", pages | length) }}</h2>
+  {% if has_inside %}
+  <nav class="all-pages-tabs" aria-label="{{ t('category.which_pages') }}">
+    <a href="{{ direct_href }}"{% if not deep %} aria-current="page"{% endif %}>{{ t("category.direct") }}</a>
+    <a href="{{ deep_href }}"{% if deep %} aria-current="page"{% endif %}>{{ t("category.deep") }}</a>
+  </nav>
+  {% endif %}
+  {% if pages %}
+  <div class="category-columns">
+  {% for p in pages %}
+  {% if loop.first or p.letter != loop.previtem.letter %}
+  {% if not loop.first %}</ul></div>{% endif %}
+  <div class="category-group"><h3 class="category-letter">{{ p.letter }}</h3>
+  <ul role="list">
+  {% endif %}
+    <li><a href="{{ p.href }}"{% if p.locale %} hreflang="{{ p.locale }}"{% endif %}>{{ p.title }}</a>
+      {%- if p.kind %} <span class="tag">{{ p.kind }}</span>{% endif %}
+      {%- if p.locale %} <span class="tag">{{ p.locale }}</span>{% endif %}</li>
+  {% if loop.last %}</ul></div>{% endif %}
+  {% endfor %}
+  </div>
+  {% if pages | length >= members_max %}<p class="muted-cell">{{ t("system.first_only", n=members_max) }}</p>{% endif %}
+  {% else %}
+  <p class="muted-cell">{{ t("category.no_pages") }}</p>
+  {% endif %}
+</section>
+
+{% if files %}
+<section class="category-section" aria-labelledby="category-files">
+  <h2 id="category-files">{{ tn("category.files", files | length) }}</h2>
+  <ul class="media-grid" role="list">
+    {% for f in files %}
+    <li class="media-item">
+      <a href="{{ f.page }}">
+        {%- if f.kind == "image" %}<img src="{{ f.url }}" alt="{{ f.name }}" loading="lazy" decoding="async"{% if f.width and f.height %} width="{{ f.width }}" height="{{ f.height }}"{% endif %} />
+        {%- else %}<span class="media-kind"><svg class="icon" aria-hidden="true"><use href="#i-{% if f.kind == "document" %}file-info{% else %}movie{% endif %}" /></svg></span>{% endif -%}
+      </a>
+      <a class="muted-cell" href="{{ f.page }}">{{ f.name }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<p class="category-how muted-cell">{{ t("category.how_to_add") }} <code>{{ code }}</code>. {{ t("category.how_to_nest") }} <code>{{ child_code }}</code></p>
+
+{% include "_categories.html" %}
+{% endblock %}

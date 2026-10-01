@@ -132,6 +132,7 @@
   {% for v in other_languages %}<a href="{{ v.href }}" hreflang="{{ v.code }}" lang="{{ v.code }}" title="{{ v.title }}">{{ v.name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
 </nav>
 {% endif %}
+{% if categories is defined %}{% include "_categories.html" %}{% endif %}
 <p class="page-meta">
   {% if updated_at is defined %}<span>{{ t("page.last_edited", when=updated_at) }}</span>{% endif %}
   <span class="page-meta-report">

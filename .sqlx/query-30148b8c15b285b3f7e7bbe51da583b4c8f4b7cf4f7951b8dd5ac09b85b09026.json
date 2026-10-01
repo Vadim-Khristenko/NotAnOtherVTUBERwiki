@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.namespace::text AS \"namespace!\", p.slug, COALESCE(p.locale, '') AS \"locale!\"\n           FROM page_categories pc JOIN pages p ON p.id = pc.page_id\n           WHERE pc.wiki_id = $1 AND (pc.category = $2 OR pc.category LIKE $3)\n             AND p.slug = $4 AND p.deleted_at IS NULL\n           ORDER BY (COALESCE(p.locale, '') = $5) DESC, p.namespace\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "locale!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      null
+    ]
+  },
+  "hash": "30148b8c15b285b3f7e7bbe51da583b4c8f4b7cf4f7951b8dd5ac09b85b09026"
+}

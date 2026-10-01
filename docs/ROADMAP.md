@@ -192,7 +192,12 @@ The part that makes it a wiki rather than a blog.
       and language codes refused as page addresses, with the author's text kept
 - [x] Reports: mistakes, complaints and suggested changes, a moderators' queue, and the
       answer visible to the reporter
-- Categories, redirects, and slug normalisation that handles Japanese and Cyrillic
+- [x] Categories: `[[Category:VTubers]]` in a page or in a template it uses, a box of them
+      under every page, and a page for each category with its description, its pages
+      by letter, its files and its subcategories. Names in any script; levels with a slash
+      (`Streams/ARG` at `/category:streams:arg`), with every spelling of an address landing
+      on one and a list of everything inside a category. See [categories.md](categories.md)
+- Redirects, and slug normalisation for article addresses in Japanese and Cyrillic
 - [x] Media upload behind a swappable storage backend. Images are recognised by their
       bytes (never SVG), stored by content hash, served with a CSP that allows nothing.
       Only the wiki's own uploads render as images; an outside image becomes a link.
@@ -203,6 +208,10 @@ The part that makes it a wiki rather than a blog.
       below, and never loosen a protection set above them
 - [x] Special pages at `/system:name`: recent changes (by day, with the size of each edit and
       a link to its diff), all pages, files, statistics, a random page, and `/system` listing them
+- [x] More special pages, in groups: all pages by kind (articles, categories, templates, page
+      templates) with an A to Z bar and paging; categories, new pages, templates by use and
+      active editors; and for upkeep, pages in no category, categories with no description,
+      pages missing in this language, short, long and stale pages, and unused files
 - [ ] Watchlists. Recent changes and patrolling work; watchlists do not exist yet
 - [ ] Audit log with a retention policy. The log is written and browsable; retention is not in
 - [x] Search behind a swappable backend, PostgreSQL full text first. A long article is
