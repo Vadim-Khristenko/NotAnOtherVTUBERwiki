@@ -60,6 +60,8 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
     // `[[Category:X]]` puts the page in a category and shows nothing there;
     // `[[:Category:X]]` is a link to it, relative so a language prefix stays.
     let mut in_membership = false;
+    // A `[[:Category:X]]` with no text of its own reads "Category:X".
+    let mut bare_category_link = false;
     let parser = parser.filter_map(move |event| {
         use pulldown_cmark::LinkType;
         if in_membership {
@@ -67,6 +69,17 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
                 in_membership = false;
             }
             return None;
+        }
+        if bare_category_link {
+            match event {
+                Event::Text(text) => {
+                    return Some(Event::Text(
+                        text.strip_prefix(':').unwrap_or(&text).to_string().into(),
+                    ));
+                }
+                Event::End(TagEnd::Link) => bare_category_link = false,
+                _ => {}
+            }
         }
         match event {
             Event::Start(Tag::Link {
@@ -84,7 +97,11 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
                 id,
             }) => {
                 let dest_url = match categories::link_target(&dest_url) {
-                    Some(key) => format!("./category:{key}").into(),
+                    Some(key) => {
+                        bare_category_link =
+                            !matches!(link_type, LinkType::WikiLink { has_pothole: true });
+                        format!("./category:{key}").into()
+                    }
                     None => dest_url,
                 };
                 Some(Event::Start(Tag::Link {
@@ -1882,7 +1899,7 @@ fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 19;
+pub const RENDERER_VERSION: i32 = 20;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -2266,6 +2283,9 @@ mod tests {
             html.contains(">the list</a>") && html.contains("href=\"./category:"),
             "{html}"
         );
+        let bare = render_html("See [[:Category:Snack Lore]].\n");
+        assert!(bare.contains(">Category:Snack Lore</a>"), "{bare}");
+        assert!(bare.contains("href=\"./category:snack-lore\""), "{bare}");
     }
 
     #[test]
