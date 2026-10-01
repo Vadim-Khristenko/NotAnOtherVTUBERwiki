@@ -1,5 +1,6 @@
 //! Markdown to sanitized HTML, the pure core of render-on-write.
 
+pub mod categories;
 mod scan;
 pub mod transclude;
 pub mod yaml;
@@ -56,6 +57,46 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
         Event::Html(html) | Event::InlineHtml(html) => is_allowed_raw_html(html),
         _ => true,
     });
+    // `[[Category:X]]` puts the page in a category and shows nothing there;
+    // `[[:Category:X]]` is a link to it, relative so a language prefix stays.
+    let mut in_membership = false;
+    let parser = parser.filter_map(move |event| {
+        use pulldown_cmark::LinkType;
+        if in_membership {
+            if matches!(event, Event::End(TagEnd::Link)) {
+                in_membership = false;
+            }
+            return None;
+        }
+        match event {
+            Event::Start(Tag::Link {
+                link_type: LinkType::WikiLink { .. },
+                ref dest_url,
+                ..
+            }) if categories::is_membership(dest_url) => {
+                in_membership = true;
+                None
+            }
+            Event::Start(Tag::Link {
+                link_type: link_type @ LinkType::WikiLink { .. },
+                dest_url,
+                title,
+                id,
+            }) => {
+                let dest_url = match categories::link_target(&dest_url) {
+                    Some(key) => format!("./category:{key}").into(),
+                    None => dest_url,
+                };
+                Some(Event::Start(Tag::Link {
+                    link_type,
+                    dest_url,
+                    title,
+                    id,
+                }))
+            }
+            other => Some(other),
+        }
+    });
     // An outside image would tell its host who read the article, and can change
     // after review. The stack pairs each image end with its start.
     // A local audio or video file plays in place, its alt text as the caption.
@@ -110,6 +151,8 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
 
     let mut dirty = String::with_capacity(mapped.len());
     pulldown_cmark::html::push_html(&mut dirty, parser);
+    // A paragraph that held only category links is left empty.
+    let dirty = drop_empty_paragraphs(&dirty);
     let dirty = restore_custom_blocks(&dirty, blocks, depth, state);
     let dirty = postprocess_diagrams(&dirty);
     // Runs on HTML, so inner formatting survives inside the wrappers.
@@ -149,8 +192,33 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
         .to_string()
 }
 
+/// Removes `<p>` elements with nothing but white space in them.
+fn drop_empty_paragraphs(html: &str) -> String {
+    if !html.contains("<p>") {
+        return html.to_string();
+    }
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = rest.find("<p>") {
+        let inner = &rest[at + 3..];
+        match inner.find("</p>") {
+            Some(end) if inner[..end].trim().is_empty() => {
+                out.push_str(&rest[..at]);
+                let after = &inner[end + 4..];
+                rest = after.strip_prefix('\n').unwrap_or(after);
+            }
+            _ => {
+                out.push_str(&rest[..at + 3]);
+                rest = inner;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// The CommonMark extensions the engine enables.
-fn parser_options() -> pulldown_cmark::Options {
+pub(crate) fn parser_options() -> pulldown_cmark::Options {
     use pulldown_cmark::Options;
     Options::ENABLE_TABLES
         | Options::ENABLE_FOOTNOTES
@@ -1814,7 +1882,7 @@ fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 18;
+pub const RENDERER_VERSION: i32 = 19;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -2179,6 +2247,25 @@ mod tests {
         let html = render_html("See [[home|Home page]].\n");
         assert!(html.contains("href=\"home\""), "{html}");
         assert!(html.contains(">Home page</a>"), "{html}");
+    }
+
+    #[test]
+    fn a_category_link_shows_nothing_and_a_colon_link_shows_the_category() {
+        let html = render_html(
+            "Text [[Category:VTubers]] here.\n\n[[Category:A]]\n[[Категория:Б|sort]]\n\n\
+             See [[:Категория:Витуберы|the list]].\n",
+        );
+        assert!(!html.contains("VTubers"), "{html}");
+        assert!(!html.contains("sort"), "{html}");
+        assert!(
+            !html.contains("<p>\n</p>") && !html.contains("<p></p>"),
+            "{html}"
+        );
+        assert!(html.contains("<p>Text  here.</p>"), "{html}");
+        assert!(
+            html.contains(">the list</a>") && html.contains("href=\"./category:"),
+            "{html}"
+        );
     }
 
     #[test]
