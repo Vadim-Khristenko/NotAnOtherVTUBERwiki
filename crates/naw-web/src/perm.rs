@@ -37,6 +37,9 @@ pub enum Capability {
     ReportSend,
     /// Work the queue of reports.
     ReportHandle,
+    /// Publish without waiting for review, where the wiki reviews edits: the
+    /// pass curators and up hold, and one person may be given.
+    EditUnreviewed,
 }
 
 impl Capability {
@@ -54,10 +57,11 @@ impl Capability {
             Self::WikiSettings => "wiki.settings",
             Self::ReportSend => "report.send",
             Self::ReportHandle => "report.handle",
+            Self::EditUnreviewed => "edit.unreviewed",
         }
     }
 
-    pub const ALL: [Capability; 11] = [
+    pub const ALL: [Capability; 12] = [
         Self::PageCreate,
         Self::PageEdit,
         Self::PageDelete,
@@ -69,6 +73,7 @@ impl Capability {
         Self::WikiSettings,
         Self::ReportSend,
         Self::ReportHandle,
+        Self::EditUnreviewed,
     ];
 
     pub fn parse(raw: &str) -> Option<Self> {
@@ -196,6 +201,12 @@ pub struct Rules {
     /// Require a verified email before any write. Off by default, since some
     /// providers share no address.
     pub require_verified_email: bool,
+    /// A new page by someone without the pass (`EditUnreviewed`) waits for
+    /// review before readers see it. From `settings.review.new_pages`.
+    pub review_new_pages: bool,
+    /// An edit by someone without the pass waits for review; readers keep
+    /// the last accepted text. From `settings.review.edits`.
+    pub review_edits: bool,
 }
 
 impl Default for Rules {
@@ -206,6 +217,8 @@ impl Default for Rules {
             registered_create: true,
             registered_edit: true,
             require_verified_email: false,
+            review_new_pages: false,
+            review_edits: false,
         }
     }
 }
@@ -215,8 +228,19 @@ impl Rules {
     /// never widening access.
     pub fn from_settings(settings: &Value) -> Self {
         let d = Self::default();
+        let review = |key: &str| {
+            settings
+                .get("review")
+                .and_then(|r| r.get(key))
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        };
         let Some(block) = settings.get("permissions") else {
-            return d;
+            return Self {
+                review_new_pages: review("new_pages"),
+                review_edits: review("edits"),
+                ..d
+            };
         };
         let flag =
             |key: &str, fallback: bool| block.get(key).and_then(Value::as_bool).unwrap_or(fallback);
@@ -226,6 +250,8 @@ impl Rules {
             registered_create: flag("registered_create", d.registered_create),
             registered_edit: flag("registered_edit", d.registered_edit),
             require_verified_email: flag("require_verified_email", d.require_verified_email),
+            review_new_pages: review("new_pages"),
+            review_edits: review("edits"),
         }
     }
 }
@@ -330,7 +356,9 @@ impl Actor {
                 self.may_write(self.rules.anonymous_edit, self.rules.registered_edit)
             }
             // How high a curator may protect is limited in `may_protect`.
-            Capability::PageLock | Capability::RevisionPatrol => self.at_least(WikiRole::Curator),
+            Capability::PageLock | Capability::RevisionPatrol | Capability::EditUnreviewed => {
+                self.at_least(WikiRole::Curator)
+            }
             // A mute keeps it: a muted reader may still point at a problem.
             Capability::ReportSend => self.is_signed_in(),
             Capability::PageDelete | Capability::AuditRead | Capability::ReportHandle => {
@@ -340,6 +368,17 @@ impl Actor {
                 self.at_least(WikiRole::Admin)
             }
         }
+    }
+
+    /// Whether what this actor publishes waits for review: a new page or an
+    /// edit, as the wiki's switches say, unless they hold the pass.
+    pub fn needs_review(&self, new_page: bool) -> bool {
+        let reviewed = if new_page {
+            self.rules.review_new_pages
+        } else {
+            self.rules.review_edits
+        };
+        reviewed && !self.can(Capability::EditUnreviewed)
     }
 
     /// Editing one page: the capability, plus its protection level or above.
@@ -608,6 +647,33 @@ mod tests {
         assert!(guest.can(Capability::PageEdit));
         assert!(!guest.can(Capability::PageCreate));
         assert!(!guest.can(Capability::PageDelete));
+    }
+
+    #[test]
+    fn review_holds_back_people_without_the_pass_and_only_where_the_wiki_asks() {
+        let settings = json!({ "review": { "new_pages": true, "edits": false } });
+        let rules = Rules::from_settings(&settings);
+        assert!(rules.review_new_pages && !rules.review_edits);
+        let mut editor = actor(GlobalRole::Registered, Some(WikiRole::Registered));
+        editor.rules = rules;
+        assert!(editor.needs_review(true), "a new page waits");
+        assert!(!editor.needs_review(false), "edits do not, on this wiki");
+        let mut curator = actor(GlobalRole::Registered, Some(WikiRole::Curator));
+        curator.rules = rules;
+        assert!(!curator.needs_review(true), "curators hold the pass");
+        editor.overrides = vec![(Capability::EditUnreviewed, true)];
+        assert!(!editor.needs_review(true), "the pass given to one person");
+        curator.overrides = vec![(Capability::EditUnreviewed, false)];
+        assert!(curator.needs_review(true), "and taken from one");
+        let open = actor(GlobalRole::Registered, Some(WikiRole::Registered));
+        assert!(
+            !open.needs_review(true) && !open.needs_review(false),
+            "off by default"
+        );
+        assert_eq!(
+            Capability::parse("edit.unreviewed"),
+            Some(Capability::EditUnreviewed)
+        );
     }
 
     #[test]

@@ -26,7 +26,7 @@ pub(crate) fn slug(ctx: &Ctx) -> String {
 pub(crate) async fn facts(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError> {
     let counts = sqlx::query!(
         r#"SELECT
-             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL) AS "articles!",
+             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL AND current_revision_id IS NOT NULL) AS "articles!",
              (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'template' AND deleted_at IS NULL) AS "templates!",
              (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id WHERE p.wiki_id = $1) AS "edits!",
              (SELECT count(DISTINCT r.author_id) FROM revisions r JOIN pages p ON p.id = r.page_id
@@ -34,7 +34,7 @@ pub(crate) async fn facts(state: &AppState, ctx: &Ctx) -> Result<minijinja::Valu
              (SELECT count(*) FROM media WHERE wiki_id = $1) AS "files!",
              (SELECT count(*) FROM emotes WHERE wiki_id = $1) AS "emotes!",
              (SELECT count(DISTINCT COALESCE(locale, '')) FROM pages
-                WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL) AS "languages!",
+                WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL AND current_revision_id IS NOT NULL) AS "languages!",
              (SELECT min(r.created_at) FROM revisions r JOIN pages p ON p.id = r.page_id
                 WHERE p.wiki_id = $1) AS since"#,
         ctx.wiki.id

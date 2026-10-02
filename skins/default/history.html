@@ -17,6 +17,12 @@
   {{ tn("history.revisions", total) }}
   {%- if locked %} · <strong>{{ t("page.locked") }}</strong>{% endif %}
 </p>
+{% if rolled_back %}<p class="notice notice-ok" role="status">{{ t("review.done_rolled_back") }}</p>{% endif %}
+{% if may_rollback %}
+<form method="post" action="{{ base }}/{{ slug }}/rollback" class="history-rollback">
+  <button class="button-preview" type="submit" title="{{ t('review.rollback_title') }}"><svg class="icon" aria-hidden="true"><use href="#i-arrow-back-up" /></svg>{{ t("review.rollback") }}</button>
+</form>
+{% endif %}
 
 {% if revisions %}
 <details class="history-help">
@@ -80,11 +86,12 @@
         {%- if rev.summary %}<span class="history-comment">{{ rev.summary }}</span>{% elif rev.prev_id %}<span class="muted-cell">{{ t("history.no_summary") }}</span>{% endif -%}
         {%- if rev.restored_from %} <a class="muted-cell" href="{{ base }}/{{ slug }}/rev/{{ rev.restored_from }}">{{ t("history.restored_link") }}</a>{% endif -%}
         {%- if rev.is_current %} <span class="tag tag-current">{{ t("history.current") }}</span>{% endif -%}
+        {%- if rev.review %} <span class="tag tag-review-{{ rev.review.status }}">{% if rev.review.open %}<a href="{{ rev.review.open }}">{{ rev.review.label }}</a>{% else %}{{ rev.review.label }}{% endif %}</span>{% if rev.review.note %} <span class="muted-cell">{{ rev.review.note }}</span>{% endif %}{% endif -%}
       </span>
       <span class="history-tools">
         {%- if rev.is_patrolled %}<span class="tag tag-patrolled" title="{{ t('history.patrolled_title') }}">{{ t("history.checked") }}</span>
-        {%- elif may_patrol %}<button class="link-button" type="submit" form="patrol-{{ rev.id }}">{{ t("history.mark_checked") }}</button>{% endif -%}
-        {%- if may_edit and not rev.is_current %}<button class="link-button" type="submit" form="restore-{{ rev.id }}" title="{{ t('history.restore_title') }}">{{ t("history.restore") }}</button>{% endif -%}
+        {%- elif may_patrol and not rev.review %}<button class="link-button" type="submit" form="patrol-{{ rev.id }}">{{ t("history.mark_checked") }}</button>{% endif -%}
+        {%- if may_edit and not rev.is_current and not rev.review %}<button class="link-button" type="submit" form="restore-{{ rev.id }}" title="{{ t('history.restore_title') }}">{{ t("history.restore") }}</button>{% endif -%}
       </span>
     </li>
   {% if loop.last %}</ol>{% endif %}
@@ -100,12 +107,12 @@
 </form>
 
 {% for rev in revisions %}
-  {% if may_patrol and not rev.is_patrolled %}
+  {% if may_patrol and not rev.is_patrolled and not rev.review %}
   <form id="patrol-{{ rev.id }}" method="post" action="{{ base }}/{{ slug }}/patrol" hidden>
     <input type="hidden" name="revision" value="{{ rev.id }}" />
   </form>
   {% endif %}
-  {% if may_edit and not rev.is_current %}
+  {% if may_edit and not rev.is_current and not rev.review %}
   <form id="restore-{{ rev.id }}" method="post" action="{{ base }}/{{ slug }}/revert" hidden>
     <input type="hidden" name="revision" value="{{ rev.id }}" />
   </form>

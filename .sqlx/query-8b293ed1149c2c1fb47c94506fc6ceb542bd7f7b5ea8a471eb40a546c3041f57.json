@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT DISTINCT ON (p.slug) p.slug, p.title, COALESCE(p.locale, '') AS \"locale!\"\n           FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL\n             AND NOT EXISTS (\n               SELECT 1 FROM pages q\n               WHERE q.wiki_id = p.wiki_id AND q.namespace = 'main' AND q.slug = p.slug\n                 AND COALESCE(q.locale, '') = $2 AND q.deleted_at IS NULL)\n           ORDER BY p.slug, (COALESCE(p.locale, '') = $3) DESC\n           LIMIT $4",
+  "query": "SELECT DISTINCT ON (p.slug) p.slug, p.title, COALESCE(p.locale, '') AS \"locale!\"\n           FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n             AND NOT EXISTS (\n               SELECT 1 FROM pages q\n               WHERE q.wiki_id = p.wiki_id AND q.namespace = 'main' AND q.slug = p.slug\n                 AND COALESCE(q.locale, '') = $2 AND q.deleted_at IS NULL)\n           ORDER BY p.slug, (COALESCE(p.locale, '') = $3) DESC\n           LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -46,5 +46,5 @@
       null
     ]
   },
-  "hash": "1613efc44245ccb330fdbac4a7992a081d10f8e28b1da39172c07795ba79726e"
+  "hash": "8b293ed1149c2c1fb47c94506fc6ceb542bd7f7b5ea8a471eb40a546c3041f57"
 }

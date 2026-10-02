@@ -190,7 +190,7 @@ async fn recent_changes(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value,
     // The previous revision of each page comes from a subquery, not a join,
     // so the query plan (and sqlx's reading of it) stays the same.
     let rows = sqlx::query!(
-        r#"SELECT r.id, r.created_at, r.summary, r.is_minor, r.bytes AS "bytes!",
+        r#"SELECT r.id, r.created_at, r.summary, r.is_minor, r.bytes AS "bytes!", r.review_status,
                   p.title, p.slug, p.namespace::text AS "namespace!",
                   COALESCE(p.locale, '') AS "locale!",
                   (SELECT u.username FROM users u WHERE u.id = r.author_id) AS "author?",
@@ -202,11 +202,13 @@ async fn recent_changes(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value,
                      ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1) AS "prev_bytes?"
            FROM revisions r
            JOIN pages p ON p.id = r.page_id
-           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL
+           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
+             AND (r.review_status = 'accepted' OR $3)
            ORDER BY r.created_at DESC, r.id DESC
            LIMIT $2"#,
         ctx.wiki.id,
-        ctx.limits.recent_changes_shown
+        ctx.limits.recent_changes_shown,
+        ctx.actor.can(Capability::RevisionPatrol)
     )
     .fetch_all(&state.db)
     .await?;
@@ -236,6 +238,11 @@ async fn recent_changes(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value,
                 delta => delta,
                 delta_big => i64::from(delta.abs()) >= ctx.limits.big_edit_bytes,
                 locale => (row.locale != ctx.content_locale).then_some(row.locale),
+                review => (row.review_status != "accepted").then(|| minijinja::context! {
+                    status => row.review_status.clone(),
+                    label => ctx.t(&format!("review.status_{}", row.review_status)),
+                    open => format!("/admin/review/{}", row.id),
+                }),
                 day => ctx.day(row.created_at),
                 time => row.created_at.format("%H:%M").to_string(),
             }
@@ -277,7 +284,7 @@ async fn all_pages(
     let rows = sqlx::query!(
         r#"SELECT p.title, p.slug FROM pages p
            WHERE p.wiki_id = $1 AND p.namespace = ($4::text)::page_namespace
-             AND p.deleted_at IS NULL
+             AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
              AND (NOT $5 OR COALESCE(p.locale, '') = $2)
              AND lower(p.title) >= lower($6)
            ORDER BY lower(p.title), p.slug
@@ -294,7 +301,7 @@ async fn all_pages(
     let counts = sqlx::query!(
         r#"SELECT p.namespace::text AS "namespace!", count(DISTINCT p.slug) AS "n!"
            FROM pages p
-           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL
+           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
              AND p.namespace IN ('main', 'category', 'template', 'page_template')
              AND (p.namespace <> 'main' OR COALESCE(p.locale, '') = $2)
            GROUP BY p.namespace"#,
@@ -306,7 +313,7 @@ async fn all_pages(
     let letters = sqlx::query_scalar!(
         r#"SELECT DISTINCT upper(left(p.title, 1)) AS "letter!" FROM pages p
            WHERE p.wiki_id = $1 AND p.namespace = ($3::text)::page_namespace
-             AND p.deleted_at IS NULL AND (NOT $4 OR COALESCE(p.locale, '') = $2)
+             AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL AND (NOT $4 OR COALESCE(p.locale, '') = $2)
            ORDER BY 1"#,
         ctx.wiki.id,
         ctx.content_locale,
@@ -428,7 +435,7 @@ fn file_tile(
 async fn statistics(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError> {
     let row = sqlx::query!(
         r#"SELECT
-             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL) AS "articles!",
+             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL AND current_revision_id IS NOT NULL) AS "articles!",
              (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'template' AND deleted_at IS NULL) AS "templates!",
              (SELECT count(DISTINCT category) FROM page_categories WHERE wiki_id = $1) AS "categories!",
              (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id WHERE p.wiki_id = $1) AS "edits!",
@@ -442,7 +449,7 @@ async fn statistics(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, App
              (SELECT count(*) FROM emotes WHERE wiki_id = $1) AS "emotes!",
              (SELECT COALESCE(sum(octet_length(r.body_md)), 0)::bigint FROM pages p
                 JOIN revisions r ON r.id = p.current_revision_id
-                WHERE p.wiki_id = $1 AND p.deleted_at IS NULL) AS "text_bytes!""#,
+                WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL) AS "text_bytes!""#,
         ctx.wiki.id
     )
     .fetch_one(&state.db)
@@ -473,7 +480,7 @@ async fn statistics(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, App
 async fn random(state: &AppState, ctx: &Ctx) -> Result<Response, AppError> {
     let slug = sqlx::query_scalar!(
         "SELECT slug FROM pages
-         WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL
+         WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL AND current_revision_id IS NOT NULL
            AND COALESCE(locale, '') = $2
          ORDER BY random() LIMIT 1",
         ctx.wiki.id,
@@ -498,7 +505,7 @@ async fn categories(
              SELECT pc.category, min(pc.name) AS name,
                     count(DISTINCT p.namespace::text || ':' || p.slug) AS n
              FROM page_categories pc JOIN pages p ON p.id = pc.page_id
-             WHERE pc.wiki_id = $1 AND p.deleted_at IS NULL
+             WHERE pc.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
              GROUP BY pc.category
            ), described AS (
              SELECT DISTINCT ON (slug) slug, title FROM pages
@@ -588,7 +595,7 @@ async fn categories(
 async fn uncategorized(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError> {
     let rows = sqlx::query!(
         r#"SELECT p.title, p.slug, p.updated_at FROM pages p
-           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL
+           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
              AND COALESCE(p.locale, '') = $2
              AND NOT EXISTS (SELECT 1 FROM page_categories pc WHERE pc.page_id = p.id)
            ORDER BY lower(p.title) LIMIT $3"#,
@@ -617,7 +624,7 @@ async fn new_pages(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppE
                   (SELECT u.username FROM revisions r JOIN users u ON u.id = r.author_id
                    WHERE r.page_id = p.id ORDER BY r.created_at, r.id LIMIT 1) AS "author?"
            FROM pages p
-           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL
+           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
              AND COALESCE(p.locale, '') = $2
            ORDER BY p.created_at DESC LIMIT $3"#,
         ctx.wiki.id,
@@ -646,7 +653,7 @@ async fn untranslated(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, A
     let rows = sqlx::query!(
         r#"SELECT DISTINCT ON (p.slug) p.slug, p.title, COALESCE(p.locale, '') AS "locale!"
            FROM pages p
-           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL
+           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
              AND NOT EXISTS (
                SELECT 1 FROM pages q
                WHERE q.wiki_id = p.wiki_id AND q.namespace = 'main' AND q.slug = p.slug
@@ -707,7 +714,7 @@ async fn by_size(
     let rows = sqlx::query!(
         r#"SELECT p.title, p.slug, r.bytes AS "bytes!" FROM pages p
            JOIN revisions r ON r.id = p.current_revision_id
-           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL
+           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
              AND COALESCE(p.locale, '') = $2
            ORDER BY CASE WHEN $3 THEN r.bytes ELSE -r.bytes END, lower(p.title)
            LIMIT $4"#,
@@ -728,7 +735,7 @@ async fn by_size(
 async fn stale_pages(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError> {
     let rows = sqlx::query!(
         r#"SELECT p.title, p.slug, p.updated_at FROM pages p
-           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL
+           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
              AND COALESCE(p.locale, '') = $2
            ORDER BY p.updated_at, lower(p.title) LIMIT $3"#,
         ctx.wiki.id,
@@ -787,7 +794,7 @@ async fn templates(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppE
                   (SELECT count(DISTINCT tu.page_id) FROM template_uses tu
                    WHERE tu.wiki_id = p.wiki_id AND tu.template_slug = p.slug) AS "uses!"
            FROM pages p
-           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.deleted_at IS NULL
+           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
            ORDER BY p.slug, (COALESCE(p.locale, '') = $2) DESC
            LIMIT 1000"#,
         ctx.wiki.id,

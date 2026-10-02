@@ -46,6 +46,7 @@ mod protect;
 mod relay;
 mod reports;
 mod resolve;
+mod review;
 mod search;
 mod settings;
 mod source;
@@ -163,6 +164,13 @@ fn routes(state: AppState) -> Router {
         .route("/admin/pages", get(admin::pages_list))
         .route("/admin/pages/{action}", post(admin::page_action))
         .route("/admin/audit", get(admin::audit_log))
+        .route("/admin/review", get(review::queue))
+        .route("/admin/review/{id}", get(review::show))
+        .route("/admin/review/{id}/accept", post(review::accept))
+        .route(
+            "/admin/review/{id}/reject",
+            post(review::reject).layer(text_form()),
+        )
         .route("/admin/reports", get(reports::queue))
         .route("/admin/reports/{id}", get(reports::show))
         .route("/admin/reports/{id}/status", post(reports::set_status))
@@ -260,6 +268,7 @@ fn routes(state: AppState) -> Router {
         .route("/{slug}/rev/{revision}", get(history::revision))
         .route("/{slug}/revert", post(history::revert))
         .route("/{slug}/patrol", post(history::patrol))
+        .route("/{slug}/rollback", post(review::rollback))
         .route("/{slug}/protect", post(protect::set))
         .route(
             "/{slug}/new-version",

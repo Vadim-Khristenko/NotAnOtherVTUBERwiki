@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT r.id AS \"id!\", r.body_md AS \"body_md!\", r.summary, r.is_minor AS \"is_minor!\",\n               r.created_at AS \"created_at!\", u.username AS \"author?\"\n        FROM revisions r\n        LEFT JOIN users u ON u.id = r.author_id\n        WHERE r.id = $1 AND r.page_id = $2\n        ",
+  "query": "\n        SELECT r.id AS \"id!\", r.body_md AS \"body_md!\", r.summary, r.is_minor AS \"is_minor!\",\n               r.created_at AS \"created_at!\", u.username AS \"author?\",\n               r.review_status AS \"review_status!\", r.author_id\n        FROM revisions r\n        LEFT JOIN users u ON u.id = r.author_id\n        WHERE r.id = $1 AND r.page_id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -68,6 +68,28 @@
             "name": "username"
           }
         }
+      },
+      {
+        "ordinal": 6,
+        "name": "review_status!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "review_status"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "author_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "author_id"
+          }
+        }
       }
     ],
     "parameters": {
@@ -82,8 +104,10 @@
       true,
       false,
       false,
+      true,
+      false,
       true
     ]
   },
-  "hash": "3dd87f02cf8de30667fd0b4793e9dc8604cdeb6960e2e80562431bc33db00e7c"
+  "hash": "825b3fbdb0cf83442031114925ab8253679c0ef6c3ec1bbaaa5d424bece9f57d"
 }

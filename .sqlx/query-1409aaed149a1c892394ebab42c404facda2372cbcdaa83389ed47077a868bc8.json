@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT count(*) AS \"count!\" FROM revisions WHERE page_id = $1",
+  "query": "SELECT count(*) AS \"count!\" FROM revisions WHERE page_id = $1\n           AND (review_status = 'accepted' OR $2 OR (author_id IS NOT NULL AND author_id = $3))",
   "describe": {
     "columns": [
       {
@@ -12,6 +12,8 @@
     ],
     "parameters": {
       "Left": [
+        "Uuid",
+        "Bool",
         "Uuid"
       ]
     },
@@ -19,5 +21,5 @@
       null
     ]
   },
-  "hash": "11458cd3a4d6b2e9482887923268f68f32f386176ba53c13ffb9dd9ed647bd44"
+  "hash": "1409aaed149a1c892394ebab42c404facda2372cbcdaa83389ed47077a868bc8"
 }

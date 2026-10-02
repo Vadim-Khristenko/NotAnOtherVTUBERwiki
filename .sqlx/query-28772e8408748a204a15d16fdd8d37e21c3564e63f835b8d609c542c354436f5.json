@@ -1,0 +1,106 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.created_at, r.summary,\n                  (SELECT u.username FROM users u WHERE u.id = r.author_id) AS \"author?\",\n                  (SELECT r2.id FROM revisions r2 WHERE r2.page_id = r.page_id\n                     AND r2.review_status = 'accepted' AND (r2.created_at, r2.id) < (r.created_at, r.id)\n                     ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1) AS \"prev_id?\",\n                  p.slug, p.namespace::text AS \"namespace!\", p.title, COALESCE(p.locale, '') AS \"locale!\"\n           FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND r.review_status = 'accepted' AND NOT r.is_patrolled\n             AND p.deleted_at IS NULL AND r.created_at > now() - make_interval(days => $3)\n           ORDER BY r.created_at DESC\n           LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "summary",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "author?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "prev_id?",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "locale!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      null,
+      false,
+      null,
+      false,
+      null
+    ]
+  },
+  "hash": "28772e8408748a204a15d16fdd8d37e21c3564e63f835b8d609c542c354436f5"
+}

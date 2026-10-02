@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.k AS \"key!\", count(DISTINCT p.namespace::text || ':' || p.slug) AS \"n!\"\n           FROM unnest($2::text[]) AS c(k)\n           JOIN page_categories pc ON pc.wiki_id = $1\n             AND (pc.category = c.k OR pc.category LIKE c.k || ':%')\n           JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n           GROUP BY c.k",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "db8d0c5b8267d5ede3ecf3e6dbb6937e900eff4a5b207f701b46bfb2dd2f95a8"
+}

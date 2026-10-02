@@ -44,6 +44,9 @@ fn stamp(at: chrono::DateTime<chrono::Utc>) -> String {
 pub struct HistoryQuery {
     #[serde(default)]
     page: Option<i64>,
+    /// After a rollback, to say so.
+    #[serde(default)]
+    done: Option<String>,
 }
 
 /// GET /{slug}/history
@@ -68,29 +71,37 @@ pub async fn history(
     let page_no = query.page.unwrap_or(1).max(1);
     let offset = (page_no - 1) * ctx.limits.history_per_page;
 
+    // Edits that wait for review, or were turned down, show only to the
+    // reviewers and to their author.
+    let reviewer = ctx.actor.can(Capability::RevisionPatrol);
+    let viewer = ctx.actor.user_id;
     let total = sqlx::query!(
-        "SELECT count(*) AS \"count!\" FROM revisions WHERE page_id = $1",
-        found.id
+        "SELECT count(*) AS \"count!\" FROM revisions WHERE page_id = $1
+           AND (review_status = 'accepted' OR $2 OR (author_id IS NOT NULL AND author_id = $3))",
+        found.id,
+        reviewer,
+        viewer
     )
     .fetch_one(&state.db)
     .await?
     .count;
 
-    // The window runs over the whole history before the page is cut, so the
-    // oldest row on a page still knows the revision before it.
+    // The window runs over the accepted history before the page is cut, so
+    // the oldest row on a page still knows the version before it.
     let rows = sqlx::query!(
         r#"
         SELECT r.id, r.summary, r.is_minor, r.is_patrolled, r.created_at,
                r.reverted_revision_id, r.bytes AS "bytes!",
-               r.prev_bytes, r.prev_id,
+               r.prev_bytes, r.prev_id, r.review_status, r.review_note,
                u.username AS "author?"
         FROM (
           SELECT id, author_id, summary, is_minor, is_patrolled, created_at,
-                 reverted_revision_id, bytes,
+                 reverted_revision_id, bytes, review_status, review_note,
                  lag(bytes) OVER w AS prev_bytes,
                  lag(id) OVER w AS prev_id
           FROM revisions
           WHERE page_id = $1
+            AND (review_status = 'accepted' OR $4 OR (author_id IS NOT NULL AND author_id = $5))
           WINDOW w AS (ORDER BY created_at, id)
         ) r
         LEFT JOIN users u ON u.id = r.author_id
@@ -99,7 +110,9 @@ pub async fn history(
         "#,
         found.id,
         ctx.limits.history_per_page,
-        offset
+        offset,
+        reviewer,
+        viewer
     )
     .fetch_all(&state.db)
     .await?;
@@ -125,6 +138,12 @@ pub async fn history(
                 time => time_of(rev.created_at),
                 created_at => stamp(rev.created_at),
                 is_current => rev.id == found.revision_id,
+                review => (rev.review_status != "accepted").then(|| minijinja::context! {
+                    status => rev.review_status.clone(),
+                    label => ctx.t(&format!("review.status_{}", rev.review_status)),
+                    note => rev.review_note.clone(),
+                    open => reviewer.then(|| format!("/admin/review/{}", rev.id)),
+                }),
             }
         })
         .collect();
@@ -152,7 +171,9 @@ pub async fn history(
                 prev_page => page_no - 1,
                 next_page => page_no + 1,
                 may_edit => may_edit,
-                may_patrol => ctx.actor.can(Capability::RevisionPatrol),
+                may_patrol => reviewer,
+                may_rollback => reviewer && may_edit && total > 1,
+                rolled_back => query.done.as_deref() == Some("rolled_back"),
             }
         })
         .map_err(pages::template_error)?;
@@ -163,6 +184,9 @@ pub async fn history(
 struct StoredRevision {
     id: Uuid,
     body_md: String,
+    /// `accepted`, `pending` or `rejected`; see `review`.
+    review_status: String,
+    author_id: Option<Uuid>,
     summary: Option<String>,
     author: Option<String>,
     is_minor: bool,
@@ -179,7 +203,8 @@ async fn load_revision(
     let row = sqlx::query!(
         r#"
         SELECT r.id AS "id!", r.body_md AS "body_md!", r.summary, r.is_minor AS "is_minor!",
-               r.created_at AS "created_at!", u.username AS "author?"
+               r.created_at AS "created_at!", u.username AS "author?",
+               r.review_status AS "review_status!", r.author_id
         FROM revisions r
         LEFT JOIN users u ON u.id = r.author_id
         WHERE r.id = $1 AND r.page_id = $2
@@ -192,6 +217,8 @@ async fn load_revision(
     Ok(row.map(|row| StoredRevision {
         id: row.id,
         body_md: row.body_md,
+        review_status: row.review_status,
+        author_id: row.author_id,
         summary: row.summary,
         author: row.author,
         is_minor: row.is_minor,
@@ -250,7 +277,10 @@ pub async fn revision(
     let Some(revision_id) = pages::parse_uuid(&revision_id) else {
         return Ok(crate::errors::not_found());
     };
-    let Some(stored) = load_revision(&state.db, found.id, revision_id).await? else {
+    let Some(stored) = load_revision(&state.db, found.id, revision_id)
+        .await?
+        .filter(|r| crate::review::may_see(&ctx, &r.review_status, r.author_id))
+    else {
         return Ok(crate::errors::not_found());
     };
 
@@ -362,6 +392,11 @@ pub async fn diff(
     ) else {
         return Ok(crate::errors::not_found());
     };
+    if !crate::review::may_see(&ctx, &from.review_status, from.author_id)
+        || !crate::review::may_see(&ctx, &to.review_status, to.author_id)
+    {
+        return Ok(crate::errors::not_found());
+    }
     // Picked the wrong way round in the history: old on the left regardless.
     if (from.created_at, from.id) > (to.created_at, to.id) {
         std::mem::swap(&mut from, &mut to);
@@ -447,8 +482,10 @@ pub async fn revert(
     if target.body_md == found.body_md {
         return Ok(pages::see_other(&ctx.link(&format!("/{slug}"))));
     }
-
-    let revision_id = Uuid::new_v4();
+    // Only an accepted version: a rejected or waiting one was never the page.
+    if target.review_status != "accepted" {
+        return Ok(crate::errors::not_found());
+    }
     // Written in the reverting editor's language and kept as written.
     let summary = ctx.t_with(
         "history.restore_summary",
@@ -457,7 +494,40 @@ pub async fn revert(
             &target.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
         )],
     );
-    let prepared = pages::prepare(&state, &ctx, &slug, &target.body_md).await?;
+    if let Some(conflict) = restore(
+        &state,
+        &ctx,
+        &slug,
+        &found,
+        target_id,
+        &target.body_md,
+        &summary,
+        "page.revert",
+    )
+    .await?
+    {
+        return Ok(conflict);
+    }
+    Ok(pages::see_other(&ctx.link(&format!("/{slug}"))))
+}
+
+/// Makes an older body the page again, as a new revision written by the
+/// actor: what revert and rollback share. `Some` is the response for an
+/// edit that raced it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn restore(
+    state: &AppState,
+    ctx: &crate::resolve::Ctx,
+    slug: &str,
+    found: &pages::FoundPage,
+    target_id: Uuid,
+    body_md: &str,
+    summary: &str,
+    action: &'static str,
+) -> Result<Option<Response>, AppError> {
+    let locale = ctx.content_locale.clone();
+    let revision_id = Uuid::new_v4();
+    let prepared = pages::prepare(state, ctx, slug, body_md).await?;
     let mut tx = state.db.begin().await?;
     sqlx::query!(
         "INSERT INTO revisions
@@ -466,8 +536,8 @@ pub async fn revert(
         revision_id,
         found.id,
         ctx.actor.user_id,
-        target.body_md,
-        naw_markdown::content_hash(&target.body_md),
+        body_md,
+        naw_markdown::content_hash(body_md),
         summary,
         target_id
     )
@@ -484,27 +554,27 @@ pub async fn revert(
     .execute(&mut *tx)
     .await?;
     if swapped.rows_affected() == 0 {
-        return pages::edit_conflict(&ctx, &slug);
+        return pages::edit_conflict(ctx, slug).map(Some);
     }
     pages::index(
         &mut tx,
-        &ctx,
+        ctx,
         found.id,
         &locale,
         &found.title,
-        Some(&summary),
+        Some(summary),
         &prepared,
     )
     .await?;
     tx.commit().await?;
-    pages::after_save(&state, &ctx, found.id, &prepared).await;
+    pages::after_save(state, ctx, found.id, &prepared).await;
 
     audit::record_or_log(
         &state.db,
         audit::Entry {
             wiki_id: Some(ctx.wiki.id),
             user_id: ctx.actor.user_id,
-            action: "page.revert",
+            action,
             entity_type: "page",
             entity_id: Some(found.id),
             meta: json!({
@@ -516,7 +586,7 @@ pub async fn revert(
         },
     )
     .await;
-    Ok(pages::see_other(&ctx.link(&format!("/{slug}"))))
+    Ok(None)
 }
 
 #[derive(Debug, serde::Deserialize)]

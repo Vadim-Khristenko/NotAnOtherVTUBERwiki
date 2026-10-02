@@ -747,6 +747,9 @@ pub struct PageQuery {
     /// A category: list the pages of everything inside it too.
     #[serde(default)]
     all: Option<String>,
+    /// After an edit that went to the review queue, to say so.
+    #[serde(default)]
+    pending: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -823,6 +826,31 @@ pub async fn page(
             )
         {
             return Ok(response);
+        }
+        // A new page waiting for review: its author and the reviewers learn so.
+        let (namespace, bare) = split_path(&slug);
+        if let Some((title, mine)) =
+            crate::review::pending_new_page(&state.db, &ctx, namespace, bare).await?
+        {
+            let reviewer = ctx.actor.can(Capability::RevisionPatrol);
+            return notice_ok(
+                &ctx,
+                &ctx.t("review.page_waits_title"),
+                &ctx.t_with(
+                    if mine {
+                        "review.page_waits_mine"
+                    } else {
+                        "review.page_waits"
+                    },
+                    &[("title", &title)],
+                ),
+                if reviewer { "/admin/review" } else { "/" },
+                &ctx.t(if reviewer {
+                    "review.to_queue"
+                } else {
+                    "error.back_to_wiki"
+                }),
+            );
         }
         // Offer the article in the languages it exists in, or to translate it.
         return Ok(
@@ -950,6 +978,7 @@ pub async fn page(
         _ => None,
     };
     let versions = crate::translate::versions(&state, &ctx, &slug).await?;
+    let review = crate::review::notice_for(&state.db, &ctx, found.id).await?;
     // The About page carries what the database knows about the wiki.
     let about = if slug == crate::about::slug(&ctx) {
         Some(crate::about::facts(&state, &ctx).await?)
@@ -986,6 +1015,8 @@ pub async fn page(
                 slug => slug.clone(),
                 template => template,
                 categories => category_links,
+                review => review,
+                just_sent => query.pending.is_some(),
                 about => about,
                 locked => found.locked,
                 updated_at => found.updated_at.format("%Y-%m-%d %H:%M UTC").to_string(),
@@ -1468,6 +1499,64 @@ pub async fn create_page(
         return slug_taken(&ctx, &slug, row.deleted_at.is_some());
     }
 
+    // Where the wiki reviews new pages, one without the pass is a page with
+    // no accepted text yet: readers do not see it until a curator accepts it.
+    if ctx.actor.needs_review(true) {
+        let page_id = Uuid::new_v4();
+        let mut tx = state.db.begin().await?;
+        match sqlx::query!(
+            "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale)
+             VALUES ($1, $2, ($6::text)::page_namespace, $3, $4, $5)",
+            page_id,
+            ctx.wiki.id,
+            bare,
+            draft.title,
+            locale,
+            namespace
+        )
+        .execute(&mut *tx)
+        .await
+        {
+            Err(err) if is_unique_violation(&err) => return slug_taken(&ctx, &slug, false),
+            result => result?,
+        };
+        let revision_id = crate::review::save_pending(
+            &mut tx,
+            page_id,
+            None,
+            ctx.actor.user_id,
+            &draft.title,
+            draft.summary.as_deref(),
+            &draft.body_md,
+            false,
+        )
+        .await?;
+        tx.commit().await?;
+        audit::record_or_log(
+            &state.db,
+            audit::Entry {
+                wiki_id: Some(ctx.wiki.id),
+                user_id: ctx.actor.user_id,
+                action: "page.create_pending",
+                entity_type: "page",
+                entity_id: Some(page_id),
+                meta: json!({ "slug": slug, "revision": revision_id }),
+            },
+        )
+        .await;
+        if let Some(author) = ctx.actor.user_id {
+            crate::drafts::clear(
+                &state.db,
+                ctx.wiki.id,
+                author,
+                None,
+                parse_uuid(&form.draft_id),
+            )
+            .await;
+        }
+        return Ok(see_other(&ctx.link_for(&locale, &format!("/{slug}"))));
+    }
+
     let prepared = prepare(&state, &ctx, &slug, &draft.body_md).await?;
     let page_id = Uuid::new_v4();
     let revision_id = Uuid::new_v4();
@@ -1694,7 +1783,12 @@ pub async fn save_page(
     }
 
     // Before the no-change check: a move without a text edit is still a change.
-    let target_locale = chosen_locale(&ctx, &form.locale);
+    // Moving to another language is not reviewed, so it waits for the pass.
+    let target_locale = if ctx.actor.needs_review(false) {
+        locale.clone()
+    } else {
+        chosen_locale(&ctx, &form.locale)
+    };
     if let ("template", bare) = split_path(&slug)
         && let Some(message) =
             template_refusal(&state, &ctx, bare, &target_locale, &draft.body_md).await?
@@ -1806,6 +1900,40 @@ pub async fn save_page(
     {
         clear_draft().await;
         return Ok(see_other(&ctx.link_for(&locale, &format!("/{slug}"))));
+    }
+
+    // Where the wiki reviews edits, one without the pass waits in the queue
+    // and readers keep the text as it is.
+    if ctx.actor.needs_review(false) {
+        let mut conn = state.db.acquire().await?;
+        let revision_id = crate::review::save_pending(
+            &mut conn,
+            found.id,
+            Some(found.revision_id),
+            ctx.actor.user_id,
+            &draft.title,
+            draft.summary.as_deref(),
+            &draft.body_md,
+            form.minor.is_some(),
+        )
+        .await?;
+        audit::record_or_log(
+            &state.db,
+            audit::Entry {
+                wiki_id: Some(ctx.wiki.id),
+                user_id: ctx.actor.user_id,
+                action: "page.edit_pending",
+                entity_type: "page",
+                entity_id: Some(found.id),
+                meta: json!({ "slug": slug, "revision": revision_id }),
+            },
+        )
+        .await;
+        clear_draft().await;
+        return Ok(see_other(&format!(
+            "{}?pending=1",
+            ctx.link_for(&locale, &format!("/{slug}"))
+        )));
     }
 
     let prepared = prepare(&state, &ctx, &slug, &draft.body_md).await?;
@@ -2189,6 +2317,7 @@ mod tests {
             from: None,
             ns: None,
             all: None,
+            pending: None,
         }
     }
 

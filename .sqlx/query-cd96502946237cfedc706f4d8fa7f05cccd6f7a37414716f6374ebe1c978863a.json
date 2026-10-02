@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.review_title, (r.author_id IS NOT DISTINCT FROM $5) AS \"mine!\"\n           FROM pages p JOIN revisions r ON r.page_id = p.id\n           WHERE p.wiki_id = $1 AND p.namespace = ($2::text)::page_namespace AND p.slug = $3\n             AND COALESCE(p.locale, '') = $4 AND p.current_revision_id IS NULL\n             AND p.deleted_at IS NULL AND r.review_status = 'pending'\n           ORDER BY r.created_at DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "review_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "review_title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "mine!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "cd96502946237cfedc706f4d8fa7f05cccd6f7a37414716f6374ebe1c978863a"
+}

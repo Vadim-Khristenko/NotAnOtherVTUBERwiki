@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO revisions (id, page_id, author_id, body_md, content_hash, summary, is_minor,\n                                review_status, base_revision_id, review_title)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Text",
+        "Bool",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "171818a17d2c8ac1566cab0b2bb2e5cfd181c72db3070ca60147590dc04d91b9"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE revisions SET review_status = 'accepted', reviewed_by = $2, reviewed_at = now(),\n                              is_patrolled = true\n         WHERE id = $1 AND review_status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "02f46f04f5dceaebb34adceafb8163b5115c4c8ea682064672f990c8a5c284eb"
+}

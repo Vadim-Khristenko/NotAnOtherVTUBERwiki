@@ -53,6 +53,7 @@
     <span class="history-time">{{ c.time }}</span>
     <a class="recent-title" href="{{ c.href }}">{{ c.title }}</a>
     {% if c.locale %}<span class="tag">{{ c.locale }}</span>{% endif %}
+    {% if c.review %}<a class="tag tag-review-{{ c.review.status }}" href="{{ c.review.open }}">{{ c.review.label }}</a>{% endif %}
     <span class="history-delta {% if c.delta > 0 %}is-plus{% elif c.delta < 0 %}is-minus{% else %}is-zero{% endif %}{% if c.delta_big %} is-big{% endif %}">
       {%- if c.delta > 0 %}+{{ c.delta }}{% elif c.delta < 0 %}&minus;{{ c.delta | abs }}{% else %}0{% endif -%}
     </span>

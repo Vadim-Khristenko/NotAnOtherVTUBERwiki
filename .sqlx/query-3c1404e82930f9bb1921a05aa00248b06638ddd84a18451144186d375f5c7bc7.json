@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT r.id, r.summary, r.is_minor, r.is_patrolled, r.created_at,\n               r.reverted_revision_id, r.bytes AS \"bytes!\",\n               r.prev_bytes, r.prev_id,\n               u.username AS \"author?\"\n        FROM (\n          SELECT id, author_id, summary, is_minor, is_patrolled, created_at,\n                 reverted_revision_id, bytes,\n                 lag(bytes) OVER w AS prev_bytes,\n                 lag(id) OVER w AS prev_id\n          FROM revisions\n          WHERE page_id = $1\n          WINDOW w AS (ORDER BY created_at, id)\n        ) r\n        LEFT JOIN users u ON u.id = r.author_id\n        ORDER BY r.created_at DESC, r.id DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "query": "\n        SELECT r.id, r.summary, r.is_minor, r.is_patrolled, r.created_at,\n               r.reverted_revision_id, r.bytes AS \"bytes!\",\n               r.prev_bytes, r.prev_id, r.review_status, r.review_note,\n               u.username AS \"author?\"\n        FROM (\n          SELECT id, author_id, summary, is_minor, is_patrolled, created_at,\n                 reverted_revision_id, bytes, review_status, review_note,\n                 lag(bytes) OVER w AS prev_bytes,\n                 lag(id) OVER w AS prev_id\n          FROM revisions\n          WHERE page_id = $1\n            AND (review_status = 'accepted' OR $4 OR (author_id IS NOT NULL AND author_id = $5))\n          WINDOW w AS (ORDER BY created_at, id)\n        ) r\n        LEFT JOIN users u ON u.id = r.author_id\n        ORDER BY r.created_at DESC, r.id DESC\n        LIMIT $2 OFFSET $3\n        ",
   "describe": {
     "columns": [
       {
@@ -94,6 +94,28 @@
       },
       {
         "ordinal": 9,
+        "name": "review_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "review_status"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "review_note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "review_note"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
         "name": "author?",
         "type_info": "Text",
         "origin": {
@@ -108,7 +130,9 @@
       "Left": [
         "Uuid",
         "Int8",
-        "Int8"
+        "Int8",
+        "Bool",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -121,8 +145,10 @@
       true,
       null,
       null,
+      false,
+      true,
       false
     ]
   },
-  "hash": "7f56ead907def80ab6ab6159013b3bcf4ce69069c9afd3aa2530cdbbb1e0bdf3"
+  "hash": "3c1404e82930f9bb1921a05aa00248b06638ddd84a18451144186d375f5c7bc7"
 }

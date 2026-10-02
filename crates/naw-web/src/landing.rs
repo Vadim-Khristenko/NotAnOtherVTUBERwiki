@@ -85,7 +85,7 @@ pub(crate) async fn page(
         r#"SELECT title AS "title!", slug AS "slug!", at AS "at!" FROM (
              SELECT DISTINCT ON (p.id) p.title, p.slug, r.created_at AS at
              FROM revisions r JOIN pages p ON p.id = r.page_id
-             WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL
+             WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
                AND COALESCE(p.locale, '') = $2
              ORDER BY p.id, r.created_at DESC
            ) latest
@@ -108,7 +108,7 @@ pub(crate) async fn page(
 
     let counts = sqlx::query!(
         r#"SELECT
-             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL) AS "articles!",
+             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL AND current_revision_id IS NOT NULL) AS "articles!",
              (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id WHERE p.wiki_id = $1) AS "edits!",
              (SELECT count(*) FROM media WHERE wiki_id = $1) AS "files!""#,
         ctx.wiki.id

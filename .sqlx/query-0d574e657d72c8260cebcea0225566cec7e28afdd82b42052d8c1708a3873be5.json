@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.title, p.slug, p.updated_at FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL\n             AND COALESCE(p.locale, '') = $2\n             AND NOT EXISTS (SELECT 1 FROM page_categories pc WHERE pc.page_id = p.id)\n           ORDER BY lower(p.title) LIMIT $3",
+  "query": "SELECT p.title, p.slug, p.created_at,\n                  (SELECT u.username FROM revisions r JOIN users u ON u.id = r.author_id\n                   WHERE r.page_id = p.id ORDER BY r.created_at, r.id LIMIT 1) AS \"author?\"\n           FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n             AND COALESCE(p.locale, '') = $2\n           ORDER BY p.created_at DESC LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -27,14 +27,20 @@
       },
       {
         "ordinal": 2,
-        "name": "updated_at",
+        "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
             "table": "pages",
-            "name": "updated_at"
+            "name": "created_at"
           }
         }
+      },
+      {
+        "ordinal": 3,
+        "name": "author?",
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -47,8 +53,9 @@
     "nullable": [
       false,
       false,
-      false
+      false,
+      null
     ]
   },
-  "hash": "52e6722d0de2f9f58f0892d8d795e10d41fbe4486ffff8260700fca98efccd70"
+  "hash": "0d574e657d72c8260cebcea0225566cec7e28afdd82b42052d8c1708a3873be5"
 }

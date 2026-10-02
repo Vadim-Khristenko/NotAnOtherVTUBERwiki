@@ -256,7 +256,7 @@ async fn member_page(
         r#"SELECT p.namespace::text AS "namespace!", p.slug, COALESCE(p.locale, '') AS "locale!"
            FROM page_categories pc JOIN pages p ON p.id = pc.page_id
            WHERE pc.wiki_id = $1 AND (pc.category = $2 OR pc.category LIKE $3)
-             AND p.slug = $4 AND p.deleted_at IS NULL
+             AND p.slug = $4 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
            ORDER BY (COALESCE(p.locale, '') = $5) DESC, p.namespace
            LIMIT 1"#,
         ctx.wiki.id,
@@ -308,7 +308,7 @@ async fn inside_of(state: &AppState, ctx: &Ctx, key: &str) -> Result<Inside, App
         r#"SELECT DISTINCT ON (pc.category) pc.category, pc.name
            FROM page_categories pc JOIN pages p ON p.id = pc.page_id
            WHERE pc.wiki_id = $1 AND (pc.category = $2 OR pc.category LIKE $3)
-             AND p.deleted_at IS NULL
+             AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
            ORDER BY pc.category, pc.name"#,
         ctx.wiki.id,
         key,
@@ -550,7 +550,7 @@ async fn members(
                   p.namespace::text AS "namespace!", p.slug, p.title,
                   COALESCE(p.locale, '') AS "locale!", pc.sort_key
            FROM page_categories pc JOIN pages p ON p.id = pc.page_id
-           WHERE pc.wiki_id = $1 AND p.deleted_at IS NULL
+           WHERE pc.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
              AND (pc.category = $2 OR ($6 AND pc.category LIKE $7))
            ORDER BY p.namespace, p.slug, (COALESCE(p.locale, '') = $3) DESC,
                     (COALESCE(p.locale, '') = $4) DESC
@@ -594,7 +594,7 @@ pub(crate) async fn member_counts(
            FROM unnest($2::text[]) AS c(k)
            JOIN page_categories pc ON pc.wiki_id = $1
              AND (pc.category = c.k OR pc.category LIKE c.k || ':%')
-           JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
+           JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
            GROUP BY c.k"#,
         wiki_id,
         keys
@@ -667,6 +667,22 @@ mod db_tests {
         .execute(db)
         .await
         .expect("page");
+        // A page counts once it has accepted text.
+        let rev = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO revisions (id, page_id, body_md, content_hash) VALUES ($1, $2, 'x', '\\x00')",
+        )
+        .bind(rev)
+        .bind(id)
+        .execute(db)
+        .await
+        .expect("revision");
+        sqlx::query("UPDATE pages SET current_revision_id = $2 WHERE id = $1")
+            .bind(id)
+            .bind(rev)
+            .execute(db)
+            .await
+            .expect("current");
         id
     }
 

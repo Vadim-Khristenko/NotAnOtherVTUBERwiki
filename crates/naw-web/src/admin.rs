@@ -85,6 +85,7 @@ pub(crate) fn render(
                 is_root => ctx.actor.global == GlobalRole::Root,
                 can_panel => ctx.actor.can(Capability::AdminPanel),
                 can_reports => ctx.actor.can(Capability::ReportHandle),
+                can_review => ctx.actor.can(Capability::RevisionPatrol),
                 can_audit => ctx.actor.can(Capability::AuditRead),
                 my_role => ctx.actor.effective_role().map(WikiRole::as_str),
             },
@@ -1478,6 +1479,8 @@ pub async fn wiki_settings(
             registered_create => rules.registered_create,
             registered_edit => rules.registered_edit,
             require_verified_email => rules.require_verified_email,
+            review_new_pages => rules.review_new_pages,
+            review_edits => rules.review_edits,
             raw_settings => serde_json::to_string_pretty(&ctx.wiki.settings)
                 .unwrap_or_else(|_| "{}".to_string()),
             limits => limit_rows(&state, &ctx),
@@ -1603,6 +1606,10 @@ pub struct WikiForm {
     registered_edit: Option<String>,
     #[serde(default)]
     require_verified_email: Option<String>,
+    #[serde(default)]
+    review_new_pages: Option<String>,
+    #[serde(default)]
+    review_edits: Option<String>,
 }
 
 /// POST /admin/wiki
@@ -1657,6 +1664,13 @@ pub async fn save_wiki_settings(
             "registered_create": form.registered_create.is_some(),
             "registered_edit": form.registered_edit.is_some(),
             "require_verified_email": form.require_verified_email.is_some(),
+        }),
+    );
+    object.insert(
+        "review".into(),
+        json!({
+            "new_pages": form.review_new_pages.is_some(),
+            "edits": form.review_edits.is_some(),
         }),
     );
 

@@ -20,7 +20,7 @@
   that scrolls sideways above the content.
 #}
 {% macro nav_item(href, id, icon, label, badge=0) %}
-  <a class="admin-nav-item" href="{{ href }}" {% if section == id or (id == "users" and section in ["user_new", "password_issued", "user"]) or (id == "reports" and section == "report") %}aria-current="page"{% endif %}>
+  <a class="admin-nav-item" href="{{ href }}" {% if section == id or (id == "users" and section in ["user_new", "password_issued", "user"]) or (id == "reports" and section == "report") or (id == "review" and section == "review_item") %}aria-current="page"{% endif %}>
     <svg class="icon" aria-hidden="true"><use href="#i-{{ icon }}" /></svg>
     <span>{{ label }}</span>
     {% if badge %}<span class="admin-badge">{{ badge }}</span>{% endif %}
@@ -38,6 +38,7 @@
     <nav class="admin-nav">
       <p class="admin-nav-group">{{ t("admin.group_wiki") }}</p>
       {% if can_panel %}{{ nav_item("/admin", "overview", "clipboard-check", t("admin.overview")) }}{% endif %}
+      {% if can_review %}{{ nav_item("/admin/review", "review", "clipboard-check", t("review.title"), pending_count | default(0)) }}{% endif %}
       {% if can_reports %}{{ nav_item("/admin/reports", "reports", "flag", t("admin.reports"), open_reports | default(0)) }}{% endif %}
       {% if can_panel %}{{ nav_item("/admin/pages", "pages", "file-text", t("admin.pages")) }}{% endif %}
       {% if can_audit %}{{ nav_item("/admin/audit", "audit", "history", t("admin.audit")) }}{% endif %}
@@ -311,6 +312,99 @@
     {% if has_next %}<a href="/admin/pages?q={{ query }}&amp;page={{ next_page }}">{{ t("admin.next") }}</a>{% endif %}
   </nav>
 
+{% elif section == "review" %}
+  <p class="field-note">{{ t("review.lede") }}</p>
+  {% if done %}<p class="notice notice-ok" role="status">{{ done }}</p>{% endif %}
+  <nav class="filter-chips" aria-label="{{ t('review.tabs') }}">
+    <a class="chip" href="/admin/review" {% if tab == "pending" %}aria-current="true"{% endif %}>{{ t("review.tab_pending") }}{% if pending_count %} <span class="admin-badge">{{ pending_count }}</span>{% endif %}</a>
+    <a class="chip" href="/admin/review?tab=patrol" {% if tab == "patrol" %}aria-current="true"{% endif %}>{{ t("review.tab_patrol") }}</a>
+  </nav>
+  {% if tab == "pending" %}
+  {% if pending %}
+  <ul class="report-cards" role="list">
+    {% for r in pending %}
+    <li class="report-card{% if r.outdated %} is-dismissed{% endif %}">
+      <div class="report-card-head">
+        {% if r.is_new %}<span class="tag tag-new">{{ t("review.new_page") }}</span>{% else %}<span class="tag">{{ t("review.edit") }}</span>{% endif %}
+        {% if r.outdated %}<span class="tag tag-warn">{{ t("review.outdated_tag") }}</span>{% endif %}
+        {% if r.locale %}<span class="tag">{{ r.locale }}</span>{% endif %}
+        <span class="muted-cell">{{ r.at }} {{ r.time }}</span>
+        {% if not r.is_new %}<span class="history-delta {% if r.delta > 0 %}is-plus{% elif r.delta < 0 %}is-minus{% else %}is-zero{% endif %}">{% if r.delta > 0 %}+{{ r.delta }}{% elif r.delta < 0 %}&minus;{{ r.delta | abs }}{% else %}0{% endif %}</span>{% endif %}
+      </div>
+      <p class="report-card-subject">{% if r.href %}<a href="{{ r.href }}">{{ r.title }}</a>{% else %}{{ r.title }}{% endif %} <code class="muted-cell">{{ r.path }}</code></p>
+      {% if r.summary %}<p class="report-card-message">{{ r.summary }}</p>{% endif %}
+      <p class="report-card-foot">
+        {% if r.author %}<span>{{ t("report.from") }} <a href="/user/{{ r.author }}"><bdi>{{ r.author }}</bdi></a></span>{% endif %}
+        <a class="button-save report-open" href="{{ r.open }}">{{ t("review.open") }}</a>
+      </p>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-state">{{ t("review.queue_empty") }}</p>
+  {% endif %}
+  {% else %}
+  <p class="field-note">{{ t("review.patrol_lede", days=patrol_days) }}</p>
+  {% if patrol %}
+  <ol class="history-list" role="list">
+    {% for c in patrol %}
+    <li class="history-item">
+      <span class="history-time">{{ c.at }} {{ c.time }}</span>
+      <a class="recent-title" href="{{ c.href }}">{{ c.title }}</a>
+      <span class="history-who">{% if c.author %}<a href="/user/{{ c.author }}"><bdi>{{ c.author }}</bdi></a>{% else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif %}</span>
+      <span class="history-summary">{% if c.summary %}{{ c.summary }}{% endif %}</span>
+      <span class="history-tools">
+        {% if c.diff %}<a href="{{ c.diff }}">{{ t("history.prev") }}</a>{% endif %}
+        <form method="post" action="{{ c.patrol_action }}" class="inline-form"><input type="hidden" name="revision" value="{{ c.id }}" /><button class="link-button" type="submit">{{ t("history.mark_checked") }}</button></form>
+      </span>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="empty-state">{{ t("review.patrol_empty") }}</p>
+  {% endif %}
+  {% endif %}
+
+{% elif section == "review_item" %}
+  <p><a href="/admin/review">{{ t("review.back") }}</a></p>
+  <article class="report-card report-detail">
+    <div class="report-card-head">
+      {% if is_new %}<span class="tag tag-new">{{ t("review.new_page") }}</span>{% else %}<span class="tag">{{ t("review.edit") }}</span>{% endif %}
+      <span class="tag tag-status">{{ status_label }}</span>
+      {% if outdated %}<span class="tag tag-warn">{{ t("review.outdated_tag") }}</span>{% endif %}
+      <span class="muted-cell">{{ at }}</span>
+    </div>
+    <p class="report-card-subject">{% if href %}<a href="{{ href }}">{{ title }}</a>{% else %}{{ title }}{% endif %} <code class="muted-cell">{{ path }}</code>
+      {% if renamed %}<span class="muted-cell">{{ t("review.renamed", old=renamed) }}</span>{% endif %}</p>
+    <p class="report-card-foot">{% if author %}<span>{{ t("report.from") }} <a href="/user/{{ author }}"><bdi>{{ author }}</bdi></a></span>{% endif %}{% if summary %} · {{ summary }}{% endif %}</p>
+    {% if outdated %}<p class="notice notice-warn">{{ t("review.outdated") }}</p>{% endif %}
+    {% if may_decide %}
+    <div class="review-actions">
+      <form method="post" action="/admin/review/{{ id }}/accept" class="inline-form">
+        <button class="button-save" type="submit"{% if outdated %} disabled{% endif %}>{{ t("review.accept") }}</button>
+      </form>
+      <form method="post" action="/admin/review/{{ id }}/reject" class="stack-form review-reject">
+        <label class="field">{{ t("review.reject_note") }}
+          <input class="field-input" type="text" name="note" maxlength="500" placeholder="{{ t('review.reject_hint') }}" />
+        </label>
+        <p><button class="button-preview" type="submit">{{ t("review.reject") }}</button></p>
+      </form>
+    </div>
+    {% endif %}
+  </article>
+
+  <section class="settings-section">
+    <h2>{{ t("review.changes") }}</h2>
+    <p class="muted-cell">{% if is_new %}{{ t("review.whole_page") }}{% else %}{{ t("review.added_removed", added=added, removed=removed) }}{% endif %}</p>
+    {% include "_diff_table.html" %}
+    {% if truncated %}<p class="muted-cell">{{ t("diff.truncated") }}</p>{% endif %}
+  </section>
+
+  <section class="settings-section">
+    <h2>{{ t("review.as_readers_see") }}</h2>
+    <div class="content review-preview">{{ preview | safe }}</div>
+  </section>
+
 {% elif section == "reports" %}
   <nav class="filter-chips" aria-label="{{ t('report.filter_status') }}">
     {% for f in status_filters %}<a class="chip" href="/admin/reports?status={{ f.id }}&amp;kind={{ kind }}" {% if f.current %}aria-current="true"{% endif %}>{{ f.label }}{% if f.id == "open" and open_reports %} <span class="admin-badge">{{ open_reports }}</span>{% endif %}</a>{% endfor %}
@@ -481,6 +575,13 @@
       <label class="check"><input type="checkbox" name="anonymous_edit" {% if anonymous_edit %}checked{% endif %} /> {{ t("admin.anonymous_edit") }}</label>
       <label class="check"><input type="checkbox" name="require_verified_email" {% if require_verified_email %}checked{% endif %} /> {{ t("admin.require_verified") }}</label>
       <p class="field-note">{{ t("admin.verified_note") }}</p>
+    </fieldset>
+
+    <fieldset class="perm-set">
+      <legend>{{ t("review.settings") }}</legend>
+      <p class="field-note">{{ t("review.settings_note") }}</p>
+      <label class="check"><input type="checkbox" name="review_new_pages" {% if review_new_pages %}checked{% endif %} /> {{ t("review.settings_new_pages") }}</label>
+      <label class="check"><input type="checkbox" name="review_edits" {% if review_edits %}checked{% endif %} /> {{ t("review.settings_edits") }}</label>
     </fieldset>
 
     <div class="form-actions">

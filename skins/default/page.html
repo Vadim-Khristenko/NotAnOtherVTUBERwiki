@@ -52,6 +52,14 @@
   there is a version in their own language, or that this translation may be
   behind its source.
 #}
+{% if just_sent is defined and just_sent %}
+<p class="notice notice-ok lang-notice" role="status"><svg class="icon" aria-hidden="true"><use href="#i-clipboard-check" /></svg>
+  <span>{{ t("review.sent") }}</span></p>
+{% elif review is defined and review %}
+<p class="notice notice-warn lang-notice" role="note"><svg class="icon" aria-hidden="true"><use href="#i-clipboard-check" /></svg>
+  <span>{% if review.mine %}{{ t("review.yours_waits") }}{% else %}{{ tn("review.waiting", review.count) }}{% endif %}
+  {% if review.queue %}<a href="{{ review.queue }}">{{ t("review.to_queue") }}</a>{% endif %}</span></p>
+{% endif %}
 {% if reader_version %}
 <p class="notice lang-notice" role="note"><svg class="icon" aria-hidden="true"><use href="#i-language" /></svg>
   <a href="{{ reader_version.href }}">{{ t("translate.in_your_language", language=reader_version.name) }}</a></p>
