@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT count(*) AS \"n!\",\n                  bool_or(author_id IS NOT DISTINCT FROM $2) AS \"mine!\"\n           FROM revisions WHERE page_id = $1 AND review_status = 'pending'",
+  "query": "SELECT count(*) AS \"n!\",\n                      COALESCE(bool_or(author_id IS NOT DISTINCT FROM $2), false) AS \"mine!\"\n               FROM revisions WHERE page_id = $1 AND review_status = 'pending'",
   "describe": {
     "columns": [
       {
@@ -27,5 +27,5 @@
       null
     ]
   },
-  "hash": "5bc5a23512dc8c2d7e861ecf4b38984796860ceb95333929ec52fdf8af7f38e4"
+  "hash": "592f4cdbf43402ef64dbf1749aabe3f70f6950509ca9a9fc564ec023bb158aa4"
 }

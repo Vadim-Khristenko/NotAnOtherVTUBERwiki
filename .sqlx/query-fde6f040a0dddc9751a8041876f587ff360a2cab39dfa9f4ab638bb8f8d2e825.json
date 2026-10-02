@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\",\n                  COALESCE(bool_or(author_id IS NOT DISTINCT FROM $2), false) AS \"mine!\"\n           FROM revisions WHERE page_id = $1 AND review_status = 'pending'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "mine!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "fde6f040a0dddc9751a8041876f587ff360a2cab39dfa9f4ab638bb8f8d2e825"
+}

@@ -83,8 +83,9 @@ pub(crate) async fn notice_for(
     page_id: Uuid,
 ) -> Result<Option<minijinja::Value>, AppError> {
     let row = sqlx::query!(
+        // bool_or over no rows is NULL: most pages have nothing waiting.
         r#"SELECT count(*) AS "n!",
-                  bool_or(author_id IS NOT DISTINCT FROM $2) AS "mine!"
+                  COALESCE(bool_or(author_id IS NOT DISTINCT FROM $2), false) AS "mine!"
            FROM revisions WHERE page_id = $1 AND review_status = 'pending'"#,
         page_id,
         ctx.actor.user_id
@@ -706,6 +707,23 @@ mod db_tests {
             .await
             .expect("current");
         (wiki, page, rev)
+    }
+
+    /// Every page view asks; nearly every page has nothing waiting.
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_page_with_nothing_waiting_reads_as_nothing(db: PgPool) {
+        let (_, page, _) = page_with_text(&db, "text").await;
+        let row = sqlx::query!(
+            r#"SELECT count(*) AS "n!",
+                      COALESCE(bool_or(author_id IS NOT DISTINCT FROM $2), false) AS "mine!"
+               FROM revisions WHERE page_id = $1 AND review_status = 'pending'"#,
+            page,
+            None::<Uuid>
+        )
+        .fetch_one(&db)
+        .await
+        .expect("no pending rows still decode");
+        assert_eq!((row.n, row.mine), (0, false));
     }
 
     #[sqlx::test(migrations = "../../migrations")]
