@@ -186,6 +186,7 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
     // The contents need final anchors.
     anchored = insert_toc(&anchored);
     anchored = link_footnote_references(&anchored);
+    anchored = separate_footnote_references(&anchored);
     anchored = collect_footnotes(&anchored);
     // `id` and `class` keep anchors and author styling; `tabindex` keeps
     // spoilers keyboard operable; `open` keeps collapsible quotes working.
@@ -1666,6 +1667,15 @@ fn collect_footnotes(html: &str) -> String {
         return out;
     }
     let anchored = anchored_references(html);
+    // Written order is not read order: list each note where it is first cited,
+    // the notes nothing cites last.
+    let order = reference_order(html);
+    defs.sort_by_key(|def| {
+        attr_value(def, "id")
+            .and_then(|id| id.strip_prefix("fn-").map(str::to_string))
+            .and_then(|label| order.iter().position(|l| *l == label))
+            .unwrap_or(usize::MAX)
+    });
     out.push_str("<div class=\"footnotes\">");
     for def in defs {
         let back = attr_value(def, "id")
@@ -1683,6 +1693,38 @@ fn collect_footnotes(html: &str) -> String {
     }
     out.push_str("</div>");
     out
+}
+
+/// Footnote labels in the order the text first cites them.
+fn reference_order(html: &str) -> Vec<String> {
+    const OPEN: &str = "<sup class=\"footnote-reference\"";
+    let mut order: Vec<String> = Vec::new();
+    let mut rest = html;
+    while let Some(pos) = rest.find(OPEN) {
+        let after = &rest[pos + OPEN.len()..];
+        let Some(href) = after.find("href=\"#fn-") else {
+            break;
+        };
+        let label_start = &after[href + "href=\"#fn-".len()..];
+        let Some(end) = label_start.find('"') else {
+            break;
+        };
+        let label = &label_start[..end];
+        if !order.iter().any(|l| l == label) {
+            order.push(label.to_string());
+        }
+        rest = &label_start[end..];
+    }
+    order
+}
+
+/// A comma between footnote references side by side, so `[^a][^b]` reads
+/// `1,2` and not `12`.
+fn separate_footnote_references(html: &str) -> String {
+    html.replace(
+        "</sup><sup class=\"footnote-reference\"",
+        "</sup><sup class=\"footnote-sep\">,</sup><sup class=\"footnote-reference\"",
+    )
 }
 
 /// Anchors of footnote references, collected in one pass.
@@ -1899,7 +1941,7 @@ fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 20;
+pub const RENDERER_VERSION: i32 = 21;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -2264,6 +2306,18 @@ mod tests {
         let html = render_html("See [[home|Home page]].\n");
         assert!(html.contains("href=\"home\""), "{html}");
         assert!(html.contains(">Home page</a>"), "{html}");
+    }
+
+    #[test]
+    fn footnotes_list_in_the_order_they_are_cited_and_adjacent_ones_are_separated() {
+        let html = render_html(
+            "Second source first.[^later] Then the first.[^early][^later]\n\n\
+             [^early]: Early note.\n[^later]: Later note.\n",
+        );
+        let later = html.find("Later note.").expect("later note");
+        let early = html.find("Early note.").expect("early note");
+        assert!(later < early, "cited first, listed first: {html}");
+        assert!(html.contains("class=\"footnote-sep\">,</sup>"), "{html}");
     }
 
     #[test]
