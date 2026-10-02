@@ -170,6 +170,7 @@ fn routes(state: AppState) -> Router {
             "/admin/wiki",
             get(admin::wiki_settings).post(admin::save_wiki_settings),
         )
+        .route("/admin/wiki/limits", post(admin::save_wiki_limits))
         .route("/admin/reindex", post(admin::reindex))
         .route(
             "/admin/chrome",
@@ -307,7 +308,7 @@ fn routes(state: AppState) -> Router {
                         .config
                         .upload_max_bytes
                         .max(state.config.avatar_max_bytes)
-                        .max(pages::TEXT_FORM_MAX)
+                        .max(pages::text_form_max())
                         + 256 * 1024,
                 ))
                 .layer(
@@ -323,7 +324,7 @@ fn routes(state: AppState) -> Router {
 
 /// The body limit of the routes that carry an article.
 fn text_form() -> axum::extract::DefaultBodyLimit {
-    axum::extract::DefaultBodyLimit::max(pages::TEXT_FORM_MAX)
+    axum::extract::DefaultBodyLimit::max(pages::text_form_max())
 }
 
 /// Liveness: the process is up.

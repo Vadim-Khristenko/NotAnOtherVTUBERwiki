@@ -20,6 +20,8 @@ pub struct SeedOptions {
     pub vtuber: String,
     pub community: String,
     pub aliases: Vec<String>,
+    /// The install's limits, for indexing the seeded pages.
+    pub limits: naw_core::limits::Limits,
 }
 
 /// Seeds or tops up one wiki.
@@ -51,7 +53,7 @@ pub async fn run(pool: &PgPool, seed_dir: &str, opts: &SeedOptions) -> Result<()
         seed_files(pool, wiki_id, opts, &page_template_dir, "page_template").await?;
     }
     // Seeded pages must be searchable.
-    let indexed = naw_web::indexing::reindex(pool, Some(wiki_id)).await?;
+    let indexed = naw_web::indexing::reindex(pool, &opts.limits, Some(wiki_id)).await?;
     tracing::info!(
         slug = %opts.slug,
         flavor = %opts.flavor,
@@ -290,6 +292,7 @@ mod tests {
             vtuber: "V".to_string(),
             community: "fans".to_string(),
             aliases: Vec::new(),
+            limits: naw_core::limits::Limits::default(),
         }
     }
 

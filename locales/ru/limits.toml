@@ -1,0 +1,33 @@
+# Russian interface messages: limits, as the admin panel names them.
+#
+# Keys here are asked for as limits.<key>. The file name is the prefix.
+# One key per limit in naw_core::limits; a test checks none is missing.
+
+page_bytes = "Самая большая статья, байт"
+page_title_chars = "Самое длинное название страницы, символов"
+edit_summary_chars = "Самое длинное описание правки, символов"
+page_address_chars = "Самый длинный адрес страницы, символов"
+category_levels = "Уровни категорий (Streams/ARG/2024 это три)"
+category_key_chars = "Самый длинный адрес категории, символов"
+category_pages_shown = "Сколько страниц показывает категория"
+template_depth = "Глубина шаблонов внутри шаблонов"
+template_calls = "Вызовов шаблонов на одной странице"
+template_output_bytes = "Самый длинный раскрытый текст страницы, байт"
+templates_per_page = "Разных шаблонов на одной странице"
+template_uses_shown = "Сколько страниц показывать в «где используется» у шаблона"
+recent_changes_shown = "Сколько правок в «Свежих правках»"
+all_pages_shown = "Названий на одном экране «Всех страниц»"
+system_list_shown = "Строк на остальных служебных страницах"
+files_shown = "Файлов на одном экране списков файлов"
+history_per_page = "Версий на одном экране истории"
+search_results = "Результатов поиска на одном экране"
+file_uses_shown = "Сколько страниц показывать в «где используется» у файла"
+big_edit_bytes = "С какого размера правка выделяется жирным, байт"
+drafts_per_person = "Черновиков у одного участника"
+report_message_chars = "Самое длинное сообщение жалобы, символов"
+report_burst = "Жалоб от одного участника подряд"
+report_burst_minutes = "Длина этого «подряд», минут"
+reports_open_per_person = "Открытых жалоб у одного участника"
+uploads_per_day = "Загрузок в день у одного участника"
+upload_bytes_per_day = "Байт загрузок в день у одного участника"
+file_note_chars = "Самое длинное примечание к файлу или причина скрытия, символов"

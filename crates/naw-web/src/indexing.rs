@@ -8,6 +8,7 @@
 use uuid::Uuid;
 
 use naw_core::error::AppError;
+use naw_core::limits::Limits;
 use naw_core::state::AppState;
 use naw_markdown::transclude::Notes;
 
@@ -16,7 +17,11 @@ use crate::templates::{self, Wiki};
 
 /// Re-indexes every live page of one wiki, or of every wiki when `wiki_id`
 /// is `None`. Returns how many pages were indexed.
-pub async fn reindex(db: &sqlx::PgPool, wiki_id: Option<Uuid>) -> Result<u64, AppError> {
+pub async fn reindex(
+    db: &sqlx::PgPool,
+    limits: &Limits,
+    wiki_id: Option<Uuid>,
+) -> Result<u64, AppError> {
     let ids = sqlx::query_scalar!(
         "SELECT id FROM pages
          WHERE deleted_at IS NULL AND current_revision_id IS NOT NULL
@@ -28,7 +33,7 @@ pub async fn reindex(db: &sqlx::PgPool, wiki_id: Option<Uuid>) -> Result<u64, Ap
     .await?;
     let mut done = 0;
     for id in ids {
-        if index_one(db, id).await? {
+        if index_one(db, limits, id).await? {
             done += 1;
         }
     }
@@ -40,6 +45,7 @@ pub async fn reindex(db: &sqlx::PgPool, wiki_id: Option<Uuid>) -> Result<u64, Ap
 /// or a reindex catches up.
 pub(crate) fn refresh_users_of(state: &AppState, ctx: &Ctx, slug: &str) {
     let db = state.db.clone();
+    let limits = state.config.limits.clone();
     let wiki_id = ctx.wiki.id;
     let slug = slug.to_string();
     tokio::spawn(async move {
@@ -59,7 +65,7 @@ pub(crate) fn refresh_users_of(state: &AppState, ctx: &Ctx, slug: &str) {
         };
         let total = pages.len();
         for page_id in pages {
-            if let Err(err) = index_one(&db, page_id).await {
+            if let Err(err) = index_one(&db, &limits, page_id).await {
                 tracing::warn!(error = ?err, %page_id, "could not re-index a page after a template edit");
             }
         }
@@ -69,11 +75,11 @@ pub(crate) fn refresh_users_of(state: &AppState, ctx: &Ctx, slug: &str) {
 
 /// Indexes one live page and records the templates it uses. `false` when
 /// the page is gone or archived.
-async fn index_one(db: &sqlx::PgPool, page_id: Uuid) -> Result<bool, AppError> {
+async fn index_one(db: &sqlx::PgPool, limits: &Limits, page_id: Uuid) -> Result<bool, AppError> {
     let Some(row) = sqlx::query!(
         r#"SELECT p.wiki_id, p.namespace::text AS "namespace!", p.slug, p.title,
                   COALESCE(NULLIF(p.locale, ''), w.default_locale) AS "locale!",
-                  w.default_locale, r.summary, r.body_md
+                  w.default_locale, w.settings, r.summary, r.body_md
            FROM pages p
            JOIN revisions r ON r.id = p.current_revision_id
            JOIN wikis w ON w.id = p.wiki_id
@@ -91,12 +97,16 @@ async fn index_one(db: &sqlx::PgPool, page_id: Uuid) -> Result<bool, AppError> {
         locale: &row.locale,
         default_locale: &row.default_locale,
     };
+    // The wiki's own limits, as a request on it would have them.
+    let limits = limits.for_wiki(&row.settings);
     let notes = Notes {
         language: row.locale.clone(),
+        budget: naw_markdown::transclude::Budget::of(&limits),
         ..Notes::default()
     };
     let expanded = templates::expand_in(db, &wiki, &notes, &path, &row.body_md).await?;
-    let prepared = crate::pages::render_prepared(db, row.wiki_id, expanded).await?;
+    let shape = naw_markdown::categories::Shape::of(&limits);
+    let prepared = crate::pages::render_prepared(db, row.wiki_id, shape, expanded).await?;
     let mut tx = db.begin().await?;
     naw_core::search::index_page(
         &mut tx,

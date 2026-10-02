@@ -14,11 +14,35 @@
 /// The prefixes a category link starts with, lowercase.
 pub const PREFIXES: [&str; 2] = ["category:", "категория:"];
 
-/// The longest key, in characters.
-const KEY_MAX: usize = 100;
+/// How deep and how long a category may be: from the wiki's limits
+/// (`category_levels`, `category_key_chars`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shape {
+    pub levels: usize,
+    pub key_chars: usize,
+}
 
-/// The most levels a category name may have.
-const LEVELS_MAX: usize = 6;
+impl Shape {
+    /// The widest any wiki may choose, for telling whether an address could
+    /// be a category at all.
+    pub const LOOSEST: Self = Self {
+        levels: 16,
+        key_chars: 200,
+    };
+
+    pub fn of(limits: &naw_core::limits::Limits) -> Self {
+        Self {
+            levels: limits.category_levels,
+            key_chars: limits.category_key_chars,
+        }
+    }
+}
+
+impl Default for Shape {
+    fn default() -> Self {
+        Self::of(&naw_core::limits::Limits::default())
+    }
+}
 
 /// A level written only to say "inside", as in `Streams/Sub:ARG`.
 const SUB_MARKERS: [&str; 3] = ["sub", "подкатегория", "под"];
@@ -50,6 +74,11 @@ fn level_key(raw: &str) -> String {
 /// The levels of a category name, with or without its prefix: split at `/`
 /// and `:`, empty levels and "sub" markers left out.
 pub fn levels(name: &str) -> Vec<Level> {
+    levels_in(name, Shape::default())
+}
+
+/// [`levels`], at most as many as `shape` allows; deeper ones are dropped.
+pub fn levels_in(name: &str, shape: Shape) -> Vec<Level> {
     let bare = strip_prefix(name).unwrap_or(name);
     let parts: Vec<&str> = bare.split(['/', ':']).collect();
     let last = parts.len().saturating_sub(1);
@@ -64,7 +93,7 @@ pub fn levels(name: &str) -> Vec<Level> {
                 name: display_name(raw),
             })
         })
-        .take(LEVELS_MAX)
+        .take(shape.levels.max(1))
         .collect()
 }
 
@@ -111,12 +140,17 @@ pub fn display_name(name: &str) -> String {
 /// The key of a category name, with or without its prefix: its levels
 /// joined by `:`. `None` when nothing usable is left or it is too long.
 pub fn key(name: &str) -> Option<String> {
-    let key = levels(name)
+    key_in(name, Shape::default())
+}
+
+/// [`key`], within `shape`.
+pub fn key_in(name: &str, shape: Shape) -> Option<String> {
+    let key = levels_in(name, shape)
         .into_iter()
         .map(|l| l.key)
         .collect::<Vec<_>>()
         .join(":");
-    (!key.is_empty() && key.chars().count() <= KEY_MAX).then_some(key)
+    (!key.is_empty() && key.chars().count() <= shape.key_chars).then_some(key)
 }
 
 /// Whether `dest` is a category link, `[[Category:X]]`, rather than a
@@ -133,6 +167,12 @@ pub(crate) fn link_target(dest: &str) -> Option<String> {
 
 /// The categories a page is in, in the order first written, once each.
 pub fn of(markdown: &str) -> Vec<Membership> {
+    of_in(markdown, Shape::default())
+}
+
+/// [`of`], within `shape`: a name deeper than it allows keeps its outer
+/// levels, and its name is written the same way, levels joined by `/`.
+pub fn of_in(markdown: &str, shape: Shape) -> Vec<Membership> {
     use pulldown_cmark::{Event, LinkType, Parser, Tag, TagEnd};
     if !markdown.contains("[[") {
         return Vec::new();
@@ -148,9 +188,11 @@ pub fn of(markdown: &str) -> Vec<Membership> {
                 ..
             }) => {
                 if let Some(name) = strip_prefix(&dest_url)
-                    && let Some(key) = key(name)
+                    && let Some(key) = key_in(name, shape)
                 {
-                    open = Some((key, display_name(name), has_pothole, String::new()));
+                    let written: Vec<String> =
+                        levels_in(name, shape).into_iter().map(|l| l.name).collect();
+                    open = Some((key, written.join("/"), has_pothole, String::new()));
                 }
             }
             Event::Text(text) | Event::Code(text) if open.is_some() => {
@@ -217,6 +259,23 @@ mod tests {
         assert_eq!(names, ["Streams", "ARG lore"]);
         assert_eq!(ancestors("a:b:c"), ["a", "a:b"]);
         assert!(ancestors("a").is_empty());
+    }
+
+    #[test]
+    fn a_wiki_with_fewer_levels_keeps_the_outer_ones() {
+        let shape = Shape {
+            levels: 2,
+            key_chars: 100,
+        };
+        let found = of_in("[[Category:Streams/Sub:ARG/2024]]\n", shape);
+        assert_eq!(found[0].key, "streams:arg");
+        assert_eq!(found[0].name, "Streams/ARG");
+        let short = Shape {
+            levels: 6,
+            key_chars: 5,
+        };
+        assert_eq!(key_in("Streams", short), None, "too long for this wiki");
+        assert_eq!(key_in("ARG", short).as_deref(), Some("arg"));
     }
 
     #[test]

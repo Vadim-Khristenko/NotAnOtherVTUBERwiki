@@ -19,15 +19,38 @@
 use crate::yaml;
 use std::collections::{BTreeSet, HashMap};
 
-/// Templates inside templates, at most this deep.
-pub const DEPTH_MAX: usize = 16;
+/// How much one expansion may do, from the wiki's limits (`template_depth`,
+/// `template_calls`, `template_output_bytes`). The output cap matters most:
+/// a template used a thousand times in a loop of copies would otherwise
+/// multiply a small page into gigabytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Budget {
+    /// Templates inside templates, at most this deep.
+    pub depth: usize,
+    /// Template and parser function calls in one expansion.
+    pub calls: usize,
+    /// Longest expanded text, in bytes.
+    pub output: usize,
+    /// Different templates one page may pull in.
+    pub templates: usize,
+}
 
-/// Template and parser function calls in one expansion.
-pub const CALLS_MAX: usize = 2000;
+impl Budget {
+    pub fn of(limits: &naw_core::limits::Limits) -> Self {
+        Self {
+            depth: limits.template_depth,
+            calls: limits.template_calls,
+            output: limits.template_output_bytes,
+            templates: limits.templates_per_page,
+        }
+    }
+}
 
-/// Longest expanded text. A template used a thousand times in a loop of
-/// copies would otherwise multiply a small page into gigabytes.
-pub const OUTPUT_MAX: usize = 12 * 1024 * 1024;
+impl Default for Budget {
+    fn default() -> Self {
+        Self::of(&naw_core::limits::Limits::default())
+    }
+}
 
 /// What a run takes from the page: the text that goes where a call fails
 /// (`{name}` is the template's name), and the page's language for
@@ -46,11 +69,14 @@ pub struct Notes {
     pub missing_fields: String,
     /// YAML error reasons in the reader's language, by code; English otherwise.
     pub yaml_reasons: HashMap<String, String>,
+    /// How much the run may do.
+    pub budget: Budget,
 }
 
 impl Default for Notes {
     fn default() -> Self {
         Self {
+            budget: Budget::default(),
             missing: "[Template:{name}](/template:{name})".into(),
             looped: "**Template loop: {name}**".into(),
             limit: "**Template limit reached**".into(),
@@ -368,7 +394,7 @@ impl Run<'_> {
         let mut i = 0;
         let mut line_start = true;
         while i < bytes.len() {
-            if out.len() > OUTPUT_MAX {
+            if out.len() > self.notes.budget.output {
                 out.push_str(&self.notes.limit);
                 break;
             }
@@ -425,7 +451,7 @@ impl Run<'_> {
 
     fn call(&mut self, inner: &str, depth: usize) -> String {
         self.calls += 1;
-        if self.calls > CALLS_MAX || depth >= DEPTH_MAX {
+        if self.calls > self.notes.budget.calls || depth >= self.notes.budget.depth {
             return self.notes.limit.clone();
         }
         // `{{Name` + a ```yaml block + `}}`: the fields as YAML.
@@ -1121,7 +1147,7 @@ mod tests {
             .collect();
         let map: HashMap<String, String> = t.into_iter().collect();
         let out = expand("{{T0}}", &map, &Notes::default());
-        assert!(out.text.len() <= OUTPUT_MAX + 1024);
+        assert!(out.text.len() <= Budget::default().output + 1024);
         assert!(out.text.contains("Template limit reached"));
     }
 

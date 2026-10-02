@@ -23,6 +23,7 @@ pub struct AppState {
 }
 
 pub async fn build(config: Config) -> Result<AppState, AppError> {
+    crate::limits::set_install(config.limits.clone());
     let db = db::connect(&config.database_url).await?;
     let valkey = db::connect_valkey(&config.valkey_url).await?;
     let storage: Arc<dyn StorageBackend> = Arc::new(LocalStorage::new(&config.storage_root)?);

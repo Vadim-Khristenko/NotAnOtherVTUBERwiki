@@ -26,9 +26,6 @@ use crate::pages;
 use crate::perm::{Actor, Capability};
 use crate::resolve::Ctx;
 
-/// What a version's note and a hiding reason may hold.
-const NOTE_MAX: usize = 300;
-
 /// The file a path names in this wiki.
 pub(crate) struct Target {
     pub id: Uuid,
@@ -198,12 +195,14 @@ fn forbidden(ctx: &Ctx, file_path: &str) -> Result<Response, AppError> {
     refuse(ctx, file_path, StatusCode::FORBIDDEN, "file.not_allowed")
 }
 
-fn note(raw: &str) -> Option<String> {
+/// A version note or a hiding reason, tidied and cut to `max` characters
+/// (the `file_note_chars` limit).
+fn note(raw: &str, max: usize) -> Option<String> {
     let text: String = raw
         .trim()
         .chars()
         .filter(|c| !c.is_control())
-        .take(NOTE_MAX)
+        .take(max)
         .collect();
     (!text.is_empty()).then_some(text)
 }
@@ -316,7 +315,7 @@ pub async fn new_version(
             }
             Some("comment") => {
                 let text = field.text().await.unwrap_or_default();
-                comment = text.chars().take(NOTE_MAX * 2).collect();
+                comment = text.chars().take(ctx.limits.file_note_chars * 2).collect();
             }
             _ => {}
         }
@@ -355,7 +354,7 @@ pub async fn new_version(
         );
     }
     let filename = crate::media::clean_filename(&filename);
-    let comment = note(&comment);
+    let comment = note(&comment, ctx.limits.file_note_chars);
     make_current(
         &state.db,
         ctx.actor.user_id,
@@ -509,7 +508,7 @@ pub async fn visibility(
         "show" => false,
         _ => return Ok(crate::errors::not_found()),
     };
-    let reason = note(&form.reason);
+    let reason = note(&form.reason, ctx.limits.file_note_chars);
     if hide {
         sqlx::query!(
             "UPDATE media SET hidden_at = now(), hidden_by = $2, hidden_reason = $3 WHERE id = $1",

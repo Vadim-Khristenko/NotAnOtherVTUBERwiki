@@ -74,6 +74,8 @@ pub struct Ctx {
     pub path: String,
     /// Largest upload, so the editor can refuse a file before sending it.
     pub upload_max_bytes: usize,
+    /// The install's limits with this wiki's own choices over them.
+    pub limits: naw_core::limits::Limits,
 }
 
 /// Where the article language of a request came from.
@@ -382,6 +384,7 @@ pub async fn context(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("/")
         .to_string();
+    let limits = state.config.limits.for_wiki(&wiki.settings);
     Ok(Some(Ctx {
         wiki,
         actor,
@@ -391,6 +394,7 @@ pub async fn context(
         locale_via,
         path,
         upload_max_bytes: state.config.upload_max_bytes,
+        limits,
     }))
 }
 

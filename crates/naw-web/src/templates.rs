@@ -15,12 +15,6 @@ use naw_markdown::transclude;
 
 use crate::resolve::Ctx;
 
-/// Distinct templates one page may pull in.
-const TEMPLATES_MAX: usize = 200;
-
-/// Pages listed on a template's own page as using it.
-pub(crate) const USES_SHOWN: i64 = 50;
-
 pub(crate) struct Expanded {
     pub text: String,
     /// Slugs of the templates the text used.
@@ -56,6 +50,7 @@ pub(crate) fn notes(ctx: &Ctx) -> transclude::Notes {
             .iter()
             .map(|code| (code.to_string(), ctx.t(&format!("template.yaml_{code}"))))
             .collect(),
+        budget: transclude::Budget::of(&ctx.limits),
     }
 }
 
@@ -127,14 +122,14 @@ async fn run_rounds(
         let wanted: Vec<String> = tried.iter().cloned().collect();
         labels.extend(load(db, wiki, &wanted).await?.labels);
     }
-    for _ in 0..transclude::DEPTH_MAX {
+    for _ in 0..notes.budget.depth {
         let run = transclude::expand_full(source, &loaded, &labels, &aliases, notes);
         // names in another script (`{{Карточка VTuber}}`) are looked up by title
         let names: Vec<String> = run
             .unresolved
             .iter()
             .filter(|name| !names_tried.contains(*name))
-            .take(TEMPLATES_MAX)
+            .take(notes.budget.templates)
             .cloned()
             .collect();
         names_tried.extend(names.iter().cloned());
@@ -143,7 +138,7 @@ async fn run_rounds(
         } else {
             titles(db, wiki, &names).await?
         };
-        let room = TEMPLATES_MAX.saturating_sub(tried.len());
+        let room = notes.budget.templates.saturating_sub(tried.len());
         let wanted: Vec<String> = run
             .missing
             .iter()
@@ -414,7 +409,7 @@ pub(crate) async fn uses(
            ORDER BY p.title LIMIT $3"#,
         ctx.wiki.id,
         slug,
-        USES_SHOWN
+        ctx.limits.template_uses_shown
     )
     .fetch_all(&state.db)
     .await?;

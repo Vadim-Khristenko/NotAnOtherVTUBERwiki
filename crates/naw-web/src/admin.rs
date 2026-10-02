@@ -1448,6 +1448,7 @@ pub async fn wiki_settings(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
     headers: HeaderMap,
+    Query(query): Query<SavedQuery>,
 ) -> Result<Response, AppError> {
     let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
     if !ctx.actor.can(Capability::WikiSettings) {
@@ -1479,8 +1480,111 @@ pub async fn wiki_settings(
             require_verified_email => rules.require_verified_email,
             raw_settings => serde_json::to_string_pretty(&ctx.wiki.settings)
                 .unwrap_or_else(|_| "{}".to_string()),
+            limits => limit_rows(&state, &ctx),
+            limits_saved => query.saved.is_some(),
         },
     )
+}
+
+/// Every limit with this wiki's own value, the install's, and its range.
+fn limit_rows(state: &AppState, ctx: &Ctx) -> Vec<minijinja::Value> {
+    use naw_core::limits::{SPECS, Scope};
+    let install = &state.config.limits;
+    let own = ctx
+        .wiki
+        .settings
+        .get("limits")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    SPECS
+        .iter()
+        .map(|spec| {
+            let scope = match spec.scope {
+                Scope::Install => "install",
+                Scope::Wiki => "wiki",
+                Scope::Lower => "lower",
+            };
+            minijinja::context! {
+                name => spec.name,
+                label => ctx.t(&format!("limits.{}", spec.name)),
+                scope => scope,
+                value => own.get(spec.name).and_then(Value::as_i64),
+                install => install.get(spec.name).unwrap_or(spec.default),
+                min => spec.min,
+                max => install.wiki_ceiling(spec),
+            }
+        })
+        .collect()
+}
+
+/// POST /admin/wiki/limits: this wiki's own limits. An empty field takes the
+/// install's value; anything else is clamped into what the wiki may choose.
+#[instrument(skip(state, user, headers, form))]
+pub async fn save_wiki_limits(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    Form(form): Form<std::collections::HashMap<String, String>>,
+) -> Result<Response, AppError> {
+    use naw_core::limits::{SPECS, Scope, parse_number};
+    let ctx = or_respond!(gate(&state, &headers, user.as_ref()).await);
+    if !ctx.actor.can(Capability::WikiSettings) {
+        return Ok((StatusCode::FORBIDDEN, "not allowed").into_response());
+    }
+    let install = &state.config.limits;
+    let mut chosen = serde_json::Map::new();
+    for spec in SPECS.iter().filter(|s| s.scope != Scope::Install) {
+        let Some(raw) = form
+            .get(&format!("limit_{}", spec.name))
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+        else {
+            continue;
+        };
+        let Some(value) = parse_number(raw) else {
+            return Ok((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("{}: a whole number", spec.name),
+            )
+                .into_response());
+        };
+        chosen.insert(
+            spec.name.to_string(),
+            json!(value.clamp(spec.min, install.wiki_ceiling(spec))),
+        );
+    }
+    let mut settings = ctx.wiki.settings.clone();
+    if !settings.is_object() {
+        settings = json!({});
+    }
+    let was = settings.get("limits").cloned();
+    let object = settings.as_object_mut().expect("just ensured an object");
+    if chosen.is_empty() {
+        object.remove("limits");
+    } else {
+        object.insert("limits".into(), Value::Object(chosen.clone()));
+    }
+    sqlx::query!(
+        "UPDATE wikis SET settings = $2 WHERE id = $1",
+        ctx.wiki.id,
+        settings
+    )
+    .execute(&state.db)
+    .await?;
+    audit::record(
+        &state.db,
+        audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action: "wiki.limits",
+            entity_type: "wiki",
+            entity_id: Some(ctx.wiki.id),
+            meta: json!({ "was": was, "now": chosen }),
+        },
+    )
+    .await?;
+    Ok(pages::see_other("/admin/wiki?saved=1#limits"))
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1569,7 +1673,7 @@ pub async fn save_wiki_settings(
 
     // The stemmer is baked into every tsvector, so a locale change reindexes.
     let reindexed = if locale_changed {
-        crate::indexing::reindex(&state.db, Some(ctx.wiki.id)).await?
+        crate::indexing::reindex(&state.db, &state.config.limits, Some(ctx.wiki.id)).await?
     } else {
         0
     };
@@ -1632,7 +1736,8 @@ pub async fn reindex(
     if form.confirm.is_none() {
         return Ok(pages::see_other("/admin/wiki"));
     }
-    let count = crate::indexing::reindex(&state.db, Some(ctx.wiki.id)).await?;
+    let count =
+        crate::indexing::reindex(&state.db, &state.config.limits, Some(ctx.wiki.id)).await?;
     audit::record_or_log(
         &state.db,
         audit::Entry {

@@ -49,14 +49,8 @@ const GROUPS: [(&str, &[(&str, &str)]); 3] = [
     ),
 ];
 
-/// Rows on one screen of a list.
-const RECENT_MAX: i64 = 100;
-const ALL_PAGES_STEP: i64 = 300;
-const FILES_MAX: i64 = 120;
-const LIST_MAX: i64 = 200;
-
-/// An edit this many bytes or more either way is shown in bold.
-const BIG_EDIT_BYTES: i32 = 500;
+// How many rows each list shows is a limit: `recent_changes_shown`,
+// `all_pages_shown`, `files_shown`, `system_list_shown`, `big_edit_bytes`.
 
 /// The namespaces All pages can list, as the database spells them.
 const LISTED_NAMESPACES: [&str; 4] = ["main", "category", "template", "page_template"];
@@ -187,9 +181,9 @@ fn row_with(
     }
 }
 
-fn list(rows: Vec<minijinja::Value>) -> minijinja::Value {
+fn list(ctx: &Ctx, rows: Vec<minijinja::Value>) -> minijinja::Value {
     let shown = rows.len();
-    minijinja::context! { rows => rows, list_max => LIST_MAX, at_limit => shown as i64 >= LIST_MAX }
+    minijinja::context! { rows => rows, list_max => ctx.limits.system_list_shown, at_limit => shown as i64 >= ctx.limits.system_list_shown }
 }
 
 async fn recent_changes(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError> {
@@ -212,7 +206,7 @@ async fn recent_changes(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value,
            ORDER BY r.created_at DESC, r.id DESC
            LIMIT $2"#,
         ctx.wiki.id,
-        RECENT_MAX
+        ctx.limits.recent_changes_shown
     )
     .fetch_all(&state.db)
     .await?;
@@ -240,14 +234,14 @@ async fn recent_changes(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value,
                 is_minor => row.is_minor,
                 is_new => row.prev_id.is_none(),
                 delta => delta,
-                delta_big => delta.abs() >= BIG_EDIT_BYTES,
+                delta_big => i64::from(delta.abs()) >= ctx.limits.big_edit_bytes,
                 locale => (row.locale != ctx.content_locale).then_some(row.locale),
                 day => ctx.day(row.created_at),
                 time => row.created_at.format("%H:%M").to_string(),
             }
         })
         .collect();
-    Ok(minijinja::context! { changes => items, recent_max => RECENT_MAX })
+    Ok(minijinja::context! { changes => items, recent_max => ctx.limits.recent_changes_shown })
 }
 
 /// The letter a title is filed under.
@@ -290,7 +284,7 @@ async fn all_pages(
            LIMIT $3"#,
         ctx.wiki.id,
         ctx.content_locale,
-        ALL_PAGES_STEP + 1,
+        ctx.limits.all_pages_shown + 1,
         ns,
         one_language,
         from
@@ -334,13 +328,13 @@ async fn all_pages(
         }
         href
     };
-    let has_more = rows.len() as i64 > ALL_PAGES_STEP;
-    let next = has_more.then(|| here(&rows[ALL_PAGES_STEP as usize].title));
+    let has_more = rows.len() as i64 > ctx.limits.all_pages_shown;
+    let next = has_more.then(|| here(&rows[ctx.limits.all_pages_shown as usize].title));
     // A template has one row per language; the list shows it once.
     let mut seen = std::collections::HashSet::new();
     let items: Vec<minijinja::Value> = rows
         .into_iter()
-        .take(ALL_PAGES_STEP as usize)
+        .take(ctx.limits.all_pages_shown as usize)
         .filter(|row| seen.insert(row.slug.clone()))
         .map(|row| {
             minijinja::context! {
@@ -393,7 +387,7 @@ async fn files(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError
         "SELECT storage_key, name, kind, width, height FROM media
          WHERE wiki_id = $1 AND hidden_at IS NULL ORDER BY created_at DESC LIMIT $2",
         ctx.wiki.id,
-        FILES_MAX
+        ctx.limits.files_shown
     )
     .fetch_all(&state.db)
     .await?;
@@ -533,7 +527,8 @@ async fn categories(
     }
     let mut entries: std::collections::BTreeMap<String, Entry> = std::collections::BTreeMap::new();
     for r in rows {
-        let levels = naw_markdown::categories::levels(&r.name);
+        let levels =
+            naw_markdown::categories::levels_in(&r.name, naw_markdown::categories::Shape::LOOSEST);
         let mut prefix = String::new();
         let mut shown = Vec::new();
         for level in &levels {
@@ -587,7 +582,7 @@ async fn categories(
             )
         })
         .collect();
-    Ok(list(rows))
+    Ok(list(ctx, rows))
 }
 
 async fn uncategorized(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError> {
@@ -599,7 +594,7 @@ async fn uncategorized(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, 
            ORDER BY lower(p.title) LIMIT $3"#,
         ctx.wiki.id,
         ctx.content_locale,
-        LIST_MAX
+        ctx.limits.system_list_shown
     )
     .fetch_all(&state.db)
     .await?;
@@ -613,7 +608,7 @@ async fn uncategorized(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, 
             )
         })
         .collect();
-    Ok(list(rows))
+    Ok(list(ctx, rows))
 }
 
 async fn new_pages(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError> {
@@ -627,7 +622,7 @@ async fn new_pages(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppE
            ORDER BY p.created_at DESC LIMIT $3"#,
         ctx.wiki.id,
         ctx.content_locale,
-        LIST_MAX
+        ctx.limits.system_list_shown
     )
     .fetch_all(&state.db)
     .await?;
@@ -642,7 +637,7 @@ async fn new_pages(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppE
             row(r.title, href_of(ctx, "main", &r.slug), meta)
         })
         .collect();
-    Ok(list(rows))
+    Ok(list(ctx, rows))
 }
 
 /// Articles with no version in the reader's language, from the one in the
@@ -661,7 +656,7 @@ async fn untranslated(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, A
         ctx.wiki.id,
         ctx.content_locale,
         ctx.wiki.default_locale,
-        LIST_MAX
+        ctx.limits.system_list_shown
     )
     .fetch_all(&state.db)
     .await?;
@@ -695,7 +690,7 @@ async fn untranslated(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, A
         })
         .collect();
     rows.sort_by(|a, b| a.0.cmp(&b.0));
-    Ok(list(rows.into_iter().map(|(_, r)| r).collect()))
+    Ok(list(ctx, rows.into_iter().map(|(_, r)| r).collect()))
 }
 
 /// Size as a reader counts it.
@@ -719,7 +714,7 @@ async fn by_size(
         ctx.wiki.id,
         ctx.content_locale,
         shortest,
-        LIST_MAX
+        ctx.limits.system_list_shown
     )
     .fetch_all(&state.db)
     .await?;
@@ -727,7 +722,7 @@ async fn by_size(
         .into_iter()
         .map(|r| row(r.title, href_of(ctx, "main", &r.slug), size(ctx, r.bytes)))
         .collect();
-    Ok(list(rows))
+    Ok(list(ctx, rows))
 }
 
 async fn stale_pages(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError> {
@@ -738,7 +733,7 @@ async fn stale_pages(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, Ap
            ORDER BY p.updated_at, lower(p.title) LIMIT $3"#,
         ctx.wiki.id,
         ctx.content_locale,
-        LIST_MAX
+        ctx.limits.system_list_shown
     )
     .fetch_all(&state.db)
     .await?;
@@ -752,7 +747,7 @@ async fn stale_pages(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, Ap
             )
         })
         .collect();
-    Ok(list(rows))
+    Ok(list(ctx, rows))
 }
 
 /// Files no page shows, in any of their versions, oldest first.
@@ -765,7 +760,7 @@ async fn unused_files(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, A
              WHERE v.media_id = m.id AND f.wiki_id = $1)
          ORDER BY m.created_at LIMIT $2",
         ctx.wiki.id,
-        FILES_MAX
+        ctx.limits.files_shown
     )
     .fetch_all(&state.db)
     .await?;
@@ -818,7 +813,7 @@ async fn templates(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppE
             )
         })
         .collect();
-    Ok(list(rows))
+    Ok(list(ctx, rows))
 }
 
 /// Who edited in the last 30 days, most edits first.
@@ -833,7 +828,7 @@ async fn active_users(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, A
            ORDER BY count(*) DESC, u.username
            LIMIT $2"#,
         ctx.wiki.id,
-        LIST_MAX
+        ctx.limits.system_list_shown
     )
     .fetch_all(&state.db)
     .await?;
@@ -844,5 +839,5 @@ async fn active_users(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, A
             row(r.username.clone(), format!("/user/{}", r.username), meta)
         })
         .collect();
-    Ok(list(rows))
+    Ok(list(ctx, rows))
 }

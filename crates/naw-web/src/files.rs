@@ -343,9 +343,6 @@ pub(crate) fn human_size(ctx: &Ctx, bytes: i64) -> String {
     }
 }
 
-/// Pages that use a file, at most.
-const USES_SHOWN: i64 = 100;
-
 /// GET /image:name and its siblings.
 pub(crate) async fn page(
     state: &AppState,
@@ -418,7 +415,7 @@ pub(crate) async fn page(
            ORDER BY p.title LIMIT $3"#,
         ctx.wiki.id,
         file.id,
-        USES_SHOWN
+        ctx.limits.file_uses_shown
     )
     .fetch_all(&state.db)
     .await?
@@ -488,6 +485,7 @@ pub(crate) async fn page(
                 hidden_reason => file.hidden_reason,
                 upload_max => naw_core::html::mib(state.config.upload_max_bytes).to_string(),
                 file_name => file.name,
+                note_max => ctx.limits.file_note_chars,
             }
         })
         .map_err(pages::template_error)?;

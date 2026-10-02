@@ -7,6 +7,7 @@ pub mod db;
 pub mod error;
 pub mod html;
 pub mod i18n;
+pub mod limits;
 pub mod logging;
 pub mod search;
 pub mod skin;

@@ -53,6 +53,9 @@ pub struct Config {
     pub accounts: AccountPolicy,
     #[serde(default)]
     pub auth: AuthConfig,
+    /// Every content and people limit; see [`crate::limits`].
+    #[serde(default)]
+    pub limits: crate::limits::Limits,
 }
 
 /// What an account may change about itself.
@@ -170,6 +173,7 @@ impl Default for Config {
             emote_budget_bytes: default_emote_budget_bytes(),
             fetch_proxy: None,
             auth: AuthConfig::default(),
+            limits: crate::limits::Limits::default(),
         }
     }
 }
@@ -522,6 +526,10 @@ impl Config {
                 Some(check_fetch_proxy(raw)?)
             };
         }
+        cfg.limits = cfg.limits.clone().clamped();
+        cfg.limits
+            .apply_env(|name| std::env::var(name).ok())
+            .map_err(|err| AppError::Config(err.to_string()))?;
         cfg.bootstrap_owner = BootstrapOwner::from_env()?;
         cfg.check_dev_login()?;
         Ok(cfg)

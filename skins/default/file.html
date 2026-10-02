@@ -134,7 +134,7 @@
         <input class="field-input" type="file" name="file" required />
       </label>
       <label class="field">{{ t("file.version_note") }}
-        <input class="field-input" type="text" name="comment" maxlength="300" placeholder="{{ t('file.new_version_comment_hint') }}" />
+        <input class="field-input" type="text" name="comment" maxlength="{{ note_max }}" placeholder="{{ t('file.new_version_comment_hint') }}" />
       </label>
       <p><button type="submit" class="button-save">{{ t("file.new_version_send") }}</button></p>
     </form>
@@ -155,7 +155,7 @@
     <input type="hidden" name="action" value="hide" />
     <p class="field-note">{{ t("file.hide_note") }}</p>
     <label class="field">{{ t("file.hide_reason") }}
-      <input class="field-input" type="text" name="reason" maxlength="300" />
+      <input class="field-input" type="text" name="reason" maxlength="{{ note_max }}" />
     </label>
     <p><button type="submit" class="button-preview">{{ t("file.hide") }}</button></p>
     {% endif %}

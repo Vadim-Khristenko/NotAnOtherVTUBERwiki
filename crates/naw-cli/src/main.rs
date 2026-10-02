@@ -5,9 +5,70 @@ mod seed;
 mod user;
 
 use std::process::ExitCode;
+use std::sync::OnceLock;
+
+const USAGE: &str = "usage: naw [--config FILE] [--env-file FILE] [--limit NAME=VALUE]... <serve|migrate|seed|grant|user|reindex|limits>
+
+  --config FILE       the configuration file (default: config.toml)
+  --env-file FILE     environment variables to load first; the real
+                      environment wins over the file, and .env is read after it
+  --limit NAME=VALUE  one limit, over the file and the environment
+                      (`naw limits` lists them)";
+
+/// What the options before the command chose.
+#[derive(Default)]
+struct Global {
+    config: Option<String>,
+    limits: Vec<String>,
+}
+
+static GLOBAL: OnceLock<Global> = OnceLock::new();
+
+/// Reads the options before the command; the rest is the command and its own.
+fn split_global(args: Vec<String>) -> Result<(Global, Option<String>, Vec<String>), String> {
+    let mut global = Global::default();
+    let mut env_files = Vec::new();
+    let mut rest = args.into_iter();
+    while let Some(arg) = rest.next() {
+        let (flag, inline) = match arg.split_once('=') {
+            Some((flag, value)) if flag.starts_with("--") => {
+                (flag.to_string(), Some(value.to_string()))
+            }
+            _ => (arg.clone(), None),
+        };
+        let mut value = || {
+            inline
+                .clone()
+                .or_else(|| rest.next())
+                .ok_or_else(|| format!("{flag} needs a value"))
+        };
+        match flag.as_str() {
+            "--config" => global.config = Some(value()?),
+            "--env-file" => env_files.push(value()?),
+            "--limit" => global.limits.push(value()?),
+            "--help" | "-h" => return Ok((global, Some("help".into()), Vec::new())),
+            _ if arg.starts_with("--") => return Err(format!("unknown option {arg}")),
+            _ => {
+                for file in &env_files {
+                    dotenvy::from_path(file).map_err(|err| format!("--env-file {file}: {err}"))?;
+                }
+                return Ok((global, Some(arg), rest.collect()));
+            }
+        }
+    }
+    Ok((global, None, Vec::new()))
+}
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let (global, command, args) = match split_global(std::env::args().skip(1).collect()) {
+        Ok(parts) => parts,
+        Err(err) => {
+            eprintln!("{err}\n\n{USAGE}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let _ = GLOBAL.set(global);
     // .env before logging so NAW_LOG_* can live there; logging before config so
     // a broken config.toml is reported.
     dotenvy::dotenv().ok();
@@ -19,22 +80,69 @@ async fn main() -> ExitCode {
         );
     }
 
-    match std::env::args().nth(1).as_deref() {
+    match command.as_deref() {
         Some("serve") => serve().await,
         Some("migrate") => migrate().await,
-        Some("seed") => seed_command(std::env::args().skip(2).collect()).await,
-        Some("grant") => grant_command(std::env::args().skip(2).collect()).await,
-        Some("reindex") => reindex_command(std::env::args().skip(2).collect()).await,
-        Some("user") => user_command(std::env::args().skip(2).collect()).await,
+        Some("seed") => seed_command(args).await,
+        Some("grant") => grant_command(args).await,
+        Some("reindex") => reindex_command(args).await,
+        Some("user") => user_command(args).await,
+        Some("limits") => limits_command(),
+        Some("help") => {
+            println!("{USAGE}");
+            ExitCode::SUCCESS
+        }
         _ => {
-            eprintln!("usage: naw <serve|migrate|seed|grant|user|reindex>");
+            eprintln!("{USAGE}");
             ExitCode::FAILURE
         }
     }
 }
 
+/// The configuration: the file, the environment, then `--limit`.
 fn load_config() -> Result<naw_core::config::Config, String> {
-    naw_core::config::Config::load("config.toml").map_err(|err| err.to_string())
+    let global = GLOBAL.get_or_init(Global::default);
+    let path = global.config.as_deref().unwrap_or("config.toml");
+    let mut config = naw_core::config::Config::load(path).map_err(|err| err.to_string())?;
+    config
+        .limits
+        .apply_pairs(global.limits.iter().map(String::as_str))
+        .map_err(|err| err.to_string())?;
+    Ok(config)
+}
+
+/// Prints every limit with the value this configuration gives it.
+fn limits_command() -> ExitCode {
+    let config = match load_config() {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("config error: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    println!(
+        "{:<26} {:>12} {:>12}  {:<8} range",
+        "limit", "value", "default", "scope"
+    );
+    for spec in naw_core::limits::SPECS {
+        let value = config.limits.get(spec.name).unwrap_or(spec.default);
+        let scope = match spec.scope {
+            naw_core::limits::Scope::Install => "install",
+            naw_core::limits::Scope::Wiki => "wiki",
+            naw_core::limits::Scope::Lower => "lower",
+        };
+        let mark = if value == spec.default { " " } else { "*" };
+        println!(
+            "{:<26} {:>12}{mark}{:>12}  {:<8} {}..={}  {}",
+            spec.name, value, spec.default, scope, spec.min, spec.max, spec.about
+        );
+    }
+    println!(
+        "\n* differs from the default. Set one in [limits] of the config file, as \
+         NAW_LIMIT_<NAME> in the environment, or with --limit name=value.\n\
+         wiki: each wiki may change it in its settings; lower: only down."
+    );
+    ExitCode::SUCCESS
 }
 
 async fn migrate() -> ExitCode {
@@ -161,6 +269,7 @@ async fn seed_command(raw: Vec<String>) -> ExitCode {
         vtuber,
         community,
         aliases,
+        limits: config.limits.clone(),
     };
     match seed::run(&pool, &seed_dir, &opts).await {
         Ok(()) => {
@@ -274,6 +383,13 @@ async fn reindex_command(raw: Vec<String>) -> ExitCode {
         Ok(pool) => pool,
         Err(code) => return code,
     };
+    let limits = match load_config() {
+        Ok(config) => config.limits,
+        Err(err) => {
+            eprintln!("config error: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
     let wiki_id = match &slug {
         Some(slug) => {
             match sqlx::query!("SELECT id FROM wikis WHERE slug = $1", slug)
@@ -293,7 +409,7 @@ async fn reindex_command(raw: Vec<String>) -> ExitCode {
         }
         None => None,
     };
-    match naw_web::indexing::reindex(&pool, wiki_id).await {
+    match naw_web::indexing::reindex(&pool, &limits, wiki_id).await {
         Ok(count) => {
             println!("reindexed {count} page(s)");
             ExitCode::SUCCESS

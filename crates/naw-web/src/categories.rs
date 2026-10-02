@@ -34,9 +34,6 @@ pub(crate) const PREFIX: &str = "category:";
 /// Prefixes an address may use; all of them land on [`PREFIX`].
 const ALIASES: [&str; 2] = ["category:", "категория:"];
 
-/// Pages one category page lists, at most.
-const MEMBERS_MAX: i64 = 5000;
-
 /// The key after a category prefix, as written.
 pub(crate) fn strip(path: &str) -> Option<&str> {
     ALIASES.iter().find_map(|p| path.strip_prefix(p))
@@ -130,7 +127,7 @@ pub(crate) fn href(ctx: &Ctx, key: &str) -> String {
 /// A category's levels, each with its name and address: `Streams › ARG`.
 fn trail(ctx: &Ctx, name: &str) -> Vec<minijinja::Value> {
     let mut key = String::new();
-    cats::levels(name)
+    cats::levels_in(name, cats::Shape::LOOSEST)
         .into_iter()
         .map(|level| {
             if !key.is_empty() {
@@ -210,7 +207,8 @@ pub(crate) async fn route(
         None => (rest, rest == "*"),
     };
     let deep = deep || star;
-    if let Some(key) = cats::key(rest) {
+    let shape = cats::Shape::of(&ctx.limits);
+    if let Some(key) = cats::key_in(rest, shape) {
         let spelled = canonical_prefix && !star && rest == key;
         if spelled {
             return page(state, ctx, headers, &key, deep).await;
@@ -221,7 +219,7 @@ pub(crate) async fn route(
     }
     // `/category:streams/arg/filian`: an article in that category.
     if let Some((head, slug)) = rest.rsplit_once('/')
-        && let Some(key) = cats::key(head)
+        && let Some(key) = cats::key_in(head, shape)
         && let Some(target) = member_page(state, ctx, &key, slug).await?
     {
         return Ok(pages::see_other(&target));
@@ -316,7 +314,7 @@ async fn inside_of(state: &AppState, ctx: &Ctx, key: &str) -> Result<Inside, App
     for row in written {
         // Each prefix of a written name names a level above it too.
         let mut prefix = String::new();
-        for level in cats::levels(&row.name) {
+        for level in cats::levels_in(&row.name, cats::Shape::LOOSEST) {
             if !prefix.is_empty() {
                 prefix.push(':');
             }
@@ -509,7 +507,7 @@ async fn page(
                 pages => articles,
                 files => files,
                 categories => parents,
-                members_max => MEMBERS_MAX,
+                members_max => ctx.limits.category_pages_shown,
                 deep => deep,
                 has_inside => has_inside,
                 direct_href => canonical(ctx, key, false),
@@ -543,7 +541,7 @@ async fn members(
         key,
         ctx.content_locale,
         ctx.wiki.default_locale,
-        MEMBERS_MAX,
+        ctx.limits.category_pages_shown,
         deep,
         inside(key)
     )

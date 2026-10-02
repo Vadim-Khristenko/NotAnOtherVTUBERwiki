@@ -1,0 +1,33 @@
+# English interface messages: limits, as the admin panel names them.
+#
+# Keys here are asked for as limits.<key>. The file name is the prefix.
+# One key per limit in naw_core::limits; a test checks none is missing.
+
+page_bytes = "Largest article, bytes"
+page_title_chars = "Longest page title, characters"
+edit_summary_chars = "Longest edit summary, characters"
+page_address_chars = "Longest page address, characters"
+category_levels = "Category levels (Streams/ARG/2024 is three)"
+category_key_chars = "Longest category address, characters"
+category_pages_shown = "Pages one category page lists"
+template_depth = "Templates inside templates, deepest"
+template_calls = "Template calls in one page"
+template_output_bytes = "Longest expanded page, bytes"
+templates_per_page = "Different templates in one page"
+template_uses_shown = "Pages listed as using a template"
+recent_changes_shown = "Edits Recent changes shows"
+all_pages_shown = "Titles on one screen of All pages"
+system_list_shown = "Rows on the other special pages"
+files_shown = "Files on one screen of the file lists"
+history_per_page = "Revisions on one screen of a history"
+search_results = "Search results on one screen"
+file_uses_shown = "Pages listed as using a file"
+big_edit_bytes = "Edit size shown in bold, bytes"
+drafts_per_person = "Drafts one person may keep"
+report_message_chars = "Longest report message, characters"
+report_burst = "Reports one person may send in a burst"
+report_burst_minutes = "Length of a burst, minutes"
+reports_open_per_person = "Open reports one person may have"
+uploads_per_day = "Uploads one person may make a day"
+upload_bytes_per_day = "Bytes one person may upload a day"
+file_note_chars = "Longest file note or hiding reason, characters"

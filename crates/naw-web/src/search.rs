@@ -12,9 +12,6 @@ use naw_core::state::AppState;
 use crate::auth::session::CurrentUser;
 use crate::pages::{self, ENGINE_VERSION};
 
-/// Results per page.
-const LIMIT: i64 = 25;
-
 const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; charset=utf-8");
 
 #[derive(Debug, serde::Deserialize)]
@@ -40,7 +37,7 @@ pub async fn search_page(
                     wiki_id: ctx.wiki.id,
                     text,
                     locale: &ctx.content_locale,
-                    limit: LIMIT,
+                    limit: ctx.limits.search_results,
                 })
                 .await?
         }
@@ -76,7 +73,7 @@ pub async fn search_page(
                 searched => normalized.is_some(),
                 results => results,
                 result_count => results.len(),
-                truncated => results.len() as i64 >= LIMIT,
+                truncated => results.len() as i64 >= ctx.limits.search_results,
             }
         })
         .map_err(pages::template_error)?;

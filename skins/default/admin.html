@@ -488,6 +488,38 @@
     </div>
   </form>
 
+  <section class="settings-section" id="limits">
+    <h2>{{ t("admin.limits") }}</h2>
+    <p class="field-note">{{ t("admin.limits_note") }}</p>
+    {% if limits_saved %}<p class="notice notice-ok" role="status">{{ t("admin.limits_saved") }}</p>{% endif %}
+    <form method="post" action="/admin/wiki/limits">
+      <table class="admin-table limits-table">
+        <thead><tr>
+          <th scope="col">{{ t("admin.limit") }}</th>
+          <th scope="col">{{ t("admin.limit_here") }}</th>
+          <th scope="col">{{ t("admin.limit_install") }}</th>
+          <th scope="col">{{ t("admin.limit_range") }}</th>
+        </tr></thead>
+        <tbody>
+        {% for l in limits %}
+        <tr>
+          <td><label for="limit-{{ l.name }}">{{ l.label }}</label> <code class="muted-cell">{{ l.name }}</code></td>
+          <td data-label="{{ t('admin.limit_here') }}">
+            {%- if l.scope == "install" %}<span class="muted-cell">{{ t("admin.limit_install_only") }}</span>
+            {%- else %}<input id="limit-{{ l.name }}" class="field-input limit-input" type="number" name="limit_{{ l.name }}" value="{{ l.value }}" placeholder="{{ l.install }}" min="{{ l.min }}" max="{{ l.max }}" step="1" />{% endif -%}
+          </td>
+          <td data-label="{{ t('admin.limit_install') }}">{{ l.install }}</td>
+          <td data-label="{{ t('admin.limit_range') }}" class="muted-cell">{{ l.min }} … {{ l.max }}{% if l.scope == "lower" %} · {{ t("admin.limit_lower_only") }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <div class="form-actions">
+        <button class="button-save" type="submit">{{ t("admin.limits_save") }}</button>
+      </div>
+    </form>
+  </section>
+
   <section class="settings-section">
     <h2>{{ t("admin.search_index") }}</h2>
     <p class="field-note">{{ t("admin.reindex_note") }}</p>

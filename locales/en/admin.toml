@@ -296,6 +296,17 @@ emotes_refresh_note = "Browsers keep emotes and do not download them again. They
 
 chrome_emotes = "Emotes"
 
+limits = "Limits of this wiki"
+limits_note = "Each limit starts at the install's value. Write a number to change it for this wiki, or leave the field empty to keep the install's. Limits that cost the server (page size, templates, uploads) can only be lowered here; the install's configuration sets the rest."
+limits_saved = "Limits saved."
+limit = "Limit"
+limit_here = "This wiki"
+limit_install = "Install"
+limit_range = "Allowed"
+limit_install_only = "set by the install"
+limit_lower_only = "only lower"
+limits_save = "Save limits"
+
 [unindexed_warning]
 one = "{n} live page is missing from the search index and cannot be found by searching."
 other = "{n} live pages are missing from the search index and cannot be found by searching."

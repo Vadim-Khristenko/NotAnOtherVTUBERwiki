@@ -34,13 +34,7 @@ pub const REASONS: [&str; 6] = [
 pub const STATUSES: [&str; 3] = ["open", "resolved", "dismissed"];
 
 const MESSAGE_MIN: usize = 3;
-const MESSAGE_MAX: usize = 4000;
 const RESPONSE_MAX: usize = 2000;
-/// Reports one person may send in `BURST_MINUTES`.
-const BURST_MAX: i64 = 5;
-const BURST_MINUTES: i32 = 10;
-/// Open reports one person may have on one wiki.
-const OPEN_MAX: i64 = 20;
 const PER_PAGE: i64 = 30;
 /// A suggestion's text box starts with the page's text up to this size; a
 /// bigger page starts empty, and the reader pastes what they changed.
@@ -246,7 +240,7 @@ fn render_form(
                 proposed => filled.proposed,
                 revision => filled.revision.clone(),
                 problem => problem,
-                message_max => MESSAGE_MAX,
+                message_max => ctx.limits.report_message_chars,
             }
         })
         .map_err(pages::template_error)?;
@@ -333,11 +327,11 @@ async fn send(
     };
 
     let chars = message.chars().count();
-    if !(MESSAGE_MIN..=MESSAGE_MAX).contains(&chars) {
+    if !(MESSAGE_MIN..=ctx.limits.report_message_chars).contains(&chars) {
         return refill(
             ctx.t_with(
                 "report.message_length",
-                &[("max", &MESSAGE_MAX.to_string())],
+                &[("max", &ctx.limits.report_message_chars.to_string())],
             ),
             StatusCode::UNPROCESSABLE_ENTITY,
         );
@@ -349,7 +343,7 @@ async fn send(
         );
     }
     if let (Some(text), Subject::Page { found, .. }) = (&proposed, &subject) {
-        if text.len() > pages::BODY_MAX {
+        if text.len() > ctx.limits.page_bytes {
             return refill(ctx.t("report.too_long"), StatusCode::PAYLOAD_TOO_LARGE);
         }
         if text.trim() == found.body_md.trim() {
@@ -371,7 +365,7 @@ async fn send(
                 AND status = 'open' AND subject = $4 AND kind = $5) AS "same!""#,
         me,
         ctx.wiki.id,
-        BURST_MINUTES,
+        ctx.limits.report_burst_minutes as i32,
         key,
         kind
     )
@@ -380,7 +374,8 @@ async fn send(
     if limits.same > 0 {
         return refill(ctx.t("report.already_open"), StatusCode::CONFLICT);
     }
-    if limits.burst >= BURST_MAX || limits.open >= OPEN_MAX {
+    if limits.burst >= ctx.limits.report_burst || limits.open >= ctx.limits.reports_open_per_person
+    {
         return refill(ctx.t("report.slow_down"), StatusCode::TOO_MANY_REQUESTS);
     }
 

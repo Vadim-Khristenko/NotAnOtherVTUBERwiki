@@ -19,12 +19,9 @@ use naw_core::error::AppError;
 use naw_core::state::AppState;
 
 use crate::auth::session::CurrentUser;
-use crate::pages::{self, BODY_MAX, ENGINE_VERSION, template_error};
+use crate::pages::{self, ENGINE_VERSION, template_error};
 use crate::perm::Capability;
 use crate::resolve::Ctx;
-
-/// Drafts one author may keep in one wiki; the oldest ones must go first.
-pub(crate) const DRAFTS_MAX: i64 = 50;
 
 /// One draft as the editor and the list use it.
 pub(crate) struct Draft {
@@ -89,7 +86,7 @@ pub async fn save(
     if path.chars().count() > 109 || (kind == "edit" && !pages::slug_is_valid(&path)) {
         return Ok(json_error(StatusCode::UNPROCESSABLE_ENTITY, "path"));
     }
-    if form.body_md.len() > BODY_MAX
+    if form.body_md.len() > ctx.limits.page_bytes
         || form.title.chars().count() > 200
         || form.summary.chars().count() > 200
     {
@@ -116,7 +113,8 @@ pub async fn save(
         )
         .fetch_optional(&state.db)
         .await?;
-        if existing.is_none() && count(&state, &ctx, user.id).await? >= DRAFTS_MAX {
+        if existing.is_none() && count(&state, &ctx, user.id).await? >= ctx.limits.drafts_per_person
+        {
             return Ok(json_error(StatusCode::CONFLICT, "too many drafts"));
         }
         sqlx::query_scalar!(
@@ -164,7 +162,7 @@ pub async fn save(
         match updated {
             Some(id) => id,
             None => {
-                if count(&state, &ctx, user.id).await? >= DRAFTS_MAX {
+                if count(&state, &ctx, user.id).await? >= ctx.limits.drafts_per_person {
                     return Ok(json_error(StatusCode::CONFLICT, "too many drafts"));
                 }
                 sqlx::query_scalar!(
@@ -246,7 +244,7 @@ pub async fn list(
          ORDER BY updated_at DESC LIMIT $3",
         user.id,
         ctx.wiki.id,
-        DRAFTS_MAX
+        ctx.limits.drafts_per_person
     )
     .fetch_all(&state.db)
     .await?;
@@ -289,7 +287,7 @@ pub async fn list(
                 title => ctx.t("drafts.title"),
                 version => ENGINE_VERSION,
                 drafts => drafts,
-                drafts_max => DRAFTS_MAX,
+                drafts_max => ctx.limits.drafts_per_person,
             }
         })
         .map_err(template_error)?;

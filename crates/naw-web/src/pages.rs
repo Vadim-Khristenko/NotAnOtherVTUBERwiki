@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use naw_core::error::AppError;
 use naw_core::state::AppState;
+use naw_markdown::categories::Shape;
 
 use crate::audit;
 use crate::auth::session::CurrentUser;
@@ -29,14 +30,12 @@ pub(crate) fn template_error(err: minijinja::Error) -> AppError {
 /// Engine version shown in the footer.
 pub(crate) const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-const TITLE_MAX: usize = 200;
-const SUMMARY_MAX: usize = 200;
-/// Largest article text, in bytes of Markdown. Images are uploaded
-/// separately and never count toward it.
-pub(crate) const BODY_MAX: usize = 5 * 1024 * 1024;
 /// Largest form carrying an article: urlencoding can triple the text.
-pub(crate) const TEXT_FORM_MAX: usize = 3 * BODY_MAX + 256 * 1024;
-const SLUG_MAX: usize = 100;
+/// Article text, titles and summaries are limits (`page_bytes` and its
+/// neighbours in `naw_core::limits`).
+pub(crate) fn text_form_max() -> usize {
+    3 * naw_core::limits::install().page_bytes + 256 * 1024
+}
 
 const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; charset=utf-8");
 
@@ -289,10 +288,12 @@ pub(crate) fn split_path(path: &str) -> (&'static str, &str) {
 pub(crate) fn slug_is_valid(path: &str) -> bool {
     match split_path(path) {
         ("file", _) => true,
-        ("category", key) => naw_markdown::categories::key(key).as_deref() == Some(key),
+        ("category", key) => {
+            naw_markdown::categories::key_in(key, Shape::LOOSEST).as_deref() == Some(key)
+        }
         (_, slug) => {
             !slug.is_empty()
-                && slug.len() <= SLUG_MAX
+                && slug.len() <= naw_core::limits::install().page_address_chars
                 && slug
                     .chars()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
@@ -438,7 +439,7 @@ pub(crate) async fn cached_body_full(
 ) -> Result<RenderedPage, AppError> {
     let wiki_id = ctx.wiki.id;
     let expanded = crate::templates::expand(state, ctx, path, body_md).await?;
-    let categories = naw_markdown::categories::of(&expanded.text);
+    let categories = naw_markdown::categories::of_in(&expanded.text, Shape::of(&ctx.limits));
     let body_md = expanded.text.as_str();
     let key = naw_markdown::content_hash(body_md);
     if let Some(row) = sqlx::query!(
@@ -457,7 +458,7 @@ pub(crate) async fn cached_body_full(
             categories,
         });
     }
-    let rendered = render_prepared(&state.db, wiki_id, expanded)
+    let rendered = render_prepared(&state.db, wiki_id, Shape::of(&ctx.limits), expanded)
         .await?
         .rendered;
     sqlx::query!(
@@ -498,17 +499,18 @@ pub(crate) async fn prepare(
     body_md: &str,
 ) -> Result<Prepared, AppError> {
     let expanded = crate::templates::expand(state, ctx, path, body_md).await?;
-    render_prepared(&state.db, ctx.wiki.id, expanded).await
+    render_prepared(&state.db, ctx.wiki.id, Shape::of(&ctx.limits), expanded).await
 }
 
 /// Renders expanded text, then links each uploaded picture to its file page.
 pub(crate) async fn render_prepared(
     db: &sqlx::PgPool,
     wiki_id: Uuid,
+    shape: Shape,
     expanded: crate::templates::Expanded,
 ) -> Result<Prepared, AppError> {
     let text = expanded.text;
-    let categories = naw_markdown::categories::of(&text);
+    let categories = naw_markdown::categories::of_in(&text, shape);
     let mut rendered = tokio::task::spawn_blocking(move || naw_markdown::render_body(&text))
         .await
         .map_err(|err| {
@@ -937,7 +939,7 @@ pub async fn page(
                 docs_href => format!("{}/blob/dev/docs/templates.md", crate::about::SOURCE_URL),
                 uses_total => total,
                 uses => pages.into_iter().map(|u| minijinja::context! { title => u.title, href => u.href }).collect::<Vec<_>>(),
-                uses_shown => crate::templates::USES_SHOWN,
+                uses_shown => ctx.limits.template_uses_shown,
             })
         }
         _ => None,
@@ -1159,16 +1161,21 @@ pub(crate) struct Draft {
 }
 
 /// The reason is plain text; the caller picks the status.
-pub(crate) fn validate(title: &str, summary: &str, body_md: &str) -> Result<Draft, &'static str> {
+pub(crate) fn validate(
+    limits: &naw_core::limits::Limits,
+    title: &str,
+    summary: &str,
+    body_md: &str,
+) -> Result<Draft, &'static str> {
     let title = title.trim().to_string();
-    if title.is_empty() || title.chars().count() > TITLE_MAX {
+    if title.is_empty() || title.chars().count() > limits.page_title_chars {
         return Err("title: 1 to 200 characters");
     }
     let summary = summary.trim().to_string();
-    if summary.chars().count() > SUMMARY_MAX {
+    if summary.chars().count() > limits.edit_summary_chars {
         return Err("summary: up to 200 characters");
     }
-    if body_md.is_empty() || body_md.len() > BODY_MAX {
+    if body_md.is_empty() || body_md.len() > limits.page_bytes {
         return Err(
             "body: from 1 byte to 5 MB of text. Images do not count: each is uploaded on its own",
         );
@@ -1236,8 +1243,8 @@ fn render_form_with(
                 back_href => view.back_href,
                 translation_of => view.translation_of,
                 form_locale => view.form_locale,
-                body_max => BODY_MAX,
-                body_max_mb => naw_core::html::mib(BODY_MAX),
+                body_max => ctx.limits.page_bytes,
+                body_max_mb => naw_core::html::mib(ctx.limits.page_bytes),
                 upload_max => ctx.upload_max_bytes,
                 upload_max_mb => naw_core::html::mib(ctx.upload_max_bytes),
                 locale_options => view.form_locale.map(|_| {
@@ -1427,7 +1434,7 @@ pub async fn create_page(
             &ctx.t("template.no_create"),
         );
     }
-    let mut draft = match validate(&form.title, &form.summary, &form.body_md) {
+    let mut draft = match validate(&ctx.limits, &form.title, &form.summary, &form.body_md) {
         Ok(draft) => draft,
         Err(reason) => return Ok(bad_request(reason)),
     };
@@ -1668,7 +1675,7 @@ pub async fn save_page(
             &explanation,
         );
     }
-    let mut draft = match validate(&form.title, &form.summary, &form.body_md) {
+    let mut draft = match validate(&ctx.limits, &form.title, &form.summary, &form.body_md) {
         Ok(draft) => draft,
         Err(reason) => return Ok(bad_request(reason)),
     };
@@ -1970,10 +1977,10 @@ pub async fn preview(
     if !ctx.actor.can(Capability::PageEdit) && !ctx.actor.can(Capability::PageCreate) {
         return Ok((StatusCode::FORBIDDEN, "preview needs edit rights").into_response());
     }
-    if form.title.chars().count() > TITLE_MAX {
+    if form.title.chars().count() > ctx.limits.page_title_chars {
         return Ok(bad_request("title: 1 to 200 characters"));
     }
-    if form.body_md.len() > BODY_MAX {
+    if form.body_md.len() > ctx.limits.page_bytes {
         return Ok((StatusCode::PAYLOAD_TOO_LARGE, "body: up to 5 MB of text").into_response());
     }
     // A template previews as its own page shows it, or, with `on_page`, as
@@ -2239,24 +2246,45 @@ mod tests {
     #[test]
     fn validation_counts_characters_not_bytes() {
         // 200 Cyrillic characters are 400 bytes; the limit counts characters.
-        let cyrillic = "я".repeat(TITLE_MAX);
-        assert!(validate(&cyrillic, "", "body").is_ok());
-        assert!(validate(&"я".repeat(TITLE_MAX + 1), "", "body").is_err());
+        let limits = naw_core::limits::Limits::default();
+        let cyrillic = "я".repeat(limits.page_title_chars);
+        assert!(validate(&naw_core::limits::Limits::default(), &cyrillic, "", "body").is_ok());
+        assert!(
+            validate(
+                &limits,
+                &"я".repeat(limits.page_title_chars + 1),
+                "",
+                "body"
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn an_empty_title_or_body_is_refused() {
-        assert!(validate("", "", "body").is_err());
-        assert!(validate("   ", "", "body").is_err());
-        assert!(validate("Title", "", "").is_err());
+        assert!(validate(&naw_core::limits::Limits::default(), "", "", "body").is_err());
+        assert!(validate(&naw_core::limits::Limits::default(), "   ", "", "body").is_err());
+        assert!(validate(&naw_core::limits::Limits::default(), "Title", "", "").is_err());
     }
 
     #[test]
     fn a_blank_summary_becomes_null_rather_than_an_empty_string() {
-        assert_eq!(validate("T", "", "b").expect("valid").summary, None);
-        assert_eq!(validate("T", "   ", "b").expect("valid").summary, None);
         assert_eq!(
-            validate("T", " note ", "b").expect("valid").summary,
+            validate(&naw_core::limits::Limits::default(), "T", "", "b")
+                .expect("valid")
+                .summary,
+            None
+        );
+        assert_eq!(
+            validate(&naw_core::limits::Limits::default(), "T", "   ", "b")
+                .expect("valid")
+                .summary,
+            None
+        );
+        assert_eq!(
+            validate(&naw_core::limits::Limits::default(), "T", " note ", "b")
+                .expect("valid")
+                .summary,
             Some("note".to_string())
         );
     }

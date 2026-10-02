@@ -19,12 +19,8 @@ use crate::diff::{self, Row, Side};
 use crate::pages::{self, ENGINE_VERSION, find_page};
 use crate::perm::Capability;
 
-/// Revisions per page of history.
-const PER_PAGE: i64 = 50;
-
-/// An edit this many bytes or more either way is shown in bold, as a hint
-/// that it is worth a look.
-const BIG_EDIT_BYTES: i32 = 500;
+// Revisions per page and the size of an edit shown in bold are limits:
+// `history_per_page`, `big_edit_bytes`.
 
 /// Jump links above a diff; a diff with more runs of changes lists the first ones.
 const HUNK_LINKS_MAX: usize = 30;
@@ -70,7 +66,7 @@ pub async fn history(
 
     // A negative offset is an error in PostgreSQL.
     let page_no = query.page.unwrap_or(1).max(1);
-    let offset = (page_no - 1) * PER_PAGE;
+    let offset = (page_no - 1) * ctx.limits.history_per_page;
 
     let total = sqlx::query!(
         "SELECT count(*) AS \"count!\" FROM revisions WHERE page_id = $1",
@@ -102,7 +98,7 @@ pub async fn history(
         LIMIT $2 OFFSET $3
         "#,
         found.id,
-        PER_PAGE,
+        ctx.limits.history_per_page,
         offset
     )
     .fetch_all(&state.db)
@@ -123,7 +119,7 @@ pub async fn history(
                 bytes => rev.bytes,
                 // The first revision's delta is its whole size.
                 delta => delta.unwrap_or(rev.bytes),
-                delta_big => delta.unwrap_or(rev.bytes).abs() >= BIG_EDIT_BYTES,
+                delta_big => i64::from(delta.unwrap_or(rev.bytes).abs()) >= ctx.limits.big_edit_bytes,
                 prev_id => rev.prev_id.map(|id| id.to_string()),
                 day => ctx.day(rev.created_at),
                 time => time_of(rev.created_at),
@@ -152,7 +148,7 @@ pub async fn history(
                 total => total,
                 page_no => page_no,
                 has_prev => page_no > 1,
-                has_next => offset + PER_PAGE < total,
+                has_next => offset + ctx.limits.history_per_page < total,
                 prev_page => page_no - 1,
                 next_page => page_no + 1,
                 may_edit => may_edit,

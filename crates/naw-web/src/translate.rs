@@ -329,7 +329,7 @@ pub async fn create(
     else {
         return Ok(crate::errors::not_found());
     };
-    let mut draft = match pages::validate(&form.title, &form.summary, &form.body_md) {
+    let mut draft = match pages::validate(&ctx.limits, &form.title, &form.summary, &form.body_md) {
         Ok(draft) => draft,
         Err(reason) => return Ok(pages::bad_request(reason)),
     };

@@ -208,11 +208,8 @@ impl Refusal {
     }
 }
 
-/// Daily allowance per account and wiki, by files and bytes; wiki admins
-/// are exempt.
-const DAILY_UPLOADS: i64 = 300;
-const DAILY_UPLOAD_BYTES: i64 = 2 * 1024 * 1024 * 1024;
-
+/// Whether the actor may upload more today, by files and bytes
+/// (`uploads_per_day`, `upload_bytes_per_day`); wiki admins are exempt.
 pub(crate) async fn within_daily_quota(
     state: &AppState,
     ctx: &crate::resolve::Ctx,
@@ -233,7 +230,7 @@ pub(crate) async fn within_daily_quota(
     )
     .fetch_one(&state.db)
     .await?;
-    Ok(used.files < DAILY_UPLOADS && used.bytes < DAILY_UPLOAD_BYTES)
+    Ok(used.files < ctx.limits.uploads_per_day && used.bytes < ctx.limits.upload_bytes_per_day)
 }
 
 /// The URL of a storage key; every key is served under `/media/`.
