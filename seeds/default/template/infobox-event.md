@@ -14,7 +14,7 @@ nocat: text
 <includeonly>:::infobox {{{name|}}}
 {{#if:{{{image|}}}|![{{{name|}}}]({{{image}}})}}
 {{#if:{{{caption|}}}|*{{{caption}}}*}}
-{{#label:date|Date}} = {{{date|}}}{{#if:{{{end|}}}| … {{{end}}}}}
+{{#label:date|Date}} = {{{date|}}} {{#if:{{{end|}}}|… {{{end}}}}}
 {{#label:place|Where}} = {{{place|}}}
 {{#label:organizer|Organized by}} = {{{organizer|}}}
 {{#label:participants|Taking part}} = {{{participants|}}}

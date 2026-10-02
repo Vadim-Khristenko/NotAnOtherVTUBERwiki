@@ -75,6 +75,15 @@ fn notices_render_with_their_class_and_markdown_inside() {
     }
     let (html, _) = page("{{Update|reason=Old schedule.}}\n");
     assert!(html.contains("Old schedule."), "{html}");
+    // `{{#if:x| text}}` trims its branch, so the space must sit outside it.
+    let (html, _) = page("{{Update|reason=Old schedule.|since=2026-09}}\n");
+    assert!(
+        html.contains("Old schedule. <em>Since 2026-09.</em>"),
+        "{html}"
+    );
+    let (html, _) =
+        page("{{Infobox event\n```yaml\nname: E\ndate: 2026-01-01\nend: 2026-01-03\n```\n}}\n");
+    assert!(html.contains("2026-01-01 … 2026-01-03"), "{html}");
 }
 
 #[test]

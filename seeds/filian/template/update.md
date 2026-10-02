@@ -6,7 +6,7 @@ nocat: text
 </params>
 <includeonly><div class="wiki-notice wiki-notice-update">
 
-**{{#label:title|This page must be updated.}}** {{#if:{{{reason|}}}|{{{reason}}}|{{#label:text|Some of what it says is out of date. Check it against the latest streams and sources, then remove this notice.}}}}{{#if:{{{since|}}}| *{{#label:since|Since}} {{{since}}}.*}}
+**{{#label:title|This page must be updated.}}** {{#if:{{{reason|}}}|{{{reason}}}|{{#label:text|Some of what it says is out of date. Check it against the latest streams and sources, then remove this notice.}}}} {{#if:{{{since|}}}|*{{#label:since|Since}} {{{since}}}.*}}
 
 </div>
 
