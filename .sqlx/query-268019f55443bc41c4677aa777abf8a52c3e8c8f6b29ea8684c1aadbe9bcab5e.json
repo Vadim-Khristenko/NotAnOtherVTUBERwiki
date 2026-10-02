@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO page_categories (page_id, wiki_id, category, name, sort_key)\n             SELECT $1, $2, k, n, s FROM unnest($3::text[], $4::text[], $5::text[]) AS t(k, n, s)\n             WHERE EXISTS (SELECT 1 FROM pages p WHERE p.id = $1 AND p.namespace <> 'page_template')\n             ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "TextArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "268019f55443bc41c4677aa777abf8a52c3e8c8f6b29ea8684c1aadbe9bcab5e"
+}

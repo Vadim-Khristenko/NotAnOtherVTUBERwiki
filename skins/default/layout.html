@@ -706,6 +706,26 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
 .category-box ul { display: flex; flex-wrap: wrap; gap: 0.2rem var(--s3); list-style: none; margin: 0; padding: 0; }
 .category-box li + li::before { content: "·"; margin-right: var(--s3); color: var(--faint); }
 .category-sep { color: var(--faint); }
+/* Notices pages put up with templates ({{Update}}, {{Stub}}...): one shape,
+   a color per kind, mixed into the theme so both themes read well. */
+.content .wiki-notice { --notice: var(--accent); margin: var(--s4) 0; padding: var(--s3) var(--s4); border: 1px solid color-mix(in srgb, var(--notice) 45%, var(--line)); border-left: 4px solid var(--notice); border-radius: var(--radius); background: color-mix(in srgb, var(--notice) 10%, var(--bg-elevated)); }
+.content .wiki-notice p { margin: 0; }
+.content .wiki-notice p + p { margin-top: var(--s2); }
+.content .wiki-notice strong { color: var(--ink); }
+.wiki-notice-update { --notice: #e0a100; }
+.wiki-notice-stub { --notice: #3b82f6; }
+.wiki-notice-sources { --notice: #f97316; }
+.wiki-notice-cleanup { --notice: #a855f7; }
+.wiki-notice-progress { --notice: #14b8a6; }
+.wiki-notice-disputed { --notice: #ef4444; }
+.wiki-notice-spoiler { --notice: #64748b; }
+.wiki-notice-speculation { --notice: #8b5cf6; }
+.wiki-notice-fan { --notice: var(--accent); }
+.content .wiki-hatnote { margin: 0 0 var(--s3); padding-left: var(--s4); font-style: italic; color: var(--muted); }
+.content .wiki-hatnote p { margin: 0; }
+.content .wiki-navbox { margin: var(--s5) 0 var(--s3); padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elevated); font-size: 0.92rem; }
+.content .wiki-navbox p { margin: 0; }
+.content .wiki-cn { font-size: 0.75em; color: var(--muted); white-space: nowrap; }
 .limits-table .limit-input { max-width: 10rem; }
 .limits-table code { font-size: 0.75rem; }
 .recent-title { font-weight: 600; }

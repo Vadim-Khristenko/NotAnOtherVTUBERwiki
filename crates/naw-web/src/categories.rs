@@ -58,10 +58,13 @@ pub(crate) async fn record(
     sqlx::query!("DELETE FROM page_categories WHERE page_id = $1", page_id)
         .execute(&mut *tx)
         .await?;
+    // A page template is a blueprint: the categories its text names are
+    // for the pages started from it.
     if !keys.is_empty() {
         sqlx::query!(
             "INSERT INTO page_categories (page_id, wiki_id, category, name, sort_key)
              SELECT $1, $2, k, n, s FROM unnest($3::text[], $4::text[], $5::text[]) AS t(k, n, s)
+             WHERE EXISTS (SELECT 1 FROM pages p WHERE p.id = $1 AND p.namespace <> 'page_template')
              ON CONFLICT DO NOTHING",
             page_id,
             wiki_id,
@@ -104,6 +107,21 @@ pub(crate) async fn sync(
     let Ok(stored) = stored else {
         return;
     };
+    // A page template never joins its categories (see `record`).
+    if stored.is_empty()
+        && !categories.is_empty()
+        && sqlx::query_scalar!(
+            r#"SELECT (namespace = 'page_template') AS "blueprint!" FROM pages WHERE id = $1"#,
+            page_id
+        )
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+    {
+        return;
+    }
     let mut have: Vec<(String, String, Option<String>)> = stored
         .into_iter()
         .map(|r| (r.category, r.name, r.sort_key))

@@ -86,11 +86,15 @@ async fn seed_files(
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
         let path = entry.path();
-        let slug = path
+        let stem = path
             .file_stem()
             .and_then(|stem| stem.to_str())
-            .unwrap_or_default()
-            .to_string();
+            .unwrap_or_default();
+        // `update.ru.md` is the Russian version of `update`.
+        let (slug, locale) = match stem.rsplit_once('.') {
+            Some((slug, locale)) if is_locale(locale) => (slug.to_string(), locale.to_string()),
+            _ => (stem.to_string(), opts.locale.clone()),
+        };
         if slug.is_empty() {
             continue;
         }
@@ -113,9 +117,18 @@ async fn seed_files(
             title: &title,
             body_md: &body_md,
         };
-        ensure_page(pool, wiki_id, &opts.locale, &page).await?;
+        ensure_page(pool, wiki_id, &locale, &page).await?;
     }
     Ok(())
+}
+
+/// A language code as a seed file name carries it: `ru`, `pt-br`.
+fn is_locale(raw: &str) -> bool {
+    let mut parts = raw.split('-');
+    parts
+        .next()
+        .is_some_and(|p| (2..=3).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_lowercase()))
+        && parts.all(|p| (2..=4).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_alphanumeric()))
 }
 
 /// `<!-- title: Name -->` in the first lines of a file.
@@ -196,10 +209,12 @@ async fn ensure_page(
     page: &Page<'_>,
 ) -> Result<(), AppError> {
     if sqlx::query!(
-        "SELECT id FROM pages WHERE wiki_id = $1 AND namespace = ($3::text)::page_namespace AND slug = $2",
+        "SELECT id FROM pages WHERE wiki_id = $1 AND namespace = ($3::text)::page_namespace
+           AND slug = $2 AND COALESCE(locale, '') = $4",
         wiki_id,
         page.slug,
-        page.namespace
+        page.namespace,
+        locale
     )
     .fetch_optional(pool)
     .await?
@@ -309,6 +324,8 @@ mod tests {
             Some("Welcome to W on d.test with V and fans")
         );
         assert_eq!(first_heading("no heading here\n"), None);
+        assert!(is_locale("ru") && is_locale("pt-br"));
+        assert!(!is_locale("vtuber-article") && !is_locale("RU") && !is_locale("r"));
         assert_eq!(leftover_placeholder("clean {Wiki} and {a b} text\n"), None);
         assert_eq!(
             leftover_placeholder("typo {wiki_nmae} here\n").as_deref(),

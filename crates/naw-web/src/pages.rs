@@ -844,7 +844,12 @@ pub async fn page(
     } = cached_body_full(&state, &ctx, &slug, &found.body_md).await?;
     // A template edit can change a page's categories without a save.
     crate::categories::sync(&state.db, ctx.wiki.id, found.id, &categories).await;
-    let category_links = crate::categories::links(&ctx, &categories);
+    // A page template's categories are for the pages started from it.
+    let category_links = if split_path(&slug).0 == "page_template" {
+        Vec::new()
+    } else {
+        crate::categories::links(&ctx, &categories)
+    };
     // A template's page says how to use it and where it is used.
     let template = match split_path(&slug) {
         // A page template's page: what it is and a way to start a page from it.
