@@ -28,6 +28,31 @@ const alternates = [
   ...languages.map((l) => `<link rel="alternate" hreflang="${l.code}" href="${url(l.code)}" />`),
   `<link rel="alternate" hreflang="x-default" href="${url("en")}" />`,
 ].join("\n");
+// OpenGraph spells a language as a territory: ru_RU, en_US.
+const ogLocale = (code: string) => ({ en: "en_US", ru: "ru_RU", uk: "uk_UA", be: "be_BY" })[code] ?? code;
+// What search engines read about the site and its subject, in the page's language.
+const structured = (code: string, dict: Record<string, string>) =>
+  JSON.stringify({
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://filian.wiki/#site",
+        url: url(code),
+        name: "FilianWIKI",
+        description: dict["meta.description"],
+        inLanguage: code,
+        about: { "@id": "https://filian.wiki/#filian" },
+      },
+      {
+        "@type": "Person",
+        "@id": "https://filian.wiki/#filian",
+        name: "Filian",
+        alternateName: "Филиан",
+        sameAs: ["https://www.twitch.tv/filian"],
+      },
+    ],
+  }).replace(/</g, "\\u003c");
 
 for (const { code } of languages) {
   const dict = code === "en" ? en : { ...en, ...JSON.parse(readFileSync(`public/assets/i18n/${code}.json`, "utf8")) };
@@ -42,6 +67,14 @@ for (const { code } of languages) {
     .replace(/<meta property="og:title" content="[^"]*"/, `<meta property="og:title" content="${title}"`)
     .replace(/<meta property="og:description" content="[^"]*"/, `<meta property="og:description" content="${share}"`)
     .replace(/<meta property="og:url" content="[^"]*"/, `<meta property="og:url" content="${url(code)}"`)
+    .replace(
+      /<meta property="og:type" content="website" \/>/,
+      `<meta property="og:type" content="website" />\n<meta property="og:site_name" content="FilianWIKI" />\n<meta property="og:locale" content="${ogLocale(code)}" />\n${languages
+        .filter((l) => l.code !== code)
+        .map((l) => `<meta property="og:locale:alternate" content="${ogLocale(l.code)}" />`)
+        .join("\n")}`,
+    )
+    .replace("</head>", `<script type="application/ld+json">${structured(code, dict)}</script>\n</head>`)
     .replace(/<link rel="canonical" href="[^"]*" \/>/, `<link rel="canonical" href="${url(code)}" />\n${alternates}`)
     .replace(/<link rel="preload" href="\/assets\/fonts\/[^"]+" as="font" type="font\/woff2" crossorigin \/>/, preloads(code))
     .replace(/<link rel="stylesheet" href="\/assets\/fonts\/fonts\.css" \/>/, `<style>${fontCss}</style>`)
@@ -56,3 +89,17 @@ for (const { code } of languages) {
   writeFileSync(out, page);
   console.log(`${code}: ${Math.round(page.length / 1024)} KB -> ${out}`);
 }
+
+// Every language's page, each naming the others, for search engines.
+const today = new Date().toISOString().slice(0, 10);
+const links = languages
+  .map((l) => `    <xhtml:link rel="alternate" hreflang="${l.code}" href="${url(l.code)}"/>`)
+  .concat(`    <xhtml:link rel="alternate" hreflang="x-default" href="${url("en")}"/>`)
+  .join("\n");
+const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+${languages.map((l) => `  <url>\n    <loc>${url(l.code)}</loc>\n    <lastmod>${today}</lastmod>\n${links}\n  </url>`).join("\n")}
+</urlset>
+`;
+writeFileSync("dist/sitemap.xml", sitemap);
+console.log(`sitemap: ${languages.length} pages -> dist/sitemap.xml`);
