@@ -212,6 +212,15 @@ The part that makes it a wiki rather than a blog.
       templates) with an A to Z bar and paging; categories, new pages, templates by use and
       active editors; and for upkeep, pages in no category, categories with no description,
       pages missing in this language, short, long and stale pages, and unused files
+- [x] Pending changes: a wiki may hold back new pages, edits, or both, from people without
+      the pass until a curator accepts them; readers keep the accepted text. A review queue
+      with the changes and a preview, refusing an accept that would drop a later edit, a list
+      of edits nobody checked, and a one-click rollback of the last author
+- [x] Maintenance notices as templates (Update, Stub, Sources needed, Citation needed,
+      Cleanup, Disputed, In progress, Spoiler, Speculation) that file pages under
+      Maintenance/..., and infoboxes for streams, songs and events with page templates
+- [x] Every content and people limit in one table, set by the config file, the environment
+      or the command line, and per wiki where it is cheap. See [configuration.md](configuration.md)
 - [ ] Watchlists. Recent changes and patrolling work; watchlists do not exist yet
 - [ ] Audit log with a retention policy. The log is written and browsable; retention is not in
 - [x] Search behind a swappable backend, PostgreSQL full text first. A long article is
