@@ -339,8 +339,10 @@ community rather than to us. The landing is live there; the wiki itself is in cl
 
 The things that decide whether anyone finds the wiki.
 
-- OpenGraph and Twitter cards, with generated share images
-- `sitemap.xml`, `robots.txt`, canonical URLs
+- [x] OpenGraph and Twitter cards: a description from the opening paragraph and the
+      article's first picture. Generated share images are still to do
+- [x] `sitemap.xml` with every language of every article, `robots.txt`, canonical URLs on
+      the wiki's own domain, `hreflang`, and `noindex` on every page that is a tool
 - Antispam: registration CAPTCHA, external link limits, new user heuristics
 - [x] Notifications on the site: edits to watched pages, the review of your own edits and
       answers to your reports, behind a bell with an unread count
