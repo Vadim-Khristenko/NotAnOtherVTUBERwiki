@@ -232,6 +232,7 @@ fn routes(state: AppState) -> Router {
         .route("/drafts", get(drafts::list))
         .route("/drafts/save", post(drafts::save).layer(text_form()))
         .route("/drafts/{id}/delete", post(drafts::discard))
+        .route("/drafts/review/{id}/withdraw", post(review::withdraw))
         .route("/notifications", get(notify::list))
         .route("/watchlist", get(notify::watchlist))
         .route("/", get(pages::home))

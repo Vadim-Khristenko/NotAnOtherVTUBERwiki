@@ -45,6 +45,13 @@ page_waits_mine = "Your new page \"{title}\" was sent for review. Readers will s
 to_queue = "Open the review queue"
 sent = "Your edit was sent for review. Readers see the page as it was until a curator accepts it."
 yours_waits = "Your edit to this page waits for review."
+mine_title = "My edits in review"
+mine_note = "Saved, but readers do not see them yet. A curator accepts or turns them down; what was turned down stays here for 30 days with the reason."
+note_from_reviewer = "Reviewer:"
+withdraw = "Take back"
+withdrawn = "The edit is out of the queue. It stays in the page history as turned down by you."
+withdrawn_note = "Taken back by its author"
+
 settings = "Review before publishing"
 settings_note = "Hold back what people without the pass publish until a curator accepts it. Curators and up have the pass; give it to anyone else under their account's individual rights."
 settings_new_pages = "New pages wait for review"

@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE revisions r SET review_status = 'rejected', reviewed_by = $2, reviewed_at = now(),\n                                review_note = $3\n         FROM pages p\n         WHERE r.id = $1 AND r.page_id = p.id AND p.wiki_id = $4\n           AND r.author_id = $2 AND r.review_status = 'pending'\n         RETURNING r.page_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "page_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "page_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "25979ab7c1cd148975eb6682a10b182650aa52a1da30956fcb3052c712558956"
+}

@@ -7,7 +7,7 @@
 //! its own id and opens from "My drafts". Saving the page clears its draft.
 //! Drafts are private: only their author ever reads them.
 
-use axum::extract::{Form, Path, State};
+use axum::extract::{Form, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::{Extension, Json};
@@ -226,10 +226,19 @@ pub async fn discard(
     Ok(Redirect::to(next).into_response())
 }
 
-/// GET /drafts: the author's drafts in this wiki, newest first.
+#[derive(Debug, Deserialize)]
+pub struct ListQuery {
+    /// Back from taking an edit out of review, to say so.
+    #[serde(default)]
+    withdrawn: Option<String>,
+}
+
+/// GET /drafts: the author's drafts in this wiki, newest first, and under
+/// them their edits that wait for review or were turned down.
 pub async fn list(
     State(state): State<AppState>,
     Extension(user): Extension<Option<CurrentUser>>,
+    Query(query): Query<ListQuery>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let Some(user) = user else {
@@ -275,6 +284,7 @@ pub async fn list(
             }
         })
         .collect();
+    let waiting = crate::review::mine(&state, &ctx, user.id).await?;
     let template = ctx
         .skin
         .env
@@ -288,6 +298,8 @@ pub async fn list(
                 version => ENGINE_VERSION,
                 drafts => drafts,
                 drafts_max => ctx.limits.drafts_per_person,
+                waiting => waiting,
+                withdrawn => query.withdrawn.is_some(),
             }
         })
         .map_err(template_error)?;

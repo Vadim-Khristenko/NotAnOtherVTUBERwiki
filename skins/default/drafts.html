@@ -5,6 +5,7 @@
 #}
 {% block body %}
 <h1>{{ t("drafts.title") }}</h1>
+{% if withdrawn %}<p class="notice notice-ok" role="status">{{ t("review.withdrawn") }}</p>{% endif %}
 <p class="field-note">{{ t("drafts.note") }}</p>
 {% if drafts %}
 <ul class="report-cards" role="list">
@@ -31,5 +32,34 @@
 <p class="muted-cell">{{ t("drafts.limit", n=drafts_max) }}</p>
 {% else %}
 <p class="muted-cell">{{ t("drafts.empty") }}</p>
+{% endif %}
+{% if waiting %}
+{# Saved, but not yet what readers see: the review queue has it, or turned
+   it down. Only the author's own rows. #}
+<h2 id="review">{{ t("review.mine_title") }}</h2>
+<p class="field-note">{{ t("review.mine_note") }}</p>
+<ul class="report-cards" role="list">
+  {% for w in waiting %}
+  <li class="report-card review-mine-{{ w.status }}">
+    <div class="report-card-head">
+      <span class="tag{% if w.status == 'rejected' %} tag-warn{% endif %}">{{ w.status_label }}</span>
+      {% if w.is_new %}<span class="tag">{{ t("review.new_page") }}</span>{% endif %}
+      <code>/{{ w.path }}</code>
+    </div>
+    <p class="report-card-subject"><a href="{{ w.href }}">{{ w.title }}</a></p>
+    {% if w.summary %}<p class="report-card-message">{{ w.summary }}</p>{% endif %}
+    {% if w.note %}<p class="report-card-message"><strong>{{ t("review.note_from_reviewer") }}</strong> {{ w.note }}</p>{% endif %}
+    <div class="report-card-foot">
+      <span class="muted-cell">{{ w.at }}</span>
+      {% if not w.is_new %}<a href="{{ w.history_href }}">{{ t("nav.history") }}</a>{% endif %}
+      {% if w.withdraw_action %}
+      <form method="post" action="{{ w.withdraw_action }}" class="inline-form">
+        <button class="link-button" type="submit">{{ t("review.withdraw") }}</button>
+      </form>
+      {% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
 {% endif %}
 {% endblock %}

@@ -608,6 +608,137 @@ pub async fn reject(
     Ok(pages::see_other("/admin/review?done=rejected"))
 }
 
+/// Days a turned-down edit stays on its author's list.
+const REJECTED_SHOWN_DAYS: i32 = 30;
+
+/// How many of their own edits an author's list shows.
+const MINE_SHOWN: i64 = 50;
+
+/// The author's edits here that wait for review, and those turned down in
+/// the last [`REJECTED_SHOWN_DAYS`], newest first.
+pub(crate) async fn mine(
+    state: &AppState,
+    ctx: &Ctx,
+    user_id: Uuid,
+) -> Result<Vec<minijinja::Value>, AppError> {
+    let rows = sqlx::query!(
+        r#"SELECT r.id, r.review_status, r.review_note, r.summary, r.created_at, r.review_title,
+                  r.base_revision_id, p.namespace::text AS "namespace!", p.slug, p.title,
+                  COALESCE(p.locale, '') AS "locale!"
+           FROM revisions r JOIN pages p ON p.id = r.page_id
+           WHERE r.author_id = $1 AND r.review_status <> 'accepted'
+             AND p.wiki_id = $2 AND p.deleted_at IS NULL
+             AND (r.review_status = 'pending'
+                  OR r.reviewed_at > now() - make_interval(days => $3))
+           ORDER BY r.created_at DESC
+           LIMIT $4"#,
+        user_id,
+        ctx.wiki.id,
+        REJECTED_SHOWN_DAYS,
+        MINE_SHOWN
+    )
+    .fetch_all(&state.db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let (path, href) = page_link(ctx, &r.namespace, &r.slug, &r.locale);
+            let pending = r.review_status == "pending";
+            minijinja::context! {
+                title => r.review_title.unwrap_or(r.title),
+                path => path.clone(),
+                href => href,
+                history_href => crate::notify::history_link(ctx, &r.locale, &path),
+                is_new => r.base_revision_id.is_none(),
+                status => r.review_status.clone(),
+                status_label => ctx.t(&format!("review.status_{}", r.review_status)),
+                note => r.review_note.filter(|n| !n.trim().is_empty()),
+                summary => r.summary.filter(|s| !s.trim().is_empty()),
+                at => format!("{}, {} UTC", ctx.day(r.created_at), r.created_at.format("%H:%M")),
+                withdraw_action => pending.then(|| format!("/drafts/review/{}/withdraw", r.id)),
+            }
+        })
+        .collect())
+}
+
+/// Turns the author's waiting edit `id` down in their name, inside the
+/// caller's transaction, and removes a new page left with nothing. The page
+/// and whether it went; `None` unless it is this author's, in this wiki, and
+/// still waiting.
+async fn take_back(
+    conn: &mut sqlx::PgConnection,
+    wiki_id: Uuid,
+    author: Uuid,
+    id: Uuid,
+    note: &str,
+) -> Result<Option<(Uuid, bool)>, AppError> {
+    let Some(page_id) = sqlx::query_scalar!(
+        "UPDATE revisions r SET review_status = 'rejected', reviewed_by = $2, reviewed_at = now(),
+                                review_note = $3
+         FROM pages p
+         WHERE r.id = $1 AND r.page_id = p.id AND p.wiki_id = $4
+           AND r.author_id = $2 AND r.review_status = 'pending'
+         RETURNING r.page_id",
+        id,
+        author,
+        note,
+        wiki_id
+    )
+    .fetch_optional(&mut *conn)
+    .await?
+    else {
+        return Ok(None);
+    };
+    let removed = sqlx::query!(
+        "DELETE FROM pages p WHERE p.id = $1 AND p.current_revision_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.page_id = p.id AND r.review_status = 'pending')",
+        page_id
+    )
+    .execute(&mut *conn)
+    .await?
+    .rows_affected()
+        > 0;
+    Ok(Some((page_id, removed)))
+}
+
+/// POST /drafts/review/{id}/withdraw: the author takes back an edit that
+/// still waits. It stays in the history as turned down, by its author; a new
+/// page with nothing else waiting goes, so its address is free again.
+pub async fn withdraw(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(pages::see_other("/login?next=%2Fdrafts"));
+    };
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, Some(&user)).await?);
+    let Some(id) = pages::parse_uuid(&id) else {
+        return Ok(crate::errors::not_found());
+    };
+    let note = ctx.t("review.withdrawn_note");
+    let mut tx = state.db.begin().await?;
+    let Some((page_id, removed)) = take_back(&mut tx, ctx.wiki.id, user.id, id, &note).await?
+    else {
+        return Ok(crate::errors::not_found());
+    };
+    tx.commit().await?;
+    crate::audit::record_or_log(
+        &state.db,
+        crate::audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: Some(user.id),
+            action: "revision.withdraw",
+            entity_type: "revision",
+            entity_id: Some(id),
+            meta: json!({ "page": page_id, "removed_new_page": removed }),
+        },
+    )
+    .await;
+    Ok(pages::see_other("/drafts?withdrawn=1"))
+}
+
 fn refuse(ctx: &Ctx, back: &str, status: StatusCode, key: &str) -> Result<Response, AppError> {
     pages::notice(
         ctx,
@@ -844,6 +975,94 @@ mod db_tests {
         assert!(
             stale.outdated(),
             "accepting it now would drop the later edit"
+        );
+    }
+
+    async fn user(db: &PgPool, name: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $2 || '@example.test', 'x')",
+        )
+        .bind(id)
+        .bind(name)
+        .execute(db)
+        .await
+        .expect("user");
+        id
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn only_its_author_takes_an_edit_back(db: PgPool) {
+        let (wiki, page, rev) = page_with_text(&db, "accepted text").await;
+        let alice = user(&db, "alice").await;
+        let bob = user(&db, "bob").await;
+        let mut conn = db.acquire().await.expect("conn");
+        let pending = save_pending(
+            &mut conn,
+            page,
+            Some(rev),
+            Some(alice),
+            "A",
+            None,
+            "alice's text",
+            false,
+        )
+        .await
+        .expect("pending");
+        assert!(
+            take_back(&mut conn, wiki, bob, pending, "x")
+                .await
+                .expect("q")
+                .is_none(),
+            "not his"
+        );
+        assert!(
+            take_back(&mut conn, Uuid::new_v4(), alice, pending, "x")
+                .await
+                .expect("q")
+                .is_none(),
+            "not this wiki"
+        );
+        assert_eq!(
+            take_back(&mut conn, wiki, alice, pending, "taken back")
+                .await
+                .expect("q"),
+            Some((page, false)),
+            "the page keeps its accepted text"
+        );
+        let status: String =
+            sqlx::query_scalar("SELECT review_status FROM revisions WHERE id = $1")
+                .bind(pending)
+                .fetch_one(&db)
+                .await
+                .expect("status");
+        assert_eq!(status, "rejected");
+        assert!(
+            take_back(&mut conn, wiki, alice, pending, "x")
+                .await
+                .expect("q")
+                .is_none(),
+            "once is enough"
+        );
+
+        // A new page that only ever waited goes with its edit.
+        let fresh = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO pages (id, wiki_id, namespace, slug, title, locale) VALUES ($1, $2, 'main', 'b', 'B', 'en')",
+        )
+        .bind(fresh)
+        .bind(wiki)
+        .execute(&db)
+        .await
+        .expect("page");
+        let first = save_pending(&mut conn, fresh, None, Some(alice), "B", None, "b", false)
+            .await
+            .expect("pending");
+        assert_eq!(
+            take_back(&mut conn, wiki, alice, first, "x")
+                .await
+                .expect("q"),
+            Some((fresh, true))
         );
     }
 }

@@ -1,0 +1,141 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.review_status, r.review_note, r.summary, r.created_at, r.review_title,\n                  r.base_revision_id, p.namespace::text AS \"namespace!\", p.slug, p.title,\n                  COALESCE(p.locale, '') AS \"locale!\"\n           FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE r.author_id = $1 AND r.review_status <> 'accepted'\n             AND p.wiki_id = $2 AND p.deleted_at IS NULL\n             AND (r.review_status = 'pending'\n                  OR r.reviewed_at > now() - make_interval(days => $3))\n           ORDER BY r.created_at DESC\n           LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "review_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "review_status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "review_note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "review_note"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "summary",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "review_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "review_title"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "base_revision_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "base_revision_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "locale!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      null,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "b565c51ebab4ad07312eaffe17287e752b920ceabbb390acaab6700a331cffbb"
+}
