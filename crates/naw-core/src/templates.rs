@@ -41,6 +41,8 @@ const TEMPLATES: &[&str] = &[
     "source.html",
     "report.html",
     "drafts.html",
+    "notifications.html",
+    "watchlist.html",
     "category.html",
     "_categories.html",
     "admin.html",

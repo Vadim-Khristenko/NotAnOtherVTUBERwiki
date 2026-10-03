@@ -26,6 +26,16 @@
     <a class="page-action" href="{{ base }}/{{ slug }}/edit" rel="nofollow" {% if protection %}title="{{ t('page.locked_hint') }}"{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-{% if protection %}lock{% else %}code{% endif %}" /></svg>{{ t("nav.view_source") }}</a>
   {% endif %}
   <a class="page-action" href="{{ base }}/{{ slug }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
+  {% if watching is defined and watching is not none %}
+  {# Signed-in readers only: a watch covers every language of this address. #}
+  <form class="inline-form" method="post" action="{{ base }}/{{ slug }}/watch">
+    <input type="hidden" name="on" value="{% if watching %}0{% else %}1{% endif %}" />
+    <button class="page-action watch-toggle{% if watching %} is-on{% endif %}" type="submit" aria-pressed="{% if watching %}true{% else %}false{% endif %}"
+            title="{% if watching %}{{ t('notify.unwatch_hint') }}{% else %}{{ t('notify.watch_hint') }}{% endif %}">
+      <svg class="icon" aria-hidden="true"><use href="#i-star" /></svg>{% if watching %}{{ t("notify.unwatch") }}{% else %}{{ t("notify.watch") }}{% endif %}
+    </button>
+  </form>
+  {% endif %}
   {% if protect_choices %}
   {# Curators and up: who may edit this page. Only the levels this reader may
      set are offered, so the form cannot promise what the server refuses. #}

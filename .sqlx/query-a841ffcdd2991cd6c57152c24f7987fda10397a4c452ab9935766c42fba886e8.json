@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO watches (user_id, wiki_id, namespace, slug)\n             VALUES ($1, $2, ($3::text)::page_namespace, $4)\n             ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a841ffcdd2991cd6c57152c24f7987fda10397a4c452ab9935766c42fba886e8"
+}

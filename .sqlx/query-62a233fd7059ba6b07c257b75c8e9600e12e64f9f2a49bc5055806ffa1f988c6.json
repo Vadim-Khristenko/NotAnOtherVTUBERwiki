@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH old AS (\n             SELECT id, status FROM reports WHERE id = $1 AND wiki_id = $2 FOR UPDATE\n           )\n           UPDATE reports r SET status = $3,\n                  handled_by = CASE WHEN $4 THEN NULL ELSE $5::uuid END,\n                  handled_at = CASE WHEN $4 THEN NULL ELSE now() END,\n                  response = CASE WHEN $6 = '' THEN r.response ELSE $6 END\n           FROM old WHERE r.id = old.id\n           RETURNING old.status AS was, r.kind, r.reporter_id, r.subject,\n                     (SELECT p.title FROM pages p WHERE p.id = r.page_id AND p.deleted_at IS NULL) AS page_title",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "was",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "reporter_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "reporter_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "subject",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "subject"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "page_title",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Bool",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "62a233fd7059ba6b07c257b75c8e9600e12e64f9f2a49bc5055806ffa1f988c6"
+}

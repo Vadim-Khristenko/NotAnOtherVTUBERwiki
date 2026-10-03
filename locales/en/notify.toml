@@ -1,0 +1,33 @@
+# English interface messages: the watchlist and notifications.
+#
+# Keys here are asked for as notify.<key>. The file name is the prefix.
+
+title = "Notifications"
+note = "Changes to pages you watch, how review went for your edits, and answers to your reports. Opening this page marks them read."
+empty = "Nothing yet. Watch a page with the star above it, and its changes will show here."
+shown = "The newest {n} are shown. Read ones go after 90 days."
+open = "Open"
+
+kind_page_edited = "{who} changed {title}"
+kind_edit_accepted = "{who} accepted your edit of {title}"
+kind_edit_rejected = "{who} turned down your edit of {title}"
+kind_report_answered = "The wiki team answered your report about {title}"
+
+watch = "Watch"
+unwatch = "Watching"
+unwatch_hint = "You are told when this page changes. Press to stop."
+watch_hint = "Be told when this page changes"
+
+watchlist_title = "Watchlist"
+watchlist_note = "Pages you watch, by their latest change. Pages you create or edit are added on their own; every language version of a page comes along."
+watchlist_empty = "You watch no pages yet. Press the star above a page to add it."
+watchlist_gone = "no page at this address now"
+watchlist_by = "by {who}"
+watchlist_minor = "minor"
+watchlist_history = "history"
+watchlist_stop = "Stop watching"
+watchlist_more = "The {shown} most recently changed of {total} are shown."
+
+[unread]
+one = "{n} unread notification"
+other = "{n} unread notifications"

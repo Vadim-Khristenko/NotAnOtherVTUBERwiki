@@ -1,0 +1,27 @@
+{% extends "layout.html" %}
+{#
+  The reader's notifications in this wiki. Private: rendered only for the
+  signed-in owner. Opening the page reads them, so `unread` marks what was new
+  when the page was opened.
+#}
+{% block body %}
+<h1>{{ t("notify.title") }}</h1>
+<p class="field-note">{{ t("notify.note") }}</p>
+{% if items %}
+<ul class="notify-list" role="list">
+  {% for n in items %}
+  <li class="notify-item notify-{{ n.kind }}{% if n.unread %} is-unread{% endif %}">
+    <svg class="icon" aria-hidden="true"><use href="#i-{% if n.kind == 'page_edited' %}pencil{% elif n.kind == 'edit_accepted' %}clipboard-check{% elif n.kind == 'edit_rejected' %}x{% else %}flag{% endif %}" /></svg>
+    <div class="notify-body">
+      <p class="notify-text">{% if n.href %}<a href="{{ n.href }}">{{ n.text }}</a>{% else %}{{ n.text }}{% endif %}</p>
+      {% if n.note %}<p class="notify-note">{{ n.note }}</p>{% endif %}
+      <p class="muted-cell">{{ n.at }}</p>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% if items | length >= shown %}<p class="muted-cell">{{ t("notify.shown", n=shown) }}</p>{% endif %}
+{% else %}
+<p class="muted-cell">{{ t("notify.empty") }}</p>
+{% endif %}
+{% endblock %}

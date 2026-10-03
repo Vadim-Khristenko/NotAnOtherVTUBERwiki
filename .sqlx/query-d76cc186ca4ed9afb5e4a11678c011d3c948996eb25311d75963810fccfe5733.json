@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notifications\n         WHERE user_id = $1 AND wiki_id = $2 AND read_at < now() - make_interval(days => $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d76cc186ca4ed9afb5e4a11678c011d3c948996eb25311d75963810fccfe5733"
+}

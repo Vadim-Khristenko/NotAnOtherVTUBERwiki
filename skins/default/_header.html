@@ -89,6 +89,13 @@
       {% endif %}
 
       {% if signed_in is defined and signed_in %}
+      {% set unread = unread_notifications if unread_notifications is defined else 0 %}
+      <a class="nav-link nav-bell{% if unread %} has-unread{% endif %}" href="/notifications"
+         title="{{ tn('notify.unread', unread) if unread else t('notify.title') }}">
+        <svg class="icon" aria-hidden="true"><use href="#i-bell" /></svg>
+        {% if unread %}<b class="nav-badge" aria-hidden="true">{{ unread if unread < 100 else "99+" }}</b>{% endif %}
+        <span class="visually-hidden">{{ tn('notify.unread', unread) if unread else t('notify.title') }}</span>
+      </a>
       <a class="nav-link nav-user" href="/user/{{ username }}" title="{{ display_name }}">
         <b class="nav-avatar" aria-hidden="true">{% if avatar_url %}<img src="{{ avatar_url }}" alt="" width="28" height="28" />{% else %}{{ display_name[:1] | upper }}{% endif %}</b>
         <span class="visually-hidden"><bdi>{{ display_name }}</bdi></span>
@@ -167,6 +174,8 @@
         <h2 class="menu-heading">{{ t("nav.section_account") }}</h2>
         {% if signed_in is defined and signed_in %}
         <a class="menu-link" href="/user/{{ username }}"><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg><bdi>{{ display_name }}</bdi></a>
+        <a class="menu-link" href="/notifications"><svg class="icon" aria-hidden="true"><use href="#i-bell" /></svg>{{ t("notify.title") }}{% if unread_notifications is defined and unread_notifications %} <b class="menu-count">{{ unread_notifications }}</b>{% endif %}</a>
+        <a class="menu-link" href="/watchlist"><svg class="icon" aria-hidden="true"><use href="#i-star" /></svg>{{ t("notify.watchlist_title") }}</a>
         <a class="menu-link" href="/drafts"><svg class="icon" aria-hidden="true"><use href="#i-file-text" /></svg>{{ t("nav.drafts") }}</a>
         <a class="menu-link" href="/settings"><svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg>{{ t("settings.title") }}</a>
         {% if can_admin is defined and can_admin %}

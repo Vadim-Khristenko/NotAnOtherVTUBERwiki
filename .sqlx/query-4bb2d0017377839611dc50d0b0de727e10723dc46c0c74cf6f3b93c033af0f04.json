@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH watchers AS (\n           SELECT user_id FROM watches\n           WHERE wiki_id = $1 AND namespace = ($2::text)::page_namespace AND slug = $3\n             AND user_id <> ALL($4::uuid[])\n         ), refreshed AS (\n           UPDATE notifications n SET actor_id = $5, title = $6, note = $8, created_at = now()\n           FROM watchers w\n           WHERE n.user_id = w.user_id AND n.wiki_id = $1 AND n.kind = 'page_edited'\n             AND n.link = $7 AND n.read_at IS NULL\n           RETURNING n.user_id\n         )\n         INSERT INTO notifications (id, user_id, wiki_id, kind, actor_id, title, link, note)\n         SELECT gen_random_uuid(), w.user_id, $1, 'page_edited', $5, $6, $7, $8\n         FROM watchers w\n         WHERE w.user_id NOT IN (SELECT user_id FROM refreshed)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "UuidArray",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4bb2d0017377839611dc50d0b0de727e10723dc46c0c74cf6f3b93c033af0f04"
+}

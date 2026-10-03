@@ -135,6 +135,7 @@ pub(crate) async fn move_article(
     )
     .execute(&mut *conn)
     .await?;
+    crate::notify::move_watches(conn, wiki_id, from, to).await?;
     Ok(true)
 }
 

@@ -809,7 +809,8 @@ pub async fn set_status(
                   handled_at = CASE WHEN $4 THEN NULL ELSE now() END,
                   response = CASE WHEN $6 = '' THEN r.response ELSE $6 END
            FROM old WHERE r.id = old.id
-           RETURNING old.status AS was, r.kind"#,
+           RETURNING old.status AS was, r.kind, r.reporter_id, r.subject,
+                     (SELECT p.title FROM pages p WHERE p.id = r.page_id AND p.deleted_at IS NULL) AS page_title"#,
         id,
         ctx.wiki.id,
         form.status,
@@ -834,6 +835,27 @@ pub async fn set_status(
         },
     )
     .await;
+    // The reader who sent it hears once it is handled, or when the answer
+    // changes; they read it on their settings page.
+    if let Some(reporter) = row.reporter_id
+        && !reopened
+        && (row.was != form.status || !response.is_empty())
+    {
+        let title = row.page_title.unwrap_or(row.subject);
+        crate::notify::push(
+            &state.db,
+            reporter,
+            ctx.wiki.id,
+            &crate::notify::Note {
+                kind: "report_answered",
+                actor_id: ctx.actor.user_id,
+                title: &title,
+                link: "/settings#s-reports",
+                note: (!response.is_empty()).then_some(response),
+            },
+        )
+        .await;
+    }
     Ok(pages::see_other(&format!("/admin/reports/{id}")))
 }
 

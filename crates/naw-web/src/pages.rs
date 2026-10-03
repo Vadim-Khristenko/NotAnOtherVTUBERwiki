@@ -304,8 +304,27 @@ pub(crate) fn slug_is_valid(path: &str) -> bool {
 /// First path segments the engine answers itself. The router tries these
 /// before `/{slug}`, so a page at one of them could be created and never opened.
 pub(crate) const RESERVED: &[&str] = &[
-    "account", "admin", "auth", "drafts", "emotes", "errors", "health", "lang", "login", "logout",
-    "media", "new", "preview", "ready", "search", "settings", "skin", "system", "user",
+    "account",
+    "admin",
+    "auth",
+    "drafts",
+    "emotes",
+    "errors",
+    "health",
+    "lang",
+    "login",
+    "logout",
+    "media",
+    "new",
+    "notifications",
+    "preview",
+    "ready",
+    "search",
+    "settings",
+    "skin",
+    "system",
+    "user",
+    "watchlist",
 ];
 
 /// Why a page cannot live at `path`, when it cannot: an engine route, or a
@@ -1021,6 +1040,12 @@ pub async fn page(
         });
     let translate = crate::translate::translate_offer(&ctx, &slug, &versions)
         .map(|(href, name)| minijinja::context! { href => href, name => name });
+    let watching = match ctx.actor.user_id {
+        Some(user_id) => {
+            Some(crate::notify::is_watching(&state.db, user_id, ctx.wiki.id, &slug).await?)
+        }
+        None => None,
+    };
     let html = render_shell(
         &ctx,
         &Shell {
@@ -1040,6 +1065,8 @@ pub async fn page(
                     .map(|s| s.trim().to_lowercase())
                     .filter(|s| slug_is_valid(s) && *s != slug),
                 may_move => crate::moving::may_move(&ctx, &slug, found.protection),
+                // None for a guest: there is nobody to watch for.
+                watching => watching,
                 about => about,
                 locked => found.locked,
                 updated_at => found.updated_at.format("%Y-%m-%d %H:%M UTC").to_string(),
@@ -1567,6 +1594,7 @@ pub async fn create_page(
             },
         )
         .await;
+        crate::notify::watch_written(&state.db, &ctx, &slug).await;
         if let Some(author) = ctx.actor.user_id {
             crate::drafts::clear(
                 &state.db,
@@ -1644,6 +1672,7 @@ pub async fn create_page(
         },
     )
     .await;
+    crate::notify::watch_written(&state.db, &ctx, &slug).await;
     if let Some(author) = ctx.actor.user_id {
         crate::drafts::clear(
             &state.db,
@@ -1952,6 +1981,7 @@ pub async fn save_page(
             },
         )
         .await;
+        crate::notify::watch_written(&state.db, &ctx, &slug).await;
         clear_draft().await;
         return Ok(see_other(&format!(
             "{}?pending=1",
@@ -2022,6 +2052,18 @@ pub async fn save_page(
         },
     )
     .await;
+    crate::notify::page_edited(
+        &state.db,
+        ctx.wiki.id,
+        &slug,
+        ctx.actor.user_id,
+        None,
+        &draft.title,
+        &crate::notify::history_link(&ctx, &locale, &slug),
+        draft.summary.as_deref(),
+    )
+    .await;
+    crate::notify::watch_written(&state.db, &ctx, &slug).await;
     clear_draft().await;
     Ok(see_other(&ctx.link_for(&locale, &format!("/{slug}"))))
 }

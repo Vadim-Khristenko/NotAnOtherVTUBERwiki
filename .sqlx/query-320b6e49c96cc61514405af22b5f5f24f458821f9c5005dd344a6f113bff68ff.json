@@ -1,0 +1,104 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.namespace::text AS \"namespace!\", w.slug,\n                  p.title AS \"title?\", p.locale AS \"locale?\",\n                  r.created_at AS \"changed_at?\", r.summary AS \"summary?\", r.is_minor AS \"minor?\",\n                  (SELECT u.username FROM users u WHERE u.id = r.author_id) AS \"author?\"\n           FROM watches w\n           LEFT JOIN pages p ON p.wiki_id = w.wiki_id AND p.namespace = w.namespace AND p.slug = w.slug\n                            AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n           LEFT JOIN revisions r ON r.id = p.current_revision_id\n           WHERE w.user_id = $1 AND w.wiki_id = $2\n           ORDER BY r.created_at DESC NULLS LAST, w.slug\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "watches",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "locale?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "locale"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "changed_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "summary?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "minor?",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "is_minor"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "author?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "320b6e49c96cc61514405af22b5f5f24f458821f9c5005dd344a6f113bff68ff"
+}

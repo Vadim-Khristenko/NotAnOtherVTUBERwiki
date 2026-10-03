@@ -482,6 +482,35 @@ pub async fn accept(
         json!({ "path": path, "new_page": rev.base.is_none() }),
     )
     .await;
+    // Watchers hear of the edit now that readers see it; its author hears it
+    // went through.
+    crate::notify::page_edited(
+        &state.db,
+        ctx.wiki.id,
+        &path,
+        rev.author_id,
+        ctx.actor.user_id,
+        &title,
+        &crate::notify::history_link(&ctx, &rev.locale, &path),
+        rev.summary.as_deref(),
+    )
+    .await;
+    if let Some(author) = rev.author_id {
+        let (_, href) = page_link(&ctx, &rev.namespace, &rev.slug, &rev.locale);
+        crate::notify::push(
+            &state.db,
+            author,
+            ctx.wiki.id,
+            &crate::notify::Note {
+                kind: "edit_accepted",
+                actor_id: ctx.actor.user_id,
+                title: &title,
+                link: &href,
+                note: None,
+            },
+        )
+        .await;
+    }
     Ok(pages::see_other("/admin/review?done=accepted"))
 }
 
@@ -553,6 +582,29 @@ pub async fn reject(
         json!({ "path": rev.path(), "note": note, "removed_new_page": removed }),
     )
     .await;
+    if let Some(author) = rev.author_id {
+        // The history keeps the rejected edit and the note; a removed new
+        // page has no history left to open.
+        let link = if removed {
+            String::new()
+        } else {
+            crate::notify::history_link(&ctx, &rev.locale, &rev.path())
+        };
+        let title = rev.title.clone().unwrap_or_else(|| rev.page_title.clone());
+        crate::notify::push(
+            &state.db,
+            author,
+            ctx.wiki.id,
+            &crate::notify::Note {
+                kind: "edit_rejected",
+                actor_id: ctx.actor.user_id,
+                title: &title,
+                link: &link,
+                note: (!note.is_empty()).then_some(note.as_str()),
+            },
+        )
+        .await;
+    }
     Ok(pages::see_other("/admin/review?done=rejected"))
 }
 

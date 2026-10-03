@@ -586,6 +586,17 @@ pub(crate) async fn restore(
         },
     )
     .await;
+    crate::notify::page_edited(
+        &state.db,
+        ctx.wiki.id,
+        slug,
+        ctx.actor.user_id,
+        None,
+        &found.title,
+        &crate::notify::history_link(ctx, &locale, slug),
+        Some(summary),
+    )
+    .await;
     Ok(None)
 }
 

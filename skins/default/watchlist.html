@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+{#
+  The pages the reader watches, newest change first: one row per language
+  version, and a row for a watched address with no page on it now.
+#}
+{% block body %}
+<h1>{{ t("notify.watchlist_title") }}</h1>
+<p class="field-note">{{ t("notify.watchlist_note") }}</p>
+{% if items %}
+<ul class="notify-list" role="list">
+  {% for w in items %}
+  <li class="notify-item">
+    <svg class="icon" aria-hidden="true"><use href="#i-star" /></svg>
+    <div class="notify-body">
+      <p class="notify-text">
+        {% if w.exists %}<a href="{{ w.href }}">{{ w.title }}</a>{% else %}<code>/{{ w.path }}</code>{% endif %}
+        {% if w.language %}<span class="tag">{{ w.language }}</span>{% endif %}
+        {% if w.minor %}<span class="tag">{{ t("notify.watchlist_minor") }}</span>{% endif %}
+      </p>
+      {% if w.summary %}<p class="notify-note">{{ w.summary }}</p>{% endif %}
+      <p class="muted-cell">
+        {% if w.at %}{{ w.at }} · {{ t("notify.watchlist_by", who=w.author) }}{% if w.history_href %} · <a href="{{ w.history_href }}">{{ t("notify.watchlist_history") }}</a>{% endif %}
+        {% else %}{{ t("notify.watchlist_gone") }}{% endif %}
+      </p>
+    </div>
+    <form method="post" action="{{ w.unwatch_action }}" class="inline-form notify-stop">
+      <input type="hidden" name="on" value="0" />
+      <input type="hidden" name="next" value="/watchlist" />
+      <button class="link-button" type="submit">{{ t("notify.watchlist_stop") }}</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% if total > shown %}<p class="muted-cell">{{ t("notify.watchlist_more", shown=shown, total=total) }}</p>{% endif %}
+{% else %}
+<p class="muted-cell">{{ t("notify.watchlist_empty") }}</p>
+{% endif %}
+{% endblock %}

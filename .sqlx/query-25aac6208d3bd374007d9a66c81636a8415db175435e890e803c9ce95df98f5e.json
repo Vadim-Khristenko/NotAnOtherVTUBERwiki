@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM watches WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "25aac6208d3bd374007d9a66c81636a8415db175435e890e803c9ce95df98f5e"
+}

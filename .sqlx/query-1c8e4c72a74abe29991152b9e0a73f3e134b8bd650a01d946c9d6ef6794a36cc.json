@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE notifications SET read_at = now()\n         WHERE user_id = $1 AND wiki_id = $2 AND read_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c8e4c72a74abe29991152b9e0a73f3e134b8bd650a01d946c9d6ef6794a36cc"
+}

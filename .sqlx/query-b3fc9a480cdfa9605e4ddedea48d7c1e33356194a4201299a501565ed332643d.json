@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE watches w SET slug = $3\n         WHERE w.wiki_id = $1 AND w.namespace = 'main' AND w.slug = $2\n           AND NOT EXISTS (SELECT 1 FROM watches o WHERE o.user_id = w.user_id\n                             AND o.wiki_id = $1 AND o.namespace = 'main' AND o.slug = $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b3fc9a480cdfa9605e4ddedea48d7c1e33356194a4201299a501565ed332643d"
+}

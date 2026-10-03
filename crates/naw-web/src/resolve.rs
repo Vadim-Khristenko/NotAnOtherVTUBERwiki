@@ -76,6 +76,8 @@ pub struct Ctx {
     pub upload_max_bytes: usize,
     /// The install's limits with this wiki's own choices over them.
     pub limits: naw_core::limits::Limits,
+    /// The signed-in reader's unread notifications here, for the header bell.
+    pub unread: i64,
 }
 
 /// Where the article language of a request came from.
@@ -334,6 +336,7 @@ impl Ctx {
             can_moderate => self.actor.can(Capability::PageDelete),
             can_admin => self.actor.can(Capability::AdminPanel),
             can_reports => self.actor.can(Capability::ReportHandle),
+            unread_notifications => self.unread,
         }
     }
 }
@@ -385,6 +388,10 @@ pub async fn context(
         .unwrap_or("/")
         .to_string();
     let limits = state.config.limits.for_wiki(&wiki.settings);
+    let unread = match user {
+        Some(user) => crate::notify::unread_count(&state.db, user.id, wiki.id).await?,
+        None => 0,
+    };
     Ok(Some(Ctx {
         wiki,
         actor,
@@ -395,6 +402,7 @@ pub async fn context(
         path,
         upload_max_bytes: state.config.upload_max_bytes,
         limits,
+        unread,
     }))
 }
 

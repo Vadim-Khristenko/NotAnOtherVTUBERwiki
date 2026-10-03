@@ -38,6 +38,7 @@ mod locale_path;
 mod media;
 mod moving;
 mod net;
+mod notify;
 mod observe;
 mod pages;
 mod perm;
@@ -230,6 +231,8 @@ fn routes(state: AppState) -> Router {
         .route("/drafts", get(drafts::list))
         .route("/drafts/save", post(drafts::save).layer(text_form()))
         .route("/drafts/{id}/delete", post(drafts::discard))
+        .route("/notifications", get(notify::list))
+        .route("/watchlist", get(notify::watchlist))
         .route("/", get(pages::home))
         .route(
             "/new",
@@ -271,6 +274,7 @@ fn routes(state: AppState) -> Router {
         .route("/{slug}/patrol", post(history::patrol))
         .route("/{slug}/rollback", post(review::rollback))
         .route("/{slug}/move", post(moving::move_page))
+        .route("/{slug}/watch", post(notify::watch))
         .route("/{slug}/protect", post(protect::set))
         .route(
             "/{slug}/new-version",
