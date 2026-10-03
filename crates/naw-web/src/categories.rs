@@ -499,10 +499,18 @@ async fn page(
         .get_template("category.html")
         .map_err(pages::template_error)?;
     let heading = ctx.t_with("category.heading", &[("name", &name)]);
+    // The line that adds a page here spells each level as pages write it, not
+    // as a description titles it: a Russian title would name another category.
     let written: Vec<String> = cats::ancestors(key)
         .into_iter()
         .chain(std::iter::once(key.to_string()))
-        .map(|k| level_name(&k))
+        .map(|k| {
+            found
+                .names
+                .get(&k)
+                .cloned()
+                .unwrap_or_else(|| k.rsplit(':').next().unwrap_or(&k).to_string())
+        })
         .collect();
     let has_inside = !children.is_empty();
     let html = template
