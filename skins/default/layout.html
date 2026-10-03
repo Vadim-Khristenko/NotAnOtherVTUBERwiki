@@ -822,6 +822,8 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
 .notify-text { overflow-wrap: anywhere; }
 .notify-body .notify-note { margin-top: 0.2rem; color: var(--ink-soft); font-size: 0.92rem; overflow-wrap: anywhere; }
 .notify-stop { flex: none; font-size: 0.85rem; }
+/* A file that is gone or hidden, where its picture would be. */
+.img-missing { display: inline-flex; align-items: center; justify-content: center; min-width: 8rem; min-height: 4rem; max-width: 100%; padding: var(--s3); border: 1px dashed var(--border-strong, var(--line)); border-radius: var(--radius); background: var(--surface-sunken); color: var(--muted); font-size: 0.85rem; text-align: center; overflow-wrap: anywhere; }
 .page-meta { margin: var(--s6) 0 0; padding-top: var(--s3); border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
 .tag { display: inline-block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); background: var(--surface-sunken); border: 1px solid var(--line); border-radius: 0.25rem; padding: 0.05rem 0.35rem; vertical-align: baseline; }
 .tag-current, .tag-root { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
@@ -1164,7 +1166,7 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
 {# `main_class` lets a page leave the prose measure. Articles keep the narrow
    column that makes long text readable; the admin panel is a working surface
    with tables and needs the width. #}
-<main class="{% block main_class %}content{% endblock %}" id="content">{% block body %}{% endblock %}</main>
+<main class="{% block main_class %}content{% endblock %}" id="content" data-img-missing="{{ t('file.unavailable') }}">{% block body %}{% endblock %}</main>
 {% include "_footer.html" %}
 {# Emote files stay in the browser (see /emote-cache.js). The version comes
    from the server and changes after an emote sync, so readers keep their copy
@@ -1175,14 +1177,31 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
   if ("serviceWorker" in navigator && window.isSecureContext) {
     navigator.serviceWorker.register("/emote-cache.js?v={{ emote_cache | default(0) }}", { scope: "/" }).catch(function () {});
   }
+  // A wiki file that is gone or hidden leaves its name and a word on why,
+  // not the browser's broken picture.
+  function missing(img) {
+    var box = document.createElement("span");
+    var note = (document.getElementById("content") || document.body).dataset.imgMissing || "";
+    box.className = "img-missing";
+    box.setAttribute("role", "img");
+    box.textContent = img.alt ? img.alt + " · " + note : note;
+    box.setAttribute("aria-label", box.textContent);
+    img.replaceWith(box);
+  }
   document.addEventListener("error", function (event) {
     var img = event.target;
     if (!img || img.tagName !== "IMG" || img.dataset.retried) return;
     var src = img.getAttribute("src") || "";
+    if (src.indexOf("/media/") === 0 && src.indexOf("/media/emotes/") !== 0) { missing(img); return; }
     if (src.indexOf("/media/emotes/") !== 0) return;
     img.dataset.retried = "1";
     img.src = src + (src.indexOf("?") === -1 ? "?" : "&") + "fresh=1";
   }, true);
+  // Pictures that failed before this script ran.
+  document.querySelectorAll('#content img[src^="/media/"]:not([src^="/media/emotes/"])').forEach(function (img) {
+    // An SVG without a size reads as zero wide too, so it is left alone.
+    if (img.complete && img.naturalWidth === 0 && !/\.svg($|\?)/i.test(img.getAttribute("src"))) missing(img);
+  });
 })();
 </script>
 </body>
