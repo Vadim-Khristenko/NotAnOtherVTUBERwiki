@@ -221,7 +221,8 @@ The part that makes it a wiki rather than a blog.
       Maintenance/..., and infoboxes for streams, songs and events with page templates
 - [x] Every content and people limit in one table, set by the config file, the environment
       or the command line, and per wiki where it is cheap. See [configuration.md](configuration.md)
-- [ ] Watchlists. Recent changes and patrolling work; watchlists do not exist yet
+- [x] Watchlists: a star on every page, pages you write watched on their own, a watch that
+      covers every language and follows a rename, and `/watchlist` by latest change
 - [ ] Audit log with a retention policy. The log is written and browsable; retention is not in
 - [x] Search behind a swappable backend, PostgreSQL full text first. A long article is
       indexed in 200 000 character pieces, so all of a 5 MB article is searchable and no
@@ -341,7 +342,9 @@ The things that decide whether anyone finds the wiki.
 - OpenGraph and Twitter cards, with generated share images
 - `sitemap.xml`, `robots.txt`, canonical URLs
 - Antispam: registration CAPTCHA, external link limits, new user heuristics
-- Notifications and digest email
+- [x] Notifications on the site: edits to watched pages, the review of your own edits and
+      answers to your reports, behind a bell with an unread count
+- Digest email
 - [x] Internationalisation: engine UI translated (English and Russian packs, on
       the fly), per page locale routing by path or subdomain, translations with
       staleness notices
