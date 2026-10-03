@@ -548,7 +548,9 @@ html[data-theme="dark"] .content mark.mark-gray { background: #3a3a44; color: #e
 .footnote-definition { display: flex; gap: var(--s2); align-items: baseline; margin: 0 0 var(--s2); scroll-margin-top: 5rem; }
 .footnote-definition:target { color: var(--ink); }
 .footnote-definition-label { flex: none; min-width: 1.4em; font-size: 0.8rem; font-weight: 700; color: var(--ink-soft); vertical-align: baseline; }
-.footnote-definition > p { margin: 0; }
+/* A flex item will not shrink below its longest word, and a source URL is one
+   long word: let it break, or the footnote pushes the page sideways on a phone. */
+.footnote-definition > p { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .content .footnote-backref { flex: none; text-decoration: none; color: var(--muted); }
 .content .footnote-backref:hover { color: var(--accent); }
 .footnote-reference { scroll-margin-top: 5rem; }
