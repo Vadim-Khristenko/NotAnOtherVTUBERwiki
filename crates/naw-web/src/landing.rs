@@ -67,10 +67,14 @@ pub(crate) async fn page(
 ) -> Result<Response, AppError> {
     let home_slug = home_slug(ctx);
     let home = pages::find_page(&state.db, ctx.wiki.id, &home_slug, &ctx.content_locale).await?;
-    let (split, can_edit_home) = match &home {
+    let (split, can_edit_home, home_html) = match &home {
         Some(page) => {
             let (html, _) = pages::cached_body(state, ctx, &home_slug, &page.body_md).await?;
-            (split_lede(&html), ctx.actor.can_edit_page(page.protection))
+            (
+                split_lede(&html),
+                ctx.actor.can_edit_page(page.protection),
+                html,
+            )
         }
         None => (
             Split {
@@ -78,8 +82,29 @@ pub(crate) async fn page(
                 rest: String::new(),
             },
             false,
+            String::new(),
         ),
     };
+    // The front page is kept at `/`, whichever address opened it.
+    let languages = crate::seo::live_languages(&state.db, ctx, &home_slug)
+        .await?
+        .into_iter()
+        .map(|code| {
+            let href = ctx.link_for(&code, "/");
+            (code, href)
+        })
+        .collect();
+    let seo = crate::seo::head(
+        ctx,
+        crate::seo::Card {
+            title: &ctx.wiki.name,
+            description: crate::seo::description(&home_html),
+            href: ctx.link_for(&ctx.content_locale, "/"),
+            image: crate::seo::first_image(&home_html),
+            article: false,
+            languages,
+        },
+    );
 
     let recent = sqlx::query!(
         r#"SELECT title AS "title!", slug AS "slug!", at AS "at!" FROM (
@@ -139,6 +164,7 @@ pub(crate) async fn page(
                 articles => counts.articles,
                 edits => counts.edits,
                 files => counts.files,
+                seo => seo,
             }
         })
         .map_err(pages::template_error)?;

@@ -1,0 +1,6 @@
+# English interface messages: what search engines and link previews read.
+#
+# Keys here are asked for as seo.<key>. The file name is the prefix.
+
+fallback = "Read it on {wiki}."
+category = "Pages in the category {name} on {wiki}."

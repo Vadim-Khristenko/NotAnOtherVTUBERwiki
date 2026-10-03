@@ -4,6 +4,27 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>{{ title }} | {{ wiki_name }}</title>
+{#
+  Search engines keep articles, categories and the front page, which pass
+  `seo`; everything else is a tool and says noindex.
+#}
+{% if seo is defined and seo %}
+<meta name="description" content="{{ seo.description }}" />
+<link rel="canonical" href="{{ seo.canonical }}" />
+{% for a in seo.alternates %}<link rel="alternate" hreflang="{{ a.code }}" href="{{ a.href }}" />
+{% endfor %}{% if seo.x_default %}<link rel="alternate" hreflang="x-default" href="{{ seo.x_default }}" />
+{% endif %}
+<meta property="og:type" content="{{ seo.og_type }}" />
+<meta property="og:site_name" content="{{ wiki_name }}" />
+<meta property="og:title" content="{{ seo.title }}" />
+<meta property="og:description" content="{{ seo.description }}" />
+<meta property="og:url" content="{{ seo.canonical }}" />
+<meta property="og:image" content="{{ seo.image }}" />
+<meta property="og:locale" content="{{ seo.og_locale }}" />
+<meta name="twitter:card" content="{% if seo.large_image %}summary_large_image{% else %}summary{% endif %}" />
+{% else %}
+<meta name="robots" content="noindex" />
+{% endif %}
 <style>
 /*
  * Default skin: AMOLED white and AMOLED black, one accent, everything else

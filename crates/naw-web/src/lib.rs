@@ -50,6 +50,7 @@ mod reports;
 mod resolve;
 mod review;
 mod search;
+mod seo;
 mod settings;
 mod source;
 mod system;
@@ -246,6 +247,8 @@ fn routes(state: AppState) -> Router {
         .route("/favicon-96x96.png", get(pages::favicon_png))
         .route("/apple-touch-icon.png", get(pages::apple_touch_icon))
         .route("/site.webmanifest", get(pages::site_manifest))
+        .route("/robots.txt", get(seo::robots_txt))
+        .route("/sitemap.xml", get(seo::sitemap))
         .route(
             "/web-app-manifest-192x192.png",
             get(pages::manifest_icon_192),

@@ -1040,6 +1040,13 @@ pub async fn page(
         });
     let translate = crate::translate::translate_offer(&ctx, &slug, &versions)
         .map(|(href, name)| minijinja::context! { href => href, name => name });
+    // Search engines keep articles; a template's page is a tool.
+    let seo = if split_path(&slug).0 == "main" {
+        let href = ctx.link_for(&ctx.content_locale, &format!("/{slug}"));
+        Some(crate::seo::card_for(&state, &ctx, &slug, &found.title, &body_html, href, true).await?)
+    } else {
+        None
+    };
     let watching = match ctx.actor.user_id {
         Some(user_id) => {
             Some(crate::notify::is_watching(&state.db, user_id, ctx.wiki.id, &slug).await?)
@@ -1067,6 +1074,7 @@ pub async fn page(
                 may_move => crate::moving::may_move(&ctx, &slug, found.protection),
                 // None for a guest: there is nobody to watch for.
                 watching => watching,
+                seo => seo,
                 about => about,
                 locked => found.locked,
                 updated_at => found.updated_at.format("%Y-%m-%d %H:%M UTC").to_string(),

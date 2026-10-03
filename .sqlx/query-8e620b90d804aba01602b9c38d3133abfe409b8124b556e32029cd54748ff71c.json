@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pc.category, max(p.updated_at) AS \"at!\"\n           FROM page_categories pc JOIN pages p ON p.id = pc.page_id\n           WHERE pc.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n           GROUP BY pc.category ORDER BY pc.category LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "page_categories",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "8e620b90d804aba01602b9c38d3133abfe409b8124b556e32029cd54748ff71c"
+}

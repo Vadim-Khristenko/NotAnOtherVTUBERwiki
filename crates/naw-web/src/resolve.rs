@@ -78,6 +78,9 @@ pub struct Ctx {
     pub limits: naw_core::limits::Limits,
     /// The signed-in reader's unread notifications here, for the header bell.
     pub unread: i64,
+    /// `https://wiki.example`: the wiki's own domain, else the host asked.
+    /// Links that leave the page (canonical, share cards, the sitemap) use it.
+    pub origin: String,
 }
 
 /// Where the article language of a request came from.
@@ -392,6 +395,7 @@ pub async fn context(
         Some(user) => crate::notify::unread_count(&state.db, user.id, wiki.id).await?,
         None => 0,
     };
+    let origin = origin_of(wiki.domain.as_deref(), request_host(headers));
     Ok(Some(Ctx {
         wiki,
         actor,
@@ -403,7 +407,21 @@ pub async fn context(
         upload_max_bytes: state.config.upload_max_bytes,
         limits,
         unread,
+        origin,
     }))
+}
+
+/// The origin absolute links start with: the wiki's domain over HTTPS, so
+/// an alias never becomes the canonical address; without one (a fresh
+/// install), the host of the request, plain HTTP only on a loopback name.
+fn origin_of(domain: Option<&str>, host: Option<&str>) -> String {
+    if let Some(domain) = domain.map(str::trim).filter(|d| !d.is_empty()) {
+        return format!("https://{}", domain.to_lowercase());
+    }
+    let host = host.unwrap_or("localhost").trim().to_lowercase();
+    let local =
+        host.starts_with("localhost") || host.starts_with("127.") || host.starts_with("[::1]");
+    format!("{}://{host}", if local { "http" } else { "https" })
 }
 
 /// [`context`], with a missing wiki as the 404 response in `Err`.
@@ -480,6 +498,24 @@ pub fn resolve_wiki<'a>(host: Option<&str>, wikis: &'a [WikiRef]) -> Option<&'a 
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn absolute_links_start_at_the_wiki_domain() {
+        assert_eq!(
+            origin_of(Some("Alpha.Filian.Wiki"), Some("snackers.wiki")),
+            "https://alpha.filian.wiki",
+            "an alias is never the canonical address"
+        );
+        assert_eq!(
+            origin_of(None, Some("wiki.example")),
+            "https://wiki.example"
+        );
+        assert_eq!(
+            origin_of(None, Some("localhost:8080")),
+            "http://localhost:8080"
+        );
+        assert_eq!(origin_of(Some(" "), None), "http://localhost");
+    }
 
     fn wiki(slug: &str, domain: Option<&str>, default: bool) -> WikiRef {
         WikiRef {

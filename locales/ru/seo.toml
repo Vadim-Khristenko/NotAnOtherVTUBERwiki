@@ -1,0 +1,6 @@
+# Russian interface messages: what search engines and link previews read.
+#
+# Keys here are asked for as seo.<key>. The file name is the prefix.
+
+fallback = "Читайте на {wiki}."
+category = "Страницы в категории {name} на {wiki}."

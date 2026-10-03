@@ -513,6 +513,29 @@ async fn page(
         })
         .collect();
     let has_inside = !children.is_empty();
+    // Search engines keep the category itself, not its deep list.
+    let seo =
+        (!deep).then(|| {
+            crate::seo::head(
+                ctx,
+                crate::seo::Card {
+                    title: &heading,
+                    description: body_html
+                        .as_deref()
+                        .and_then(crate::seo::description)
+                        .or_else(|| {
+                            Some(ctx.t_with(
+                                "seo.category",
+                                &[("name", &name), ("wiki", &ctx.wiki.name)],
+                            ))
+                        }),
+                    href: canonical(ctx, key, false),
+                    image: body_html.as_deref().and_then(crate::seo::first_image),
+                    article: false,
+                    languages: Vec::new(),
+                },
+            )
+        });
     let html = template
         .render(minijinja::context! {
             ..ctx.chrome_context(),
@@ -538,6 +561,7 @@ async fn page(
                 has_inside => has_inside,
                 direct_href => canonical(ctx, key, false),
                 deep_href => canonical(ctx, key, true),
+                seo => seo,
             }
         })
         .map_err(pages::template_error)?;
