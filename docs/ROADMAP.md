@@ -215,7 +215,8 @@ The part that makes it a wiki rather than a blog.
 - [x] Pending changes: a wiki may hold back new pages, edits, or both, from people without
       the pass until a curator accepts them; readers keep the accepted text. A review queue
       with the changes and a preview, refusing an accept that would drop a later edit, a list
-      of edits nobody checked, and a one-click rollback of the last author
+      of edits nobody checked, and a one-click rollback of the last author. Authors see
+      their own waiting and turned-down edits with the reason, and can take one back
 - [x] Maintenance notices as templates (Update, Stub, Sources needed, Citation needed,
       Cleanup, Disputed, In progress, Spoiler, Speculation) that file pages under
       Maintenance/..., and infoboxes for streams, songs and events with page templates
