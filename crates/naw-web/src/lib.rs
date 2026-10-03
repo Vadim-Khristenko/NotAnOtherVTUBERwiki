@@ -36,6 +36,7 @@ mod landing;
 mod lang;
 mod locale_path;
 mod media;
+mod moving;
 mod net;
 mod observe;
 mod pages;
@@ -269,6 +270,7 @@ fn routes(state: AppState) -> Router {
         .route("/{slug}/revert", post(history::revert))
         .route("/{slug}/patrol", post(history::patrol))
         .route("/{slug}/rollback", post(review::rollback))
+        .route("/{slug}/move", post(moving::move_page))
         .route("/{slug}/protect", post(protect::set))
         .route(
             "/{slug}/new-version",

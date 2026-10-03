@@ -1,0 +1,17 @@
+# English interface messages: renaming a page.
+#
+# Keys here are asked for as move.<key>. The file name is the prefix.
+
+action = "Rename"
+title = "Give this page a new address"
+note = "Every language version moves, with its history. Links to the old address keep working when you leave a redirect."
+to = "New address"
+reason = "Why (shown in the audit log)"
+leave_redirect = "Leave a redirect from the old address"
+save = "Rename"
+refused = "That did not work"
+back = "Back to the page"
+not_allowed = "Renaming is for curators and up who may edit this page, and only articles can be renamed for now."
+bad_address = "An address is lowercase letters, digits and dashes, and an article cannot move into another kind of page."
+taken = "There is already a page at {slug}, perhaps an archived one. Pick another address."
+redirected_from = "Redirected from {old}"

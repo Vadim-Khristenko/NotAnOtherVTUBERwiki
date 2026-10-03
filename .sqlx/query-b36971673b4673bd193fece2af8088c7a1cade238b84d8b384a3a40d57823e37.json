@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE page_redirects SET to_slug = $3\n         WHERE wiki_id = $1 AND to_namespace = 'main' AND to_slug = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b36971673b4673bd193fece2af8088c7a1cade238b84d8b384a3a40d57823e37"
+}

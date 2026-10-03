@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO page_redirects (wiki_id, namespace, from_slug, to_namespace, to_slug, created_by)\n             VALUES ($1, 'main', $2, 'main', $3, $4)\n             ON CONFLICT (wiki_id, namespace, from_slug)\n             DO UPDATE SET to_namespace = 'main', to_slug = $3, created_by = $4, created_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1d5741f843d86d2da949042f6cb7fc03da92b966df24fd73e9ccd5c4eef02bc4"
+}

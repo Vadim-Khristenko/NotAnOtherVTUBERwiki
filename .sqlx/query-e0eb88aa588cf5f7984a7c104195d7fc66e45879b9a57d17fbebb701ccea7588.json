@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE drafts SET path = $3 WHERE wiki_id = $1 AND path = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e0eb88aa588cf5f7984a7c104195d7fc66e45879b9a57d17fbebb701ccea7588"
+}

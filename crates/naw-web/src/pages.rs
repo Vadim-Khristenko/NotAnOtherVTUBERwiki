@@ -750,6 +750,9 @@ pub struct PageQuery {
     /// After an edit that went to the review queue, to say so.
     #[serde(default)]
     pending: Option<String>,
+    /// The old address a reader came from, after a page was renamed.
+    #[serde(default)]
+    redirected: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -827,8 +830,22 @@ pub async fn page(
         {
             return Ok(response);
         }
-        // A new page waiting for review: its author and the reviewers learn so.
         let (namespace, bare) = split_path(&slug);
+        // A renamed page: its old address leads to the new one.
+        if let Some(to) =
+            crate::moving::redirect_target(&state.db, ctx.wiki.id, namespace, bare).await?
+            && let Some(response) = redirect_response(
+                StatusCode::MOVED_PERMANENTLY,
+                &format!(
+                    "{}?redirected={}",
+                    ctx.link(&format!("/{to}")),
+                    urlencode(&slug)
+                ),
+            )
+        {
+            return Ok(response);
+        }
+        // A new page waiting for review: its author and the reviewers learn so.
         if let Some((title, mine)) =
             crate::review::pending_new_page(&state.db, &ctx, namespace, bare).await?
         {
@@ -1017,6 +1034,12 @@ pub async fn page(
                 categories => category_links,
                 review => review,
                 just_sent => query.pending.is_some(),
+                redirected_from => query
+                    .redirected
+                    .as_deref()
+                    .map(|s| s.trim().to_lowercase())
+                    .filter(|s| slug_is_valid(s) && *s != slug),
+                may_move => crate::moving::may_move(&ctx, &slug, found.protection),
                 about => about,
                 locked => found.locked,
                 updated_at => found.updated_at.format("%Y-%m-%d %H:%M UTC").to_string(),
@@ -2318,6 +2341,7 @@ mod tests {
             ns: None,
             all: None,
             pending: None,
+            redirected: None,
         }
     }
 

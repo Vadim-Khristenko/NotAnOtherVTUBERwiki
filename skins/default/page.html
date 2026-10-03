@@ -42,10 +42,32 @@
     </form>
   </details>
   {% endif %}
+  {% if may_move is defined and may_move %}
+  {# Curators and up: a new address for every language version at once. #}
+  <details class="lang-menu protect-menu">
+    <summary class="page-action" title="{{ t('move.title') }}">
+      <svg class="icon" aria-hidden="true"><use href="#i-arrow-back-up" /></svg>{{ t("move.action") }}
+    </summary>
+    <form class="lang-panel protect-panel move-panel" method="post" action="{{ base }}/{{ slug }}/move">
+      <p class="field-note">{{ t("move.note") }}</p>
+      <label class="field">{{ t("move.to") }}
+        <input class="field-input" name="to" value="{{ slug }}" maxlength="100" required spellcheck="false" autocomplete="off" />
+      </label>
+      <label class="field">{{ t("move.reason") }}
+        <input class="field-input" name="reason" maxlength="300" />
+      </label>
+      <label class="check"><input type="checkbox" name="redirect" checked /> {{ t("move.leave_redirect") }}</label>
+      <button class="button-save" type="submit">{{ t("move.save") }}</button>
+    </form>
+  </details>
+  {% endif %}
   {% if translate %}
     <a class="page-action" href="{{ translate.href }}" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-language" /></svg>{{ t("translate.offer", language=translate.name) }}</a>
   {% endif %}
 </nav>
+{% if redirected_from is defined and redirected_from %}
+<p class="redirected-from muted-cell">{{ t("move.redirected_from", old=redirected_from) }}</p>
+{% endif %}
 {% endif %}
 {#
   Language notices, above the text they are about: the reader first learns

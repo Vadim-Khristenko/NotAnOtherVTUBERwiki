@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM page_redirects WHERE wiki_id = $1 AND namespace = 'main' AND from_slug = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3c88b616ec6c3fd5750cd82135170838bd7a05937b595b383d3c41b266a31fc8"
+}
