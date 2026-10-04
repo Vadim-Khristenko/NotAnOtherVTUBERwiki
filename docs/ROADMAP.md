@@ -21,8 +21,16 @@ If you want to know why the technology is what it is, read [STACK.md](STACK.md).
   Registration can be closed, so providers only sign in people who already have an
   account. A browser without JavaScript (or in iPhone Lockdown Mode) can sign in through
   another device with a one-time code. A forgotten password comes back through the
-  wiki's Telegram bot, which also warns about new sign-ins. Email verification is not
-  built yet.
+  wiki's Telegram or Discord bot, which also warns about new sign-ins. A chat links with
+  `/link` and a one-time code from the settings, and each bot speaks the reader's
+  language. Email verification is not built yet.
+- An address without a language opens the article in the reader's language when that
+  version exists, chosen from their pick, their account or the browser.
+- An editor with syntax highlighting, word-processor formatting toggles, a preview that can
+  be turned off, and a plain text area underneath, so the page still saves without
+  JavaScript. On a wide screen an article can fill the window or stay compact.
+- Monitoring for admins: response times by percentile, load peaks and errors per minute,
+  with alerts to the admins' bots when errors burst or pages slow down.
 - An admin panel: accounts with per-person rights, sanctions and notes, pages, the audit
   log, wiki settings, languages, header and footer, error pages, 7TV emote sources.
 - Images in articles, avatars, profiles, and curators who can protect pages and look
