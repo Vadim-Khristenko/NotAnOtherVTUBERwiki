@@ -10,6 +10,9 @@ publish.workspace = true
 [dependencies]
 naw-core.workspace = true
 naw-markdown.workspace = true
+naw-bots.workspace = true
+naw-telegram.workspace = true
+naw-discord.workspace = true
 minijinja.workspace = true
 hex.workspace = true
 serde.workspace = true

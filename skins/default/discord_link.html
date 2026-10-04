@@ -1,0 +1,26 @@
+{% extends "layout.html" %}
+{#
+  Linking a Discord account: add the wiki's app to the account, then send
+  it /link with the one-time code. The page comes from a POST and is never
+  stored.
+
+  `install_href`  the address that adds the app to the person's account
+  `code`          the one-time code
+  `minutes`       how long the code works
+#}
+{% block body %}
+<div class="auth-card">
+  <h1>{{ t("discord.link_title") }}</h1>
+  <p class="auth-lede">{{ t("discord.link_lede") }}</p>
+  <ol class="telegram-steps">
+    <li>{{ t("discord.link_step_add") }}</li>
+    <li>{{ t("discord.link_step_command") }}</li>
+    <li>{{ t("discord.link_step_back") }}</li>
+  </ol>
+  <p><a class="button-save" href="{{ install_href }}" rel="noopener noreferrer">{{ t("discord.link_add") }}</a></p>
+  <p class="field-note">{{ t("discord.link_send") }}</p>
+  <p><code class="telegram-code">/link code:{{ code }}</code></p>
+  <p class="field-note">{{ t("telegram.link_expires", minutes=minutes) }}</p>
+  <p><a href="/settings#s-discord">{{ t("telegram.link_back") }}</a></p>
+</div>
+{% endblock %}

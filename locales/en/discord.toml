@@ -1,0 +1,17 @@
+# English site texts about the wiki's Discord bot (the linking page, settings).
+#
+# Keys are asked for as discord.<key>.
+
+link_title = "Link Discord"
+link_lede = "The wiki's Discord bot can then give you a password reset link with /reset, tell you about new sign-ins and, if you want, pass on your notifications by direct message."
+link_step_add = "Add the wiki's app to your account with the button below."
+link_step_command = "In a DM with the bot or on any server, send the command shown below."
+link_step_back = "Come back here: your settings show the link."
+link_add = "Add the app in Discord"
+link_send = "Then send the bot:"
+settings_note = "Link Discord to reset your password with /reset and hear about new sign-ins."
+settings_link = "Link Discord"
+settings_linked = "Discord is linked."
+settings_unlink = "Unlink Discord"
+settings_reset_note = "Forgot your password? Send /reset to the bot in Discord: only you see the link."
+settings_login_hint = "Or sign in with Discord: the account links itself."

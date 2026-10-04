@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT username, locale FROM users WHERE id = $1",
+  "query": "SELECT username, linked_at FROM discord_links WHERE user_id = $1",
   "describe": {
     "columns": [
       {
@@ -9,19 +9,19 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "users",
+            "table": "discord_links",
             "name": "username"
           }
         }
       },
       {
         "ordinal": 1,
-        "name": "locale",
-        "type_info": "Text",
+        "name": "linked_at",
+        "type_info": "Timestamptz",
         "origin": {
           "Table": {
-            "table": "users",
-            "name": "locale"
+            "table": "discord_links",
+            "name": "linked_at"
           }
         }
       }
@@ -32,9 +32,9 @@
       ]
     },
     "nullable": [
-      false,
+      true,
       false
     ]
   },
-  "hash": "456a17e1c4769bd5093fdcaa2b1bf461338b9c658f799fc98f6c050ab691d28a"
+  "hash": "89372f348a98d7b92fa96d656bd8126fbab86450e1e0a92efe22c37b29c4a1fa"
 }

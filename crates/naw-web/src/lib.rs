@@ -19,12 +19,14 @@ mod alerts;
 mod audit;
 mod auth;
 pub mod bootstrap;
+mod bots;
 mod categories;
 mod chrome;
 mod complete;
 mod csp;
 mod csrf;
 mod diff;
+mod discord;
 mod display_name;
 mod drafts;
 mod emotes;
@@ -67,7 +69,9 @@ mod translate;
 /// alerts, and the Telegram bot when a token is set.
 pub fn start_background(state: AppState) {
     metrics::start(state.clone());
-    telegram::start(state);
+    telegram::start(state.clone());
+    discord::start(state.clone());
+    tokio::spawn(bots::forward_loop(state));
 }
 
 /// Credentials for the command line: password hashing, temporary passwords
@@ -128,6 +132,8 @@ fn routes(state: AppState) -> Router {
         .route("/settings/telegram", post(settings::telegram_prefs))
         .route("/settings/telegram/link", post(settings::telegram_link))
         .route("/settings/telegram/unlink", post(settings::telegram_unlink))
+        .route("/settings/discord/link", post(settings::discord_link))
+        .route("/settings/discord/unlink", post(settings::discord_unlink))
         .route(
             "/password/forgot",
             get(recovery::forgot_page).post(recovery::forgot_send),
@@ -259,6 +265,7 @@ fn routes(state: AppState) -> Router {
         .route("/drafts/{id}/delete", post(drafts::discard))
         .route("/drafts/review/{id}/withdraw", post(review::withdraw))
         .route("/api/complete", get(complete::complete))
+        .route("/discord/interactions", post(discord::interactions))
         .route("/notifications", get(notify::list))
         .route("/watchlist", get(notify::watchlist))
         .route("/", get(pages::home))

@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id, u.username,\n                  (EXISTS (SELECT 1 FROM telegram_links tl WHERE tl.user_id = u.id)\n                   OR EXISTS (SELECT 1 FROM discord_links dl WHERE dl.user_id = u.id)) AS \"linked!\"\n           FROM users u\n           WHERE lower(u.username) = $1 OR lower(u.email) = $1\n              OR u.id = (SELECT a.user_id FROM user_aliases a WHERE a.alias = $1)\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "linked!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "6a19468d05b855e8e9b95c6da4104c8ffecb7548a1333f856cb9fe25bc2fdd9d"
+}

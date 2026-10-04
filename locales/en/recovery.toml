@@ -5,7 +5,7 @@
 
 title = "Forgot your password?"
 forgot_link = "Forgot your password?"
-ask_lede = "Type your username. If Telegram is linked to the account, @{bot} sends you a link to choose a new password."
+ask_lede = "Type your username. If Telegram or Discord is linked to the account, the wiki's bot sends a link there to choose a new password."
 account = "Username"
 send = "Send the link"
 ask_no_telegram = "No Telegram linked? Ask the wiki's admins: they can give you a temporary password. Link Telegram in your settings afterwards, and next time you can do this yourself."
@@ -13,7 +13,7 @@ unavailable = "This wiki cannot send reset links. Ask its admins for a temporary
 back_to_sign_in = "Back to sign in"
 
 sent_title = "Check Telegram"
-sent_body = "If the account exists and has Telegram linked, @{bot} has sent a link. It works once, for {minutes} minutes."
+sent_body = "If the account exists and has Telegram or Discord linked, the wiki's bot has sent a link there. It works once, for {minutes} minutes. On Discord you can also get it at once with /reset."
 sent_nothing = "Nothing came? The account may have no Telegram linked, or you may have asked several times in a row. Wait a while and try again, or ask the admins."
 
 choose_title = "Choose a new password"

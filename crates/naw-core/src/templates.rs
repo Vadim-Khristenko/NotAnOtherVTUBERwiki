@@ -45,6 +45,7 @@ const TEMPLATES: &[&str] = &[
     "watchlist.html",
     "recovery.html",
     "telegram.html",
+    "discord_link.html",
     "category.html",
     "_categories.html",
     "admin.html",

@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.locale,\n                  tl.chat_id AS \"tg_chat?\", tl.language AS \"tg_lang?\",\n                  dl.discord_id AS \"dc_id?\", dl.language AS \"dc_lang?\"\n           FROM users u\n           LEFT JOIN telegram_links tl ON tl.user_id = u.id\n           LEFT JOIN discord_links dl ON dl.user_id = u.id\n           WHERE u.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "locale",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "locale"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tg_chat?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "telegram_links",
+            "name": "chat_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "tg_lang?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "telegram_links",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "dc_id?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discord_links",
+            "name": "discord_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "dc_lang?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discord_links",
+            "name": "language"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "fc73df0eb67f865471c6c3ca087f99e20da76daa09e57aead9f9dfb9e42c491e"
+}

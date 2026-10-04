@@ -1,4 +1,4 @@
-//! Alerts for the admins, through the wiki's Telegram bot.
+//! Alerts for the admins, through the wiki's bots (Telegram and Discord).
 //!
 //! Every minute the last minutes are checked against a few rules: a burst
 //! of 5xx answers, and reader pages getting slow. A rule that starts
@@ -7,7 +7,7 @@
 //! logged in the last day is reported as it happens, a few at a time.
 //!
 //! Recipients are the install's staff and every wiki's owners and admins
-//! who linked Telegram and did not turn these off in their settings.
+//! who linked a bot and did not turn these off in their settings.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -16,7 +16,7 @@ use serde_json::json;
 
 use naw_core::state::AppState;
 
-use crate::telegram::{self, esc};
+use crate::bots;
 
 /// Minutes a rule looks back over.
 const WINDOW_MINUTES: usize = 5;
@@ -166,7 +166,7 @@ fn decide(
 
 /// Runs the rules and sends what is due. Called every minute.
 pub(crate) async fn evaluate(state: &AppState) {
-    if telegram::bot().is_none() {
+    if !bots::any() {
         return;
     }
     let found = check();
@@ -200,7 +200,7 @@ static LAST_NEW_ERRORS: Mutex<Option<chrono::DateTime<chrono::Utc>>> = Mutex::ne
 
 /// Errors seen for the first time in a day, as they are stored.
 pub(crate) fn new_errors(state: &AppState, messages: Vec<String>) {
-    if telegram::bot().is_none() {
+    if !bots::any() {
         return;
     }
     let now = chrono::Utc::now();
@@ -218,12 +218,7 @@ pub(crate) fn new_errors(state: &AppState, messages: Vec<String>) {
         let shown: Vec<String> = messages
             .iter()
             .take(NEW_ERRORS_SHOWN)
-            .map(|m| {
-                format!(
-                    "• <code>{}</code>",
-                    esc(&m.chars().take(300).collect::<String>())
-                )
-            })
+            .map(|m| format!("- {}", m.chars().take(300).collect::<String>()))
             .collect();
         let more = messages.len().saturating_sub(NEW_ERRORS_SHOWN);
         let list = if more > 0 {
@@ -231,61 +226,49 @@ pub(crate) fn new_errors(state: &AppState, messages: Vec<String>) {
         } else {
             shown.join("\n")
         };
-        // The list is already escaped; it goes in raw.
-        broadcast_raw(
+        // The list is an argument, so it is escaped for each platform.
+        broadcast(
             &state,
             "ops_new_errors",
-            &[("count", &messages.len().to_string())],
-            &list,
+            &[("count", &messages.len().to_string()), ("list", &list)],
         )
         .await;
     });
 }
 
-/// The admins who get alerts: chat and language.
-async fn recipients(state: &AppState) -> Vec<(i64, String)> {
-    sqlx::query!(
-        r#"SELECT DISTINCT tl.chat_id, COALESCE(NULLIF(u.locale, ''), tl.language, '') AS "locale!"
-           FROM telegram_links tl JOIN users u ON u.id = tl.user_id
+/// The admins who get alerts and have a bot to get them by.
+async fn recipients(state: &AppState) -> Vec<uuid::Uuid> {
+    sqlx::query_scalar!(
+        r#"SELECT u.id FROM users u
            WHERE (u.global_role IN ('root', 'staff')
                   OR EXISTS (SELECT 1 FROM wiki_memberships m
                              WHERE m.user_id = u.id AND m.role IN ('owner', 'admin')))
-             AND COALESCE((u.settings->'telegram'->>'ops')::boolean, true)"#
+             AND COALESCE((u.settings->'telegram'->>'ops')::boolean, true)
+             AND (EXISTS (SELECT 1 FROM telegram_links tl WHERE tl.user_id = u.id)
+                  OR EXISTS (SELECT 1 FROM discord_links dl WHERE dl.user_id = u.id))"#
     )
     .fetch_all(&state.db)
     .await
-    .map(|rows| {
-        rows.into_iter()
-            .map(|r| (r.chat_id, telegram::language(state, Some(&r.locale))))
-            .collect()
-    })
     .unwrap_or_default()
 }
 
+/// Sends bot text `key` to every recipient on every chat they linked, in
+/// their language, with a button to the monitoring page.
 async fn broadcast(state: &AppState, key: &str, args: &[(&str, &str)]) {
-    broadcast_raw(state, key, args, "").await;
-}
-
-/// Sends message `key` to every recipient in their language, with `tail`
-/// (already Telegram HTML) under it and a button to the monitoring page.
-async fn broadcast_raw(state: &AppState, key: &str, args: &[(&str, &str)], tail: &str) {
-    let Some(bot) = telegram::bot() else {
-        return;
-    };
-    let (wiki, origin) = telegram::site(state).await;
+    let (wiki, origin) = bots::site(state).await;
     let url = format!("{origin}/admin/monitoring");
     let mut full: Vec<(&str, &str)> = vec![("wiki", &wiki)];
     full.extend_from_slice(args);
-    for (chat_id, lang) in recipients(state).await {
-        let mut body = telegram::text(state, &lang, key, &full);
-        if !tail.is_empty() {
-            body.push('\n');
-            body.push_str(tail);
-        }
-        let label = telegram::text(state, &lang, "ops_open", &[]);
-        if let Err(err) = bot.send(chat_id, &body, Some((&label, &url))).await {
-            tracing::warn!(error = %err, "an alert did not reach an admin");
-        }
+    for user_id in recipients(state).await {
+        bots::send_to_user(
+            state,
+            user_id,
+            "ops_alert",
+            key,
+            &full,
+            Some(("ops_open", &url)),
+        )
+        .await;
     }
     crate::audit::record_or_log(
         &state.db,

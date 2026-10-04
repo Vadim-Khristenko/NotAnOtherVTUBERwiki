@@ -388,7 +388,7 @@ pub async fn change_password(
         },
     )
     .await;
-    crate::telegram::alert(&state, user.id, crate::telegram::Alert::PasswordChanged);
+    crate::bots::alert(&state, user.id, crate::bots::Alert::PasswordChanged);
 
     let template = ctx
         .skin

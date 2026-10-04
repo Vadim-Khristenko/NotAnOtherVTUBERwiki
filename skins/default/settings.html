@@ -133,6 +133,35 @@
   </section>
   {% endif %}
 
+  {% if discord %}
+  {# The wiki's Discord bot: /reset, alerts and, if wanted, notifications by
+     direct message. The switches are the same ones as for Telegram. #}
+  <section class="settings-card" aria-labelledby="s-discord-h" id="s-discord">
+    <h2 id="s-discord-h"><svg class="icon" aria-hidden="true"><use href="#i-message-circle" /></svg>Discord</h2>
+    {% if discord.linked %}
+    <p>{{ t("discord.settings_linked") }}{% if discord.username %} <code>@{{ discord.username }}</code>{% endif %}
+      <span class="muted-cell">{{ t("settings.identity_since", date=discord.since) }}</span></p>
+    {% if not (telegram and telegram.linked) %}
+    <form method="post" action="/settings/telegram" class="settings-stack">
+      <label class="check"><input type="checkbox" name="alerts" {% if not telegram or telegram.alerts %}checked{% endif %} /> {{ t("telegram.settings_alerts") }}</label>
+      <label class="check"><input type="checkbox" name="notifications" {% if telegram and telegram.notifications %}checked{% endif %} /> {{ t("telegram.settings_notifications") }}</label>
+      <button class="button-preview" type="submit">{{ t("settings.save") }}</button>
+    </form>
+    {% endif %}
+    <p class="field-note">{{ t("discord.settings_reset_note") }}</p>
+    <form method="post" action="/settings/discord/unlink">
+      <button class="link-button" type="submit">{{ t("discord.settings_unlink") }}</button>
+    </form>
+    {% else %}
+    <p class="field-note">{{ t("discord.settings_note") }}</p>
+    <form method="post" action="/settings/discord/link">
+      <button class="button-preview" type="submit">{{ t("discord.settings_link") }}</button>
+    </form>
+    {% if discord.login %}<p class="field-note">{{ t("discord.settings_login_hint") }}</p>{% endif %}
+    {% endif %}
+  </section>
+  {% endif %}
+
   <section class="settings-card" aria-labelledby="s-email">
     <h2 id="s-email"><svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>{{ t("settings.email") }}</h2>
     {% if email %}

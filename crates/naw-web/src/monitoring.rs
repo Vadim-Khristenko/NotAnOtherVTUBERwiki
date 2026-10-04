@@ -385,7 +385,7 @@ pub async fn page(
                 pool_size => state.db.size(),
                 pool_idle => state.db.num_idle(),
                 memory => resident_mib().map(|m| format!("{m:.0} MiB")),
-                bot => crate::telegram::bot().is_some(),
+                bot => crate::bots::any(),
             },
         },
     )

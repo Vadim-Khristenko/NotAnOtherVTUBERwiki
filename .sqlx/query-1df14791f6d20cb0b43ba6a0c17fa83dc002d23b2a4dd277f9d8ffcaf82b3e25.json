@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT n.id, n.user_id, n.kind, n.title, n.link, n.note, tl.chat_id,\n                  COALESCE(NULLIF(u.locale, ''), tl.language, '') AS \"locale!\",\n                  w.name AS wiki, w.domain,\n                  (SELECT a.username FROM users a WHERE a.id = n.actor_id) AS \"actor?\"\n           FROM notifications n\n           JOIN telegram_links tl ON tl.user_id = n.user_id\n           JOIN users u ON u.id = n.user_id\n           JOIN wikis w ON w.id = n.wiki_id\n           WHERE n.forwarded_at IS NULL AND n.read_at IS NULL\n             AND n.created_at > now() - make_interval(mins => $1)\n             AND COALESCE((u.settings->'telegram'->>'notifications')::boolean, false)\n           ORDER BY n.created_at\n           LIMIT 50",
+  "query": "SELECT n.id, n.user_id, n.kind, n.title, n.link, n.note, w.name AS wiki, w.domain,\n                  (SELECT a.username FROM users a WHERE a.id = n.actor_id) AS \"actor?\"\n           FROM notifications n\n           JOIN users u ON u.id = n.user_id\n           JOIN wikis w ON w.id = n.wiki_id\n           WHERE n.forwarded_at IS NULL AND n.read_at IS NULL\n             AND n.created_at > now() - make_interval(mins => $1)\n             AND COALESCE((u.settings->'telegram'->>'notifications')::boolean, false)\n             AND (EXISTS (SELECT 1 FROM telegram_links tl WHERE tl.user_id = n.user_id)\n                  OR EXISTS (SELECT 1 FROM discord_links dl WHERE dl.user_id = n.user_id))\n           ORDER BY n.created_at\n           LIMIT 50",
   "describe": {
     "columns": [
       {
@@ -71,23 +71,6 @@
       },
       {
         "ordinal": 6,
-        "name": "chat_id",
-        "type_info": "Int8",
-        "origin": {
-          "Table": {
-            "table": "telegram_links",
-            "name": "chat_id"
-          }
-        }
-      },
-      {
-        "ordinal": 7,
-        "name": "locale!",
-        "type_info": "Text",
-        "origin": "Expression"
-      },
-      {
-        "ordinal": 8,
         "name": "wiki",
         "type_info": "Text",
         "origin": {
@@ -98,7 +81,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 7,
         "name": "domain",
         "type_info": "Text",
         "origin": {
@@ -109,7 +92,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 8,
         "name": "actor?",
         "type_info": "Text",
         "origin": "Expression"
@@ -128,11 +111,9 @@
       false,
       true,
       false,
-      null,
-      false,
       true,
       null
     ]
   },
-  "hash": "f3ddaeefad728970eca4214565d72e5b11fbef784473e05fbdcc6adeb763ee7e"
+  "hash": "1df14791f6d20cb0b43ba6a0c17fa83dc002d23b2a4dd277f9d8ffcaf82b3e25"
 }

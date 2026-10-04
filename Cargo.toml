@@ -15,6 +15,9 @@ members = [
     "crates/naw-markdown",
     "crates/naw-web",
     "crates/naw-cli",
+    "crates/naw-bots",
+    "crates/naw-telegram",
+    "crates/naw-discord",
 ]
 
 [workspace.package]
@@ -109,6 +112,9 @@ ammonia = "4.1.4"
 # --- internal crates
 naw-core = { path = "crates/naw-core" }
 naw-markdown = { path = "crates/naw-markdown" }
+naw-bots = { path = "crates/naw-bots" }
+naw-telegram = { path = "crates/naw-telegram" }
+naw-discord = { path = "crates/naw-discord" }
 naw-web = { path = "crates/naw-web" }
 
 # Argon2 is meant to be slow, and unoptimized it is slow enough to make a local

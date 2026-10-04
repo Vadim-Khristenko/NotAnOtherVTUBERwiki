@@ -263,6 +263,15 @@ pub struct AuthConfig {
     /// when another process already does, since Telegram allows one reader.
     #[serde(default = "default_true")]
     pub telegram_bot_polling: bool,
+    /// The wiki's Discord bot: its token, and the application's public key
+    /// that signs the slash commands sent to `/discord/interactions`.
+    #[serde(default)]
+    pub discord_bot_token: Option<String>,
+    #[serde(default)]
+    pub discord_public_key: Option<String>,
+    /// The application id; the Discord login's client id when unset.
+    #[serde(default)]
+    pub discord_app_id: Option<String>,
     #[serde(default = "default_mail")]
     pub mail: MailConfig,
 }
@@ -300,6 +309,21 @@ impl AuthConfig {
         {
             self.steam_api_key = None;
         }
+        for slot in [
+            &mut self.discord_bot_token,
+            &mut self.discord_public_key,
+            &mut self.discord_app_id,
+        ] {
+            if slot.as_deref().is_some_and(|v| v.trim().is_empty()) {
+                *slot = None;
+            }
+        }
+        if self.discord_app_id.is_none() {
+            self.discord_app_id = self
+                .discord
+                .as_ref()
+                .map(|c| c.client_id.trim().to_string());
+        }
     }
 }
 
@@ -326,6 +350,9 @@ impl Default for AuthConfig {
             steam_api_key: None,
             telegram_bot_token: None,
             telegram_bot_polling: true,
+            discord_bot_token: None,
+            discord_public_key: None,
+            discord_app_id: None,
             mail: default_mail(),
         }
     }
@@ -481,6 +508,9 @@ impl fmt::Debug for AuthConfig {
             .field("steam_api_key", &creds(&self.steam_api_key))
             .field("telegram_bot_token", &creds(&self.telegram_bot_token))
             .field("telegram_bot_polling", &self.telegram_bot_polling)
+            .field("discord_bot_token", &creds(&self.discord_bot_token))
+            .field("discord_public_key", &self.discord_public_key)
+            .field("discord_app_id", &self.discord_app_id)
             .field("mail", &self.mail)
             .finish()
     }
@@ -734,6 +764,17 @@ fn apply_auth_env(auth: &mut AuthConfig) -> Result<(), AppError> {
         && !value.trim().is_empty()
     {
         auth.telegram_bot_token = Some(value.trim().to_string());
+    }
+    for (slot, name) in [
+        (&mut auth.discord_bot_token, "NAW_DISCORD_BOT_TOKEN"),
+        (&mut auth.discord_public_key, "NAW_DISCORD_PUBLIC_KEY"),
+        (&mut auth.discord_app_id, "NAW_DISCORD_APP_ID"),
+    ] {
+        if let Ok(value) = std::env::var(name)
+            && !value.trim().is_empty()
+        {
+            *slot = Some(value.trim().to_string());
+        }
     }
     if let Some(flag) = std::env::var("NAW_TELEGRAM_BOT_POLLING")
         .ok()

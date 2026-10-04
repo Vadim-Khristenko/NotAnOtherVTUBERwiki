@@ -201,6 +201,15 @@ pub async fn callback(
             .map(str::to_string);
         crate::telegram::adopt_login_chat(&state, user_id, chat_id, tg_username);
     }
+    // A Discord sign-in proves the Discord account: it becomes the bot contact.
+    if identity.provider == ProviderId::Discord {
+        crate::discord::adopt_login(
+            &state,
+            user_id,
+            identity.provider_user_id.clone(),
+            Some(identity.handle.clone()),
+        );
+    }
     let user_agent = headers
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok());

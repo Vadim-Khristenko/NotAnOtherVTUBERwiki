@@ -190,7 +190,7 @@ pub(crate) async fn requested(state: &AppState, user_id: Uuid, via: &str) {
 
 /// Whether this install can send a reset link at all.
 pub(crate) fn available() -> bool {
-    crate::telegram::bot().is_some()
+    crate::bots::any()
 }
 
 /// What the recovery template shows.
@@ -236,6 +236,7 @@ fn render(ctx: &Ctx, status: StatusCode, view: View<'_>) -> Result<Response, App
                 mode => mode,
                 available => available(),
                 bot => crate::telegram::bot().map(|b| b.username().to_string()),
+                discord => crate::discord::bot().is_some(),
                 token => token,
                 account => username,
                 minutes => RESET_MINUTES,
@@ -323,8 +324,10 @@ pub async fn forgot_send(
         );
     }
     let account = sqlx::query!(
-        r#"SELECT u.id, u.username, (tl.chat_id IS NOT NULL) AS "linked!"
-           FROM users u LEFT JOIN telegram_links tl ON tl.user_id = u.id
+        r#"SELECT u.id, u.username,
+                  (EXISTS (SELECT 1 FROM telegram_links tl WHERE tl.user_id = u.id)
+                   OR EXISTS (SELECT 1 FROM discord_links dl WHERE dl.user_id = u.id)) AS "linked!"
+           FROM users u
            WHERE lower(u.username) = $1 OR lower(u.email) = $1
               OR u.id = (SELECT a.user_id FROM user_aliases a WHERE a.alias = $1)
            LIMIT 1"#,
@@ -353,7 +356,8 @@ pub async fn forgot_send(
     render(&ctx, StatusCode::OK, View::Sent)
 }
 
-/// Issues a link and sends it to the account's chat.
+/// Issues a link and sends it to every chat the account linked, each in its
+/// own language.
 async fn send_link(state: &AppState, user_id: Uuid, username: &str, origin: &str, device: &str) {
     if crate::auth::session::install_banned(state, user_id)
         .await
@@ -361,7 +365,13 @@ async fn send_link(state: &AppState, user_id: Uuid, username: &str, origin: &str
     {
         return;
     }
-    let token = match issue(&state.db, user_id, "telegram").await {
+    let reach = crate::bots::reach(state, user_id).await;
+    let channel = if reach.telegram.is_some() {
+        "telegram"
+    } else {
+        "discord"
+    };
+    let token = match issue(&state.db, user_id, channel).await {
         Ok(token) => token,
         Err(err) => {
             tracing::error!(error = %err, "could not issue a reset link");
@@ -369,17 +379,17 @@ async fn send_link(state: &AppState, user_id: Uuid, username: &str, origin: &str
         }
     };
     requested(state, user_id, "web").await;
-    let lang = crate::telegram::language_of(state, user_id).await;
-    let (wiki, _) = crate::telegram::site(state).await;
+    let (wiki, _) = crate::bots::site(state).await;
     let url = reset_url(origin, &token);
     let device = if device.is_empty() {
-        crate::telegram::text(state, &lang, "device_unknown", &[])
+        crate::bots::label(state, &crate::bots::language(state, None), "device_unknown")
     } else {
         device.to_string()
     };
-    let body = crate::telegram::text(
+    crate::bots::send_to_user(
         state,
-        &lang,
+        user_id,
+        "password_reset",
         "reset_link_web",
         &[
             ("wiki", &wiki),
@@ -388,14 +398,7 @@ async fn send_link(state: &AppState, user_id: Uuid, username: &str, origin: &str
             ("device", &device),
             ("minutes", &RESET_MINUTES.to_string()),
         ],
-    );
-    let label = crate::telegram::text(state, &lang, "reset_button", &[]);
-    crate::telegram::send_to_user(
-        state,
-        user_id,
-        "password_reset",
-        &body,
-        Some((&label, &url)),
+        Some(("reset_button", &url)),
     )
     .await;
 }
@@ -481,7 +484,7 @@ pub async fn reset_save(
         },
     )
     .await;
-    crate::telegram::alert(&state, user_id, crate::telegram::Alert::PasswordReset);
+    crate::bots::alert(&state, user_id, crate::bots::Alert::PasswordReset);
     render(&ctx, StatusCode::OK, View::Done)
 }
 

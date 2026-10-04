@@ -1,0 +1,47 @@
+# English texts of the wiki's bots (Telegram and Discord).
+#
+# Keys are asked for as bot.<key>. A text is written in Telegram's rich
+# HTML: <b>, <i>, <u>, <s>, <code>, <pre>, <a href>, <blockquote>,
+# <tg-spoiler>, <h1>-<h3>, <br>. Discord gets it turned into Markdown.
+# Everything put in with {name} is escaped for the platform, so a username
+# cannot add formatting, a link or a mention. Premium emoji: {emoji:ID|👍}
+# (the custom emoji on Telegram, the fallback elsewhere).
+
+help = "<b>{wiki}</b>\nThis is the wiki's bot. It sends password reset links, sign-in alerts and, if you want, your notifications.\n\nTo link your account, open your settings on the wiki and press <b>Link</b>:\n{settings_url}\n\n/lang changes the bot's language."
+help_linked = "<b>{wiki}</b>\nThis chat is linked to <b>{user}</b>.\n\n/reset sends a link to choose a new password.\n/unlink unlinks this chat.\n/lang changes the bot's language."
+link_howto = "<b>{wiki}</b>\nA link starts on the wiki, so only the account's owner can make one. Open your settings, press <b>Link</b>, then send me <code>/link</code> with the code it shows:\n{settings_url}"
+linked = "{emoji:5368324170671202286|👍} <b>{wiki}</b>\nDone: this chat is linked to <b>{user}</b>. If you forget your password, send /reset here or use the link on the sign-in page."
+linked_by_login = "<b>{wiki}</b>\nYou signed in with Telegram and let this bot write to you, so this chat is now linked to <b>{user}</b>. The bot sends password reset links (/reset) and sign-in alerts here. /unlink unlinks it."
+link_expired = "<b>{wiki}</b>\nThis code has expired or was already used. Open your settings on the wiki and press <b>Link</b> again."
+already_linked = "<b>{wiki}</b>\nThis chat is already linked to <b>{user}</b>, so it stays there. To link it to another account, send /unlink first, then take a new code from that account's settings."
+unlinked = "<b>{wiki}</b>\nThis chat is unlinked. The bot will not write here any more."
+not_linked = "<b>{wiki}</b>\nThis chat is not linked to an account. Link it from your settings on the wiki."
+failed = "Something went wrong. Try again in a minute."
+reset_throttled = "You have asked for several links already. Try again in an hour."
+reset_off = "<b>{wiki}</b>\nThis wiki has no password sign-in, so there is no password to reset."
+reset_sent = "The link is above."
+reset_link = "<b>{wiki}</b>\nA link to choose a new password for <b>{user}</b>. It works once, for {minutes} minutes:\n{url}\n\n<i>If you did not ask for it, do nothing: the password stays as it is.</i>"
+reset_link_web = "<b>{wiki}</b>\nSomebody asked to reset the password of <b>{user}</b> from {device}. The link works once, for {minutes} minutes:\n{url}\n\n<i>If it was not you, do nothing: the password stays as it is.</i>"
+reset_button = "Choose a new password"
+alert_sign_in = "<b>{wiki}</b>\nNew sign-in to <b>{user}</b>: {device}, {when}.\n\n<i>Not you? Change the password and sign out the other devices in your settings.</i>"
+alert_password_changed = "<b>{wiki}</b>\nThe password of <b>{user}</b> was changed, {when}. Every other device was signed out.\n\n<i>Not you? Reset the password with /reset at once.</i>"
+alert_password_reset = "<b>{wiki}</b>\nThe password of <b>{user}</b> was reset with a link, {when}. Every device was signed out.\n\n<i>Not you? Reset it again with /reset and tell the wiki's admins.</i>"
+device_unknown = "an unknown device"
+open_settings = "Open settings"
+open = "Open"
+lang_choose = "Choose the bot's language:"
+lang_set = "Done, I write in English now."
+lang_unknown = "The wiki has no such language. Pick one from the list: /lang"
+command_link = "Link this chat to your wiki account"
+command_link_code = "The code from your settings on the wiki"
+command_unlink = "Unlink this chat"
+command_reset = "Get a link to choose a new password"
+command_lang = "The bot's language"
+command_lang_option = "Language"
+command_help = "What this bot does"
+ops_errors = "<b>{wiki}</b>\nAlert: {count} answers with a 5xx in {minutes} minutes, {share}% of {total} requests.\nWhere: {where}"
+ops_errors_cleared = "<b>{wiki}</b>\nResolved: no more 5xx burst, after {minutes} min."
+ops_slow = "<b>{wiki}</b>\nAlert: pages are slow. Over {minutes} minutes p50 {p50} ms, p95 {p95} ms, p99 {p99} ms."
+ops_slow_cleared = "<b>{wiki}</b>\nResolved: pages are fast again, after {minutes} min."
+ops_new_errors = "<b>{wiki}</b>\nNew errors, not seen in the last day ({count}):\n{list}"
+ops_open = "Open monitoring"

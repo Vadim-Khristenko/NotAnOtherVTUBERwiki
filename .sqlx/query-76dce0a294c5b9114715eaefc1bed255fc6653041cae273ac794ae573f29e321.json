@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id FROM users u\n           WHERE (u.global_role IN ('root', 'staff')\n                  OR EXISTS (SELECT 1 FROM wiki_memberships m\n                             WHERE m.user_id = u.id AND m.role IN ('owner', 'admin')))\n             AND COALESCE((u.settings->'telegram'->>'ops')::boolean, true)\n             AND (EXISTS (SELECT 1 FROM telegram_links tl WHERE tl.user_id = u.id)\n                  OR EXISTS (SELECT 1 FROM discord_links dl WHERE dl.user_id = u.id))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "76dce0a294c5b9114715eaefc1bed255fc6653041cae273ac794ae573f29e321"
+}

@@ -207,10 +207,10 @@ pub async fn create(
     .execute(&state.db)
     .await;
     // Every way in ends here, so this is where the owner hears of a sign-in.
-    crate::telegram::alert(
+    crate::bots::alert(
         state,
         user_id,
-        crate::telegram::Alert::SignIn {
+        crate::bots::Alert::SignIn {
             device: crate::settings::device_label(user_agent),
         },
     );

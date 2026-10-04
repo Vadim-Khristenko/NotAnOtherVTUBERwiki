@@ -151,6 +151,7 @@ pub async fn page(
         ctx.actor.can(crate::perm::Capability::AdminPanel),
     )
     .await?;
+    let discord = discord_view(&state, user.id).await?;
 
     // The saved preference, or "" to follow the browser.
     let chosen = if ctx.skin.messages.has(&user.locale) {
@@ -184,7 +185,8 @@ pub async fn page(
                 sessions => session_rows,
                 my_reports => my_reports,
                 telegram => telegram,
-                saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username" | "display_name" | "avatar" | "avatar_removed" | "telegram" | "telegram_unlinked")),
+                discord => discord,
+                saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username" | "display_name" | "avatar" | "avatar_removed" | "telegram" | "telegram_unlinked" | "discord_unlinked")),
                 error => crate::pages::message_key(query.error.as_deref(), &["rename_", "display_name_", "avatar_"]),
                 rename_enabled => policy.rename_enabled,
                 rename_cooldown => policy.rename_cooldown_days,
@@ -230,7 +232,7 @@ async fn telegram_view(
         // Alerts about the wiki itself go to the people who run it.
         admin => admin,
         ops => prefs.ops,
-        minutes => crate::telegram::LINK_MINUTES,
+        minutes => crate::bots::LINK_MINUTES,
         // The Telegram login is this bot, so signing in with it links the chat.
         login_links => state
             .config
@@ -258,7 +260,7 @@ pub async fn telegram_link(
     let Some(ctx) = crate::resolve::context(&state, &headers, Some(&user)).await? else {
         return Ok(crate::errors::not_found());
     };
-    let Some(code) = crate::telegram::new_link_code(&state, user.id).await else {
+    let Some(code) = crate::bots::new_link_code(&state, user.id).await else {
         return Err(AppError::Internal);
     };
     let html = ctx
@@ -274,11 +276,99 @@ pub async fn telegram_link(
                 bot => bot.username(),
                 open_href => bot.start_link(&code),
                 code => code.clone(),
-                minutes => crate::telegram::LINK_MINUTES,
+                minutes => crate::bots::LINK_MINUTES,
             }
         })
         .map_err(template_error)?;
     Ok(crate::pages::private_page(StatusCode::OK, html))
+}
+
+/// The Discord card: `None` when the wiki has no Discord bot.
+async fn discord_view(
+    state: &AppState,
+    user_id: uuid::Uuid,
+) -> Result<Option<minijinja::Value>, AppError> {
+    if crate::discord::bot().is_none() {
+        return Ok(None);
+    }
+    let link = sqlx::query!(
+        "SELECT username, linked_at FROM discord_links WHERE user_id = $1",
+        user_id
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    Ok(Some(minijinja::context! {
+        linked => link.is_some(),
+        username => link.as_ref().and_then(|l| l.username.clone()),
+        since => link.map(|l| l.linked_at.format("%Y-%m-%d").to_string()),
+        login => state.config.auth.discord.is_some(),
+    }))
+}
+
+/// POST /settings/discord/link: the steps and the one-time code for `/link`.
+pub async fn discord_link(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    let Some(bot) = crate::discord::bot() else {
+        return Ok(crate::errors::not_found());
+    };
+    let Some(ctx) = crate::resolve::context(&state, &headers, Some(&user)).await? else {
+        return Ok(crate::errors::not_found());
+    };
+    let Some(code) = crate::bots::new_link_code(&state, user.id).await else {
+        return Err(AppError::Internal);
+    };
+    let html = ctx
+        .skin
+        .env
+        .get_template("discord_link.html")
+        .map_err(template_error)?
+        .render(minijinja::context! {
+            ..ctx.chrome_context(),
+            ..minijinja::context! {
+                title => ctx.t("discord.link_title"),
+                version => ENGINE_VERSION,
+                install_href => bot.install_url(),
+                code => code,
+                minutes => crate::bots::LINK_MINUTES,
+            }
+        })
+        .map_err(template_error)?;
+    Ok(crate::pages::private_page(StatusCode::OK, html))
+}
+
+/// POST /settings/discord/unlink
+pub async fn discord_unlink(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    let removed = sqlx::query!("DELETE FROM discord_links WHERE user_id = $1", user.id)
+        .execute(&state.db)
+        .await?
+        .rows_affected();
+    if removed > 0 {
+        crate::audit::record_or_log(
+            &state.db,
+            crate::audit::Entry {
+                wiki_id: None,
+                user_id: Some(user.id),
+                action: "auth.discord_unlink",
+                entity_type: "user",
+                entity_id: Some(user.id),
+                meta: serde_json::json!({ "from": "settings" }),
+            },
+        )
+        .await;
+    }
+    Ok(Redirect::to("/settings?saved=discord_unlinked#s-discord").into_response())
 }
 
 /// POST /settings/telegram/unlink

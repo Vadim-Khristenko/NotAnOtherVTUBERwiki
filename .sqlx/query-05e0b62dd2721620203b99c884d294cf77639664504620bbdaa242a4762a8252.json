@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bot_chat_languages (platform, chat_id, language) VALUES ($1, $2, $3)\n         ON CONFLICT (platform, chat_id) DO UPDATE SET language = $3, chosen_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "05e0b62dd2721620203b99c884d294cf77639664504620bbdaa242a4762a8252"
+}
