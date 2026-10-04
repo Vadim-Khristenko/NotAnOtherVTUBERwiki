@@ -190,6 +190,17 @@ pub async fn callback(
             return render::auth_error(&super::AuthError::Upstream("ban check failed".to_string()));
         }
     }
+    // A Telegram sign-in that let the wiki's bot write links the chat too.
+    if identity.provider == ProviderId::Telegram
+        && let Some(chat_id) = identity.raw.get("id").and_then(serde_json::Value::as_i64)
+    {
+        let tg_username = identity
+            .raw
+            .get("preferred_username")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        crate::telegram::adopt_login_chat(&state, user_id, chat_id, tg_username);
+    }
     let user_agent = headers
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok());

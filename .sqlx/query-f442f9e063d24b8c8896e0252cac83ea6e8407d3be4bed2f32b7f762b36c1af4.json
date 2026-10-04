@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id, u.username, (tl.chat_id IS NOT NULL) AS \"linked!\"\n           FROM users u LEFT JOIN telegram_links tl ON tl.user_id = u.id\n           WHERE lower(u.username) = $1 OR lower(u.email) = $1\n              OR u.id = (SELECT a.user_id FROM user_aliases a WHERE a.alias = $1)\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "linked!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "f442f9e063d24b8c8896e0252cac83ea6e8407d3be4bed2f32b7f762b36c1af4"
+}

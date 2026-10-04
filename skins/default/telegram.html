@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+{#
+  Linking a Telegram chat: the button opens the wiki's bot with a one-time
+  code. The page comes from a POST and is never stored.
+
+  `bot`        the bot's @name
+  `open_href`  https://t.me/<bot>?start=<code>
+  `minutes`    how long the code works
+#}
+{% block body %}
+<div class="auth-card">
+  <h1>{{ t("telegram.link_title") }}</h1>
+  <p class="auth-lede">{{ t("telegram.link_lede", bot=bot) }}</p>
+  <ol class="telegram-steps">
+    <li>{{ t("telegram.link_step_open") }}</li>
+    <li>{{ t("telegram.link_step_start") }}</li>
+    <li>{{ t("telegram.link_step_back") }}</li>
+  </ol>
+  <p><a class="button-save" href="{{ open_href }}" rel="noopener noreferrer">{{ t("telegram.link_open", bot=bot) }}</a></p>
+  <p class="field-note">{{ t("telegram.link_expires", minutes=minutes) }}</p>
+  <p><a href="/settings#s-telegram">{{ t("telegram.link_back") }}</a></p>
+</div>
+{% endblock %}

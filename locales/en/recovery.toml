@@ -1,0 +1,31 @@
+# English interface messages: getting back into an account after forgetting
+# its password.
+#
+# Keys here are asked for as recovery.<key>. The file name is the prefix.
+
+title = "Forgot your password?"
+forgot_link = "Forgot your password?"
+ask_lede = "Type your username. If Telegram is linked to the account, @{bot} sends you a link to choose a new password."
+account = "Username"
+send = "Send the link"
+ask_no_telegram = "No Telegram linked? Ask the wiki's admins: they can give you a temporary password. Link Telegram in your settings afterwards, and next time you can do this yourself."
+unavailable = "This wiki cannot send reset links. Ask its admins for a temporary password."
+back_to_sign_in = "Back to sign in"
+
+sent_title = "Check Telegram"
+sent_body = "If the account exists and has Telegram linked, @{bot} has sent a link. It works once, for {minutes} minutes."
+sent_nothing = "Nothing came? The account may have no Telegram linked, or you may have asked several times in a row. Wait a while and try again, or ask the admins."
+
+choose_title = "Choose a new password"
+choose_lede = "For the account {account}."
+choose_sessions = "Saving signs the account out everywhere, this browser included. Then sign in with the new password."
+
+dead_title = "This link no longer works"
+dead_body = "A reset link works once, for {minutes} minutes, and a newer one replaces it. Ask for a new one."
+dead_again = "Ask for a new link"
+
+done_title = "Password changed"
+done_body = "The account is signed out everywhere. Sign in with the new password."
+
+error_missing = "Type your username."
+error_throttled = "Too many requests from here. Try again in an hour."

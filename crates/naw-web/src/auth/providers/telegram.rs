@@ -21,8 +21,13 @@ const AUTHORIZE: &str = "https://oauth.telegram.org/auth";
 const TOKEN: &str = "https://oauth.telegram.org/token";
 const JWKS_URI: &str = "https://oauth.telegram.org/.well-known/jwks.json";
 
-/// `phone` and `telegram:bot_access` are offered and not requested.
+/// `phone` is offered and never requested.
 const SCOPE: &str = "openid profile";
+
+/// When the login client is the wiki's own bot, the sign-in also asks to let
+/// that bot write to the person, so their chat links itself (see
+/// `crate::telegram::adopt_login_chat`). They can untick it.
+const SCOPE_WITH_BOT: &str = "openid profile telegram:bot_access";
 
 pub struct Telegram {
     client_id: String,
@@ -42,6 +47,9 @@ impl Telegram {
 #[derive(Deserialize)]
 struct Claims {
     sub: String,
+    /// The numeric Telegram user id, which is also the id of the private
+    /// chat with them. `sub` is a different, opaque string.
+    id: Option<i64>,
     name: Option<String>,
     preferred_username: Option<String>,
     picture: Option<String>,
@@ -60,7 +68,12 @@ impl LoginProvider for Telegram {
     }
 
     fn authorize_url(&self, params: &AuthorizeParams<'_>) -> Result<String, AuthError> {
-        oauth2::authorize_url(AUTHORIZE, &self.client_id, SCOPE, params, &[])
+        let scope = if crate::telegram::is_login_client(&self.client_id) {
+            SCOPE_WITH_BOT
+        } else {
+            SCOPE
+        };
+        oauth2::authorize_url(AUTHORIZE, &self.client_id, scope, params, &[])
     }
 
     async fn complete(&self, params: &CompleteParams<'_>) -> Result<Identity, AuthError> {
@@ -135,7 +148,7 @@ impl LoginProvider for Telegram {
             display_name: claims.name.filter(|name| !name.trim().is_empty()),
             avatar_url: claims.picture,
             handle,
-            raw: json!({ "sub": claims.sub, "preferred_username": claims.preferred_username }),
+            raw: json!({ "sub": claims.sub, "id": claims.id, "preferred_username": claims.preferred_username }),
         })
     }
 }

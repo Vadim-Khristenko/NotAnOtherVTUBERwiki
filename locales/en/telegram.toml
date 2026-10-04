@@ -1,0 +1,52 @@
+# English messages for the wiki's Telegram bot, and the Telegram card in the
+# settings.
+#
+# Keys here are asked for as telegram.<key>. The file name is the prefix.
+# Bot messages are Telegram HTML: <b>, <i>, <code> and <a> work, and every
+# argument arrives escaped.
+
+# The linking page
+link_title = "Link Telegram"
+link_lede = "The wiki's bot @{bot} can then send you a password reset link, tell you about new sign-ins and, if you want, pass on your notifications."
+link_step_open = "Open the bot with the button below."
+link_step_start = "Press Start in Telegram."
+link_step_back = "Come back here: your settings show the link."
+link_open = "Open @{bot}"
+link_expires = "The button works once, for {minutes} minutes."
+link_back = "Back to settings"
+
+# The settings card
+settings_note = "Link @{bot} to get a password reset link in Telegram when you forget your password, and to hear about new sign-ins."
+settings_link = "Link Telegram"
+settings_login_hint = "Or sign in with Telegram once and allow the bot to write to you: the chat links itself."
+settings_linked = "Linked to @{bot}."
+settings_alerts = "Tell me about new sign-ins and password changes"
+settings_notifications = "Send my wiki notifications to Telegram too"
+settings_reset_note = "Forgot your password? Use the link on the sign-in page, or send /reset to the bot."
+settings_unlink = "Unlink Telegram"
+
+# The bot
+help = "<b>{wiki}</b>\nThis is the wiki's bot. It sends password reset links, sign-in alerts and, if you want, your notifications.\n\nTo link your account, open your settings on the wiki and press <b>Link Telegram</b>:\n{settings}"
+help_linked = "<b>{wiki}</b>\nThis chat is linked to <b>{user}</b>.\n\n/reset sends a link to choose a new password.\n/stop unlinks this chat."
+linked_by_login = "<b>{wiki}</b>\nYou signed in with Telegram and let this bot write to you, so this chat is now linked to <b>{user}</b>. The bot sends password reset links (/reset) and sign-in alerts here. /stop unlinks it."
+linked = "<b>{wiki}</b>\nDone: this chat is linked to <b>{user}</b>. If you forget your password, send /reset here or use the link on the sign-in page."
+link_expired = "<b>{wiki}</b>\nThis link has expired or was already used. Open your settings on the wiki and press <b>Link Telegram</b> again."
+unlinked = "<b>{wiki}</b>\nThis chat is unlinked. The bot will not write here any more."
+not_linked = "<b>{wiki}</b>\nThis chat is not linked to an account. Link it from your settings on the wiki."
+failed = "Something went wrong. Try again in a minute."
+already_linked = "<b>{wiki}</b>\nThis chat is already linked to <b>{user}</b>, so it stays there. To link it to another account, send /stop first, then press <b>Link Telegram</b> in that account's settings again."
+reset_off = "<b>{wiki}</b>\nThis wiki has no password sign-in, so there is no password to reset."
+reset_throttled = "You have asked for several links already. Try again in an hour."
+reset_sent = "The link is above."
+reset_link = "<b>{wiki}</b>\nA link to choose a new password for <b>{user}</b>. It works once, for {minutes} minutes:\n{url}\n\nIf you did not ask for it, do nothing: the password stays as it is."
+reset_link_web = "<b>{wiki}</b>\nSomebody asked to reset the password of <b>{user}</b> from {device}. The link works once, for {minutes} minutes:\n{url}\n\nIf it was not you, do nothing: the password stays as it is."
+reset_button = "Choose a new password"
+alert_sign_in = "<b>{wiki}</b>\nNew sign-in to <b>{user}</b>: {device}, {when}.\n\nNot you? Change the password and sign out the other devices in your settings."
+alert_password_changed = "<b>{wiki}</b>\nThe password of <b>{user}</b> was changed, {when}. Every other device was signed out.\n\nNot you? Reset the password with /reset at once."
+alert_password_reset = "<b>{wiki}</b>\nThe password of <b>{user}</b> was reset with a link, {when}. Every device was signed out.\n\nNot you? Reset it again with /reset and tell the wiki's admins."
+device_unknown = "an unknown device"
+open_settings = "Open settings"
+open = "Open"
+command_reset = "Get a link to choose a new password"
+command_stop = "Unlink this chat"
+command_help = "What this bot does"

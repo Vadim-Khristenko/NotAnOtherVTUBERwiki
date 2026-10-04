@@ -96,6 +96,7 @@ fn render_login(
                 registration_closed => auth.registration == Registration::Closed,
                 apply_url => auth.apply_url.as_deref(),
                 dev_login => auth.dev_login,
+                recovery => crate::recovery::available(),
                 next => view.next,
                 next_encoded => encode_component(view.next),
                 error => view.error.map(|key| ctx.t(&format!("account.{key}"))),
@@ -387,6 +388,7 @@ pub async fn change_password(
         },
     )
     .await;
+    crate::telegram::alert(&state, user.id, crate::telegram::Alert::PasswordChanged);
 
     let template = ctx
         .skin

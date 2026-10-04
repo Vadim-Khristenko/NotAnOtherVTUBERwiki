@@ -254,6 +254,14 @@ pub struct AuthConfig {
     pub twitch: Option<OAuth2Creds>,
     /// Steam Web API key for the profile lookup; login works without it.
     pub steam_api_key: Option<String>,
+    /// The wiki's Telegram bot, from BotFather: password recovery, sign-in
+    /// alerts and notifications for the people who link it. Environment only.
+    #[serde(skip)]
+    pub telegram_bot_token: Option<String>,
+    /// Whether this process reads the bot's messages (long polling). Off
+    /// when another process already does, since Telegram allows one reader.
+    #[serde(default = "default_true")]
+    pub telegram_bot_polling: bool,
     #[serde(default = "default_mail")]
     pub mail: MailConfig,
 }
@@ -279,6 +287,8 @@ impl Default for AuthConfig {
             yandex: None,
             twitch: None,
             steam_api_key: None,
+            telegram_bot_token: None,
+            telegram_bot_polling: true,
             mail: default_mail(),
         }
     }
@@ -432,6 +442,8 @@ impl fmt::Debug for AuthConfig {
             .field("yandex", &creds(&self.yandex))
             .field("twitch", &creds(&self.twitch))
             .field("steam_api_key", &creds(&self.steam_api_key))
+            .field("telegram_bot_token", &creds(&self.telegram_bot_token))
+            .field("telegram_bot_polling", &self.telegram_bot_polling)
             .field("mail", &self.mail)
             .finish()
     }
@@ -680,6 +692,17 @@ fn apply_auth_env(auth: &mut AuthConfig) -> Result<(), AppError> {
     if let Ok(value) = std::env::var("NAW_STEAM_API_KEY") {
         auth.steam_api_key = Some(value);
     }
+    if let Ok(value) = std::env::var("NAW_TELEGRAM_BOT_TOKEN")
+        && !value.trim().is_empty()
+    {
+        auth.telegram_bot_token = Some(value.trim().to_string());
+    }
+    if let Some(flag) = std::env::var("NAW_TELEGRAM_BOT_POLLING")
+        .ok()
+        .and_then(|raw| parse_bool(&raw))
+    {
+        auth.telegram_bot_polling = flag;
+    }
     if let Ok(raw) = std::env::var("NAW_MAIL_BACKEND") {
         match raw.trim().to_ascii_lowercase().as_str() {
             "log" => auth.mail.backend = MailBackend::Log,
@@ -806,9 +829,11 @@ mod tests {
                 smtp_url: Some("smtps://user:pw@smtp.example:465".to_string()),
                 mail_from: Some("noreply@vai-rice.space".to_string()),
             },
+            telegram_bot_token: Some("8100000000:bot-token-value".to_string()),
             ..AuthConfig::default()
         };
         let dumped = format!("{auth:?}");
+        assert!(!dumped.contains("bot-token-value"));
         assert!(!dumped.contains("supersecret-value"));
         assert!(!dumped.contains("smtp://"));
         assert!(!dumped.contains("smtps://"));

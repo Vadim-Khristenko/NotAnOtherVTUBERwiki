@@ -1,0 +1,74 @@
+{% extends "layout.html" %}
+{#
+  Getting back into an account. One template, five steps (`mode`):
+
+  ask     the form asking for the account. Without a bot (`available` false)
+          it says to ask an admin instead.
+  sent    the answer, the same whether or not the account exists
+  choose  the new password form for a working link: `token`, `account`
+  dead    a link that is used, expired or unknown
+  done    the password is set; every session has ended
+
+  `error` is a finished message, never text from the request.
+#}
+{% block body %}
+<div class="auth-card">
+  {% if mode == "ask" %}
+  <h1>{{ t("recovery.title") }}</h1>
+  {% if available %}
+  <p class="auth-lede">{{ t("recovery.ask_lede", bot=bot) }}</p>
+  {% if error %}<p class="notice notice-warn" role="alert">{{ error }}</p>{% endif %}
+  <form class="auth-form" method="post" action="/password/forgot">
+    <label class="field">{{ t("recovery.account") }}
+      <input class="field-input" name="username" required maxlength="254"
+             autocomplete="username" autocapitalize="none" spellcheck="false" autofocus />
+    </label>
+    <div class="form-actions">
+      <button class="button-save" type="submit">{{ t("recovery.send") }}</button>
+    </div>
+  </form>
+  <p class="field-note">{{ t("recovery.ask_no_telegram") }}</p>
+  {% else %}
+  <p class="notice">{{ t("recovery.unavailable") }}</p>
+  {% endif %}
+  <p class="auth-alt"><a href="/login">{{ t("recovery.back_to_sign_in") }}</a></p>
+
+  {% elif mode == "sent" %}
+  <h1>{{ t("recovery.sent_title") }}</h1>
+  <p class="notice notice-ok" role="status">{{ t("recovery.sent_body", bot=bot, minutes=minutes) }}</p>
+  <p class="field-note">{{ t("recovery.sent_nothing") }}</p>
+  <p class="auth-alt"><a href="/login">{{ t("recovery.back_to_sign_in") }}</a></p>
+
+  {% elif mode == "choose" %}
+  <h1>{{ t("recovery.choose_title") }}</h1>
+  <p class="auth-lede">{{ t("recovery.choose_lede", account=account) }}</p>
+  {% if error %}<p class="notice notice-warn" role="alert">{{ error }}</p>{% endif %}
+  <form class="auth-form" method="post" action="/password/reset">
+    <input type="hidden" name="token" value="{{ token }}" />
+    {# Lets a password manager file the new password under the account. #}
+    <input type="text" name="username" value="{{ account }}" autocomplete="username" hidden />
+    <label class="field">{{ t("account.password_new") }}
+      <input class="field-input" name="password" type="password" required minlength="{{ min_len }}" maxlength="256" autocomplete="new-password" autofocus />
+      <span class="field-note">{{ t("account.password_rules", min=min_len) }}</span>
+    </label>
+    <label class="field">{{ t("account.password_confirm") }}
+      <input class="field-input" name="confirm" type="password" required minlength="{{ min_len }}" maxlength="256" autocomplete="new-password" />
+    </label>
+    <div class="form-actions">
+      <button class="button-save" type="submit">{{ t("account.password_save") }}</button>
+    </div>
+  </form>
+  <p class="field-note">{{ t("recovery.choose_sessions") }}</p>
+
+  {% elif mode == "dead" %}
+  <h1>{{ t("recovery.dead_title") }}</h1>
+  <p class="notice notice-warn" role="alert">{{ t("recovery.dead_body", minutes=minutes) }}</p>
+  <p><a class="button-save" href="/password/forgot">{{ t("recovery.dead_again") }}</a></p>
+
+  {% elif mode == "done" %}
+  <h1>{{ t("recovery.done_title") }}</h1>
+  <p class="notice notice-ok" role="status">{{ t("recovery.done_body") }}</p>
+  <p><a class="button-save" href="/login">{{ t("account.sign_in") }}</a></p>
+  {% endif %}
+</div>
+{% endblock %}

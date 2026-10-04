@@ -317,6 +317,7 @@ pub(crate) const RESERVED: &[&str] = &[
     "media",
     "new",
     "notifications",
+    "password",
     "preview",
     "ready",
     "search",

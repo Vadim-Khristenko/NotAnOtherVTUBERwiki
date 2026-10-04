@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO notification_log (id, user_id, kind, channel, status, error)\n         VALUES ($1, $2, $3, 'telegram', $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f7b9d3b13033f0a2d04d794ad422485c36453e9dc72d5d340b90945a00f9a7bc"
+}

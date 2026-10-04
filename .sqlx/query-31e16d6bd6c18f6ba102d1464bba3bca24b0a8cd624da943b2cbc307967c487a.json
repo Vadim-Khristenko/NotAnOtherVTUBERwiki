@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET settings = jsonb_set(settings, '{telegram}', $2) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "31e16d6bd6c18f6ba102d1464bba3bca24b0a8cd624da943b2cbc307967c487a"
+}

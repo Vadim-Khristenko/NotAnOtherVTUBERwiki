@@ -462,6 +462,7 @@ async fn serve() -> ExitCode {
         }
     };
     tracing::info!(skin_dir = %state.config.skin_dir, %addr, "naw listening");
+    naw_web::start_background(state.clone());
     match axum::serve(
         listener,
         naw_web::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),

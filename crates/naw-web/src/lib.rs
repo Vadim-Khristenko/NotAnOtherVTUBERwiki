@@ -45,6 +45,7 @@ mod perm;
 mod policy;
 mod profile;
 mod protect;
+mod recovery;
 mod relay;
 mod reports;
 mod resolve;
@@ -54,8 +55,15 @@ mod seo;
 mod settings;
 mod source;
 mod system;
+mod telegram;
 mod templates;
 mod translate;
+
+/// Starts the work that runs beside the server: the Telegram bot, when a
+/// token is set.
+pub fn start_background(state: AppState) {
+    telegram::start(state);
+}
 
 /// Credentials for the command line: password hashing, temporary passwords
 /// and the username rule.
@@ -112,6 +120,17 @@ fn routes(state: AppState) -> Router {
         .route("/logout", post(auth::routes::logout))
         .route("/settings", get(settings::page))
         .route("/settings/language", post(settings::set_language))
+        .route("/settings/telegram", post(settings::telegram_prefs))
+        .route("/settings/telegram/link", post(settings::telegram_link))
+        .route("/settings/telegram/unlink", post(settings::telegram_unlink))
+        .route(
+            "/password/forgot",
+            get(recovery::forgot_page).post(recovery::forgot_send),
+        )
+        .route(
+            "/password/reset",
+            get(recovery::reset_page).post(recovery::reset_save),
+        )
         .route("/settings/username", post(settings::change_username))
         .route("/settings/display-name", post(settings::set_display_name))
         .route(

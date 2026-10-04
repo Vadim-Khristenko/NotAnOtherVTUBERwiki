@@ -145,6 +145,7 @@ pub async fn page(
 
     let policy = crate::policy::accounts(&state).await?;
     let my_reports = crate::reports::mine(&state, &ctx, user.id).await?;
+    let telegram = telegram_view(&state, user.id).await?;
 
     // The saved preference, or "" to follow the browser.
     let chosen = if ctx.skin.messages.has(&user.locale) {
@@ -177,7 +178,8 @@ pub async fn page(
                 linkable => linkable,
                 sessions => session_rows,
                 my_reports => my_reports,
-                saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username" | "display_name" | "avatar" | "avatar_removed")),
+                telegram => telegram,
+                saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username" | "display_name" | "avatar" | "avatar_removed" | "telegram" | "telegram_unlinked")),
                 error => crate::pages::message_key(query.error.as_deref(), &["rename_", "display_name_", "avatar_"]),
                 rename_enabled => policy.rename_enabled,
                 rename_cooldown => policy.rename_cooldown_days,
@@ -187,6 +189,146 @@ pub async fn page(
         })
         .map_err(template_error)?;
     Ok(crate::pages::private_page(StatusCode::OK, html))
+}
+
+/// The Telegram card: `None` when the wiki has no bot.
+async fn telegram_view(
+    state: &AppState,
+    user_id: uuid::Uuid,
+) -> Result<Option<minijinja::Value>, AppError> {
+    let Some(bot) = crate::telegram::bot() else {
+        return Ok(None);
+    };
+    let link = sqlx::query!(
+        "SELECT tg_username, linked_at FROM telegram_links WHERE user_id = $1",
+        user_id
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let prefs = sqlx::query!(
+        r#"SELECT COALESCE((settings->'telegram'->>'alerts')::boolean, true) AS "alerts!",
+                  COALESCE((settings->'telegram'->>'notifications')::boolean, false) AS "notifications!"
+           FROM users WHERE id = $1"#,
+        user_id
+    )
+    .fetch_one(&state.db)
+    .await?;
+    Ok(Some(minijinja::context! {
+        bot => bot.username(),
+        linked => link.is_some(),
+        tg_username => link.as_ref().and_then(|l| l.tg_username.clone()),
+        since => link.map(|l| l.linked_at.format("%Y-%m-%d").to_string()),
+        alerts => prefs.alerts,
+        notifications => prefs.notifications,
+        minutes => crate::telegram::LINK_MINUTES,
+        // The Telegram login is this bot, so signing in with it links the chat.
+        login_links => state
+            .config
+            .auth
+            .telegram
+            .as_ref()
+            .is_some_and(|creds| crate::telegram::is_login_client(&creds.client_id)),
+    }))
+}
+
+/// POST /settings/telegram/link: a page with the button that opens the bot
+/// with a one-time code. Not a redirect: the CSP keeps forms on this site,
+/// and the code stays out of every address of ours.
+pub async fn telegram_link(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    let Some(bot) = crate::telegram::bot() else {
+        return Ok(crate::errors::not_found());
+    };
+    let Some(ctx) = crate::resolve::context(&state, &headers, Some(&user)).await? else {
+        return Ok(crate::errors::not_found());
+    };
+    let Some(code) = crate::telegram::new_link_code(&state, user.id).await else {
+        return Err(AppError::Internal);
+    };
+    let html = ctx
+        .skin
+        .env
+        .get_template("telegram.html")
+        .map_err(template_error)?
+        .render(minijinja::context! {
+            ..ctx.chrome_context(),
+            ..minijinja::context! {
+                title => ctx.t("telegram.link_title"),
+                version => ENGINE_VERSION,
+                bot => bot.username(),
+                open_href => bot.start_link(&code),
+                minutes => crate::telegram::LINK_MINUTES,
+            }
+        })
+        .map_err(template_error)?;
+    Ok(crate::pages::private_page(StatusCode::OK, html))
+}
+
+/// POST /settings/telegram/unlink
+pub async fn telegram_unlink(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    let removed = sqlx::query!("DELETE FROM telegram_links WHERE user_id = $1", user.id)
+        .execute(&state.db)
+        .await?
+        .rows_affected();
+    if removed > 0 {
+        crate::audit::record_or_log(
+            &state.db,
+            crate::audit::Entry {
+                wiki_id: None,
+                user_id: Some(user.id),
+                action: "auth.telegram_unlink",
+                entity_type: "user",
+                entity_id: Some(user.id),
+                meta: serde_json::json!({ "from": "settings" }),
+            },
+        )
+        .await;
+    }
+    Ok(Redirect::to("/settings?saved=telegram_unlinked#s-telegram").into_response())
+}
+
+#[derive(Deserialize)]
+pub struct TelegramForm {
+    /// Unchecked boxes are absent from the post.
+    #[serde(default)]
+    alerts: Option<String>,
+    #[serde(default)]
+    notifications: Option<String>,
+}
+
+/// POST /settings/telegram: what the bot may send.
+pub async fn telegram_prefs(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    Form(form): Form<TelegramForm>,
+) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(sign_in_first());
+    };
+    let prefs = serde_json::json!({
+        "alerts": form.alerts.is_some(),
+        "notifications": form.notifications.is_some(),
+    });
+    sqlx::query!(
+        "UPDATE users SET settings = jsonb_set(settings, '{telegram}', $2) WHERE id = $1",
+        user.id,
+        prefs
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(Redirect::to("/settings?saved=telegram#s-telegram").into_response())
 }
 
 #[derive(Deserialize)]

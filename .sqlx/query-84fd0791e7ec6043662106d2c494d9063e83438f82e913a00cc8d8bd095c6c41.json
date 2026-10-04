@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT tl.chat_id, COALESCE(NULLIF(u.locale, ''), tl.language, '') AS \"locale!\"\n           FROM telegram_links tl JOIN users u ON u.id = tl.user_id\n           WHERE tl.user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chat_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "telegram_links",
+            "name": "chat_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "locale!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "84fd0791e7ec6043662106d2c494d9063e83438f82e913a00cc8d8bd095c6c41"
+}

@@ -33,6 +33,7 @@
     </label>
     <div class="form-actions">
       <button class="button-save" type="submit">{{ t("account.sign_in") }}</button>
+      {% if recovery %}<a class="auth-forgot" href="/password/forgot">{{ t("recovery.forgot_link") }}</a>{% endif %}
     </div>
   </form>
   {% endif %}
