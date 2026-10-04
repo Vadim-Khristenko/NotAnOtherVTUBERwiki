@@ -20,7 +20,9 @@ If you want to know why the technology is what it is, read [STACK.md](STACK.md).
 - Sign-in with a username and password, and through GitHub, Discord and Telegram OIDC.
   Registration can be closed, so providers only sign in people who already have an
   account. A browser without JavaScript (or in iPhone Lockdown Mode) can sign in through
-  another device with a one-time code. Email verification is not built yet.
+  another device with a one-time code. A forgotten password comes back through the
+  wiki's Telegram bot, which also warns about new sign-ins. Email verification is not
+  built yet.
 - An admin panel: accounts with per-person rights, sanctions and notes, pages, the audit
   log, wiki settings, languages, header and footer, error pages, 7TV emote sources.
 - Images in articles, avatars, profiles, and curators who can protect pages and look
@@ -129,7 +131,11 @@ The skeleton everything else hangs on.
 - [ ] Authentication, mostly landed. Sessions, the identity store, sign-in with
       GitHub, Discord and Telegram OIDC, and password login with Argon2id all
       work, with throttling and admin-issued temporary passwords. Registration
-      can be open or closed. Email verification does not exist yet.
+      can be open or closed. A forgotten password is reset through the wiki's
+      Telegram bot: the chat links from the settings, or by itself on a Telegram
+      sign-in that allows the bot to write. The bot also warns about new sign-ins
+      and password changes and can pass on notifications. Email verification and
+      reset by email do not exist yet.
       **Deviation from this plan, on purpose:** sessions live in the Postgres
       `sessions` table, not in Valkey. The cookie carries a random UUID and the
       server owns the lookup, so a session survives a cache flush and can be
