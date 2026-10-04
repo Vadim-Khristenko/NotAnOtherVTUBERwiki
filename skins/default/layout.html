@@ -826,6 +826,10 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
 .notify-text { overflow-wrap: anywhere; }
 .notify-body .notify-note { margin-top: 0.2rem; color: var(--ink-soft); font-size: 0.92rem; overflow-wrap: anywhere; }
 .notify-stop { flex: none; font-size: 0.85rem; }
+/* The rich editor sits over the textarea, which stays the form field. */
+.rich-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; border: 0 !important; opacity: 0; overflow: hidden; clip: rect(0 0 0 0); pointer-events: none; }
+.editor-mode { margin: var(--s2) 0 0; }
+.rich-editor { margin-top: 0.35rem; }
 /* Monitoring: numbers first, then two charts, then where the time went. */
 .mon-ranges { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: 0 0 var(--s4); }
 .mon-range { padding: 0.3rem 0.8rem; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-soft); text-decoration: none; font-size: 0.9rem; }
@@ -854,6 +858,9 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
 .mon-p50 { stroke: var(--accent); }
 .mon-p95 { stroke: var(--accent-2, #8b5cf6); }
 .mon-p99 { stroke: var(--danger, #e5484d); stroke-dasharray: 5 3; }
+.mon-p50-dot { fill: var(--accent); }
+.mon-p95-dot { fill: var(--accent-2, #8b5cf6); }
+.mon-p99-dot { fill: var(--danger, #e5484d); }
 .mon-axis { display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--muted); padding: 0.25rem 0.1rem 0; font-variant-numeric: tabular-nums; }
 .mon-legend { margin: 0.3rem 0 0; font-size: 0.82rem; color: var(--muted); }
 .mon-key { display: inline-block; width: 0.8rem; height: 0.55rem; margin: 0 0.25rem 0 0.6rem; border-radius: 2px; vertical-align: middle; }

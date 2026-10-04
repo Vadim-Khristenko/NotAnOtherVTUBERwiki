@@ -254,7 +254,7 @@ pub async fn page(
             .map(|b| b.percentile(0.99))
             .fold(0.0, f64::max),
     );
-    let line = |q: f64| -> String {
+    let points_of = |q: f64| -> Vec<(f64, f64)> {
         buckets
             .iter()
             .enumerate()
@@ -262,10 +262,23 @@ pub async fn page(
             .map(|(i, b)| {
                 let x = i as f64 * bar_w + bar_w / 2.0;
                 let y = CHART_H - CHART_H * b.percentile(q) / top_latency;
-                format!("{x:.1},{y:.1}")
+                (x, y)
             })
+            .collect()
+    };
+    let line = |q: f64| -> String {
+        points_of(q)
+            .iter()
+            .map(|(x, y)| format!("{x:.1},{y:.1}"))
             .collect::<Vec<_>>()
             .join(" ")
+    };
+    // A point of its own, so one busy minute still shows.
+    let dots = |q: f64| -> Vec<minijinja::Value> {
+        points_of(q)
+            .iter()
+            .map(|(x, y)| minijinja::context! { x => format!("{x:.1}"), y => format!("{y:.1}") })
+            .collect()
     };
 
     let mut routes: Vec<(String, Agg)> = per_route.into_iter().collect();
@@ -350,12 +363,15 @@ pub async fn page(
                 w => CHART_W,
                 h => CHART_H,
                 bars => bars,
-                top_requests => top_requests,
+                top_requests => format!("{top_requests:.0}"),
                 top_latency => ms(top_latency),
                 mid_latency => ms(top_latency / 2.0),
                 p50 => line(0.50),
                 p95 => line(0.95),
                 p99 => line(0.99),
+                dots50 => dots(0.50),
+                dots95 => dots(0.95),
+                dots99 => dots(0.99),
                 first => label_of(0),
                 middle => label_of(points / 2),
                 last => label_of(points - 1),

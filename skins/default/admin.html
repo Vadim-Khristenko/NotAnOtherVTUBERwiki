@@ -259,6 +259,9 @@
         {% if chart.p99 %}<polyline class="mon-line mon-p99" points="{{ chart.p99 }}" />{% endif %}
         {% if chart.p95 %}<polyline class="mon-line mon-p95" points="{{ chart.p95 }}" />{% endif %}
         {% if chart.p50 %}<polyline class="mon-line mon-p50" points="{{ chart.p50 }}" />{% endif %}
+        {% for d in chart.dots99 %}<circle class="mon-dot mon-p99-dot" cx="{{ d.x }}" cy="{{ d.y }}" r="2.5" />{% endfor %}
+        {% for d in chart.dots95 %}<circle class="mon-dot mon-p95-dot" cx="{{ d.x }}" cy="{{ d.y }}" r="2.5" />{% endfor %}
+        {% for d in chart.dots50 %}<circle class="mon-dot mon-p50-dot" cx="{{ d.x }}" cy="{{ d.y }}" r="2.5" />{% endfor %}
       </svg>
       <figcaption class="mon-axis"><span>{{ chart.first }}</span><span>{{ chart.middle }}</span><span>{{ chart.last }}</span></figcaption>
       <p class="mon-legend"><span class="mon-key mon-p50-key"></span>p50 <span class="mon-key mon-p95-key"></span>p95 <span class="mon-key mon-p99-key"></span>p99 · {{ t("monitoring.top", n=chart.top_latency) }}, {{ t("monitoring.middle", n=chart.mid_latency) }}</p>
