@@ -38,6 +38,22 @@ fn incoming_id(req: &Request<Body>) -> Option<String> {
     id_is_sane(trimmed).then(|| trimmed.to_string())
 }
 
+/// Query parameters whose values open something: a password reset link's
+/// token, and an OAuth callback's code and state.
+const SECRET_PARAMS: &[&str] = &["token", "code", "state"];
+
+/// The query string with those values blanked, for the trace log.
+fn loggable_query(query: &str) -> String {
+    query
+        .split('&')
+        .map(|pair| match pair.split_once('=') {
+            Some((name, _)) if SECRET_PARAMS.contains(&name) => format!("{name}=[redacted]"),
+            _ => pair.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
 fn log_headers(req: &Request<Body>, id: &str) {
     for (name, value) in req.headers() {
         let name = name.as_str();
@@ -63,7 +79,7 @@ pub async fn layer(mut req: Request<Body>, next: Next) -> Response {
     let path = req.uri().path().to_string();
 
     if settings.trace {
-        let query = req.uri().query().unwrap_or_default().to_string();
+        let query = loggable_query(req.uri().query().unwrap_or_default());
         tracing::debug!(
             request_id = %id,
             %method,
@@ -99,6 +115,19 @@ pub async fn layer(mut req: Request<Body>, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secrets_in_the_query_stay_out_of_the_trace_log() {
+        assert_eq!(
+            loggable_query("token=abc&next=/x"),
+            "token=[redacted]&next=/x"
+        );
+        assert_eq!(
+            loggable_query("code=c1&state=s1&err=x"),
+            "code=[redacted]&state=[redacted]&err=x"
+        );
+        assert_eq!(loggable_query(""), "");
+    }
 
     fn request_with(id: Option<&str>) -> Request<Body> {
         let mut builder = Request::builder().uri("/");
