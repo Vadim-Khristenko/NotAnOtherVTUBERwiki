@@ -94,7 +94,7 @@ release feeds on 2026-08-30, not recalled from memory.
 .          ...              ....            .                   ..         .          .....        .
 ```
 
-*Generated art, kept because it makes the repo less boring. See [AI-ASSETS.md](AI-ASSETS.md).*
+*ASCII art made by a person, kept because it makes the repo less boring.*
 
 </details>
 
