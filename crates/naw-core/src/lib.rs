@@ -1,5 +1,6 @@
 //! NotAnotherWiki Engine core: configuration, errors, state, backends.
 
+pub mod assets;
 pub mod backends;
 pub mod config;
 pub mod csp;

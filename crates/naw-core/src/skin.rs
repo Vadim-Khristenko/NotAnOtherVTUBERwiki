@@ -16,6 +16,8 @@ use crate::i18n::Catalog;
 pub struct Loaded {
     pub env: minijinja::Environment<'static>,
     pub messages: Arc<Catalog>,
+    /// The skin's styles, scripts and fonts.
+    pub assets: Arc<crate::assets::Assets>,
     pub loaded_at: chrono::DateTime<chrono::Utc>,
     /// The file fingerprint this set was built from.
     pub fingerprint: u64,
@@ -143,10 +145,17 @@ fn build(
     fingerprint: u64,
 ) -> Result<Loaded, AppError> {
     let messages = Arc::new(Catalog::load(locales_dir)?);
-    let env = crate::templates::build(skin_dir, fallback_dir, Arc::clone(&messages))?;
+    let assets = Arc::new(crate::assets::Assets::load(skin_dir, fallback_dir));
+    let env = crate::templates::build(
+        skin_dir,
+        fallback_dir,
+        Arc::clone(&messages),
+        Arc::clone(&assets),
+    )?;
     Ok(Loaded {
         env,
         messages,
+        assets,
         loaded_at: chrono::Utc::now(),
         fingerprint,
     })

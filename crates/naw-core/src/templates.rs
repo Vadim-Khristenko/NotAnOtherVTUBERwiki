@@ -66,20 +66,32 @@ pub fn load_templates_with_fallback(
     fallback_dir: &str,
     locales_dir: &str,
 ) -> Result<Environment<'static>, AppError> {
-    build(dir, fallback_dir, Arc::new(Catalog::load(locales_dir)?))
+    build(
+        dir,
+        fallback_dir,
+        Arc::new(Catalog::load(locales_dir)?),
+        Arc::new(crate::assets::Assets::load(dir, fallback_dir)),
+    )
 }
 
 /// Builds an environment against an already loaded catalogue, shared with
-/// the handlers so templates and Rust agree on the messages.
+/// the handlers so templates and Rust agree on the messages, and the skin's
+/// assets, which templates link with `asset("scripts/editor.js")`.
 pub fn build(
     dir: &str,
     fallback_dir: &str,
     catalog: Arc<Catalog>,
+    assets: Arc<crate::assets::Assets>,
 ) -> Result<Environment<'static>, AppError> {
     let mut env = Environment::new();
     crate::i18n::install(&mut env, catalog);
     // A function rather than a context value, so every template gets it.
     env.add_function("csp_nonce", crate::csp::current);
+    // The hashed address of a skin asset, or "" when no skin ships it, so a
+    // template can leave out what is not there.
+    env.add_function("asset", move |path: &str| -> String {
+        assets.url(path).unwrap_or_default()
+    });
     for name in TEMPLATES {
         let path = format!("{dir}/{name}");
         let source = match std::fs::read_to_string(&path) {

@@ -123,6 +123,9 @@
   <button class="button-preview" type="button" id="image-url-go">{{ t("media.import") }}</button>
 </div>
 <p class="field-note editor-media-note"><a href="/media" target="_blank" rel="noopener">{{ t("media.upload_link") }}</a> · <a href="/emotes" target="_blank" rel="noopener">{{ t("emotes.title") }}</a> <span class="editor-media-status" id="image-status" role="status"></span></p>
+{# The rich editor, when the skin ships it: a toggle shown by its script,
+   so without JavaScript nobody sees a switch that does nothing. #}
+<p class="editor-mode" hidden><label class="check"><input type="checkbox" id="editor-mode" /> {{ t("editor.rich") }}</label></p>
 <label class="field">{{ t("editor.body") }}
 <textarea class="field-body" id="body-md" name="body_md" rows="20" required
           data-max="{{ body_max }}" data-too-large="{{ t('editor.body_too_large', max=body_max_mb) }}">{{ body_md }}</textarea>
@@ -515,4 +518,6 @@
   livePreview();
 })();
 </script>
+{% set editor_js = asset("scripts/editor.js") %}
+{% if editor_js %}<script type="module" src="{{ editor_js }}" nonce="{{ csp_nonce() }}"></script>{% endif %}
 {% endblock %}

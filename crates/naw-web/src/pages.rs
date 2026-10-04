@@ -306,6 +306,7 @@ pub(crate) fn slug_is_valid(path: &str) -> bool {
 pub(crate) const RESERVED: &[&str] = &[
     "account",
     "admin",
+    "api",
     "auth",
     "drafts",
     "emotes",
@@ -2250,6 +2251,61 @@ const SKIN_ASSETS: &[(&str, &str)] = &[
     ("web-app-manifest-192x192.png", "image/png"),
     ("web-app-manifest-512x512.png", "image/png"),
 ];
+
+#[derive(Debug, serde::Deserialize)]
+pub struct AssetQuery {
+    #[serde(default)]
+    v: Option<String>,
+}
+
+/// GET /skin/a/{folder}/{file}: a stylesheet, script or font the skin ships
+/// (see `naw_core::assets`). Served from memory, gzipped when the browser
+/// takes it, and cached for a year when the address carries its hash.
+pub async fn skin_asset_file(
+    State(state): State<AppState>,
+    Path((folder, file)): Path<(String, String)>,
+    Query(query): Query<AssetQuery>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let skin = state.skin.current();
+    let Some(asset) = skin.assets.get(&format!("{folder}/{file}")) else {
+        return Ok(crate::errors::not_found());
+    };
+    let immutable = query.v.as_deref() == Some(asset.hash.as_str());
+    let cache = if immutable {
+        "public, max-age=31536000, immutable"
+    } else {
+        "public, max-age=300"
+    };
+    let gzip_ok = headers
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.split(',').any(|e| e.trim().starts_with("gzip")));
+    let (body, encoded) = match (&asset.gzip, gzip_ok) {
+        (Some(packed), true) => (packed.clone(), true),
+        _ => (asset.bytes.clone(), false),
+    };
+    let mut response = (
+        [
+            (header::CONTENT_TYPE, asset.content_type),
+            (header::CACHE_CONTROL, cache),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (header::VARY, "Accept-Encoding"),
+        ],
+        body,
+    )
+        .into_response();
+    if encoded {
+        response.headers_mut().insert(
+            header::CONTENT_ENCODING,
+            header::HeaderValue::from_static("gzip"),
+        );
+    }
+    if let Ok(etag) = header::HeaderValue::from_str(&format!("\"{}\"", asset.hash)) {
+        response.headers_mut().insert(header::ETAG, etag);
+    }
+    Ok(response)
+}
 
 /// GET /skin/{file}: pictures a skin ships in `{skin_dir}/static/`, such as
 /// the landing art. Only plain lowercase names with a picture extension, so

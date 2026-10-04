@@ -24,3 +24,5 @@ object_store.workspace = true
 async-trait.workspace = true
 minijinja.workspace = true
 sha2.workspace = true
+flate2 = "1"
+hex.workspace = true

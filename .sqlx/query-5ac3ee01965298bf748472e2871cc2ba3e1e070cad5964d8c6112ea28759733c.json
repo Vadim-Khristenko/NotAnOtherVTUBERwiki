@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT ON (slug) slug, title FROM pages\n                   WHERE wiki_id = $1 AND namespace = ($2::text)::page_namespace\n                     AND deleted_at IS NULL AND current_revision_id IS NOT NULL\n                     AND (slug ILIKE $3 OR title ILIKE $4)\n                   ORDER BY slug, (COALESCE(locale, '') = $5) DESC\n                   LIMIT $6",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "5ac3ee01965298bf748472e2871cc2ba3e1e070cad5964d8c6112ea28759733c"
+}

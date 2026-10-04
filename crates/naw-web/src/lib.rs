@@ -21,6 +21,7 @@ mod auth;
 pub mod bootstrap;
 mod categories;
 mod chrome;
+mod complete;
 mod csp;
 mod csrf;
 mod diff;
@@ -257,6 +258,7 @@ fn routes(state: AppState) -> Router {
         .route("/drafts/save", post(drafts::save).layer(text_form()))
         .route("/drafts/{id}/delete", post(drafts::discard))
         .route("/drafts/review/{id}/withdraw", post(review::withdraw))
+        .route("/api/complete", get(complete::complete))
         .route("/notifications", get(notify::list))
         .route("/watchlist", get(notify::watchlist))
         .route("/", get(pages::home))
@@ -268,6 +270,7 @@ fn routes(state: AppState) -> Router {
         )
         .route("/preview", post(pages::preview).layer(text_form()))
         .route("/skin/{file}", get(pages::skin_static))
+        .route("/skin/a/{folder}/{file}", get(pages::skin_asset_file))
         .route("/favicon.ico", get(pages::favicon_ico))
         .route("/favicon-96x96.png", get(pages::favicon_png))
         .route("/apple-touch-icon.png", get(pages::apple_touch_icon))
