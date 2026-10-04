@@ -145,7 +145,12 @@ pub async fn page(
 
     let policy = crate::policy::accounts(&state).await?;
     let my_reports = crate::reports::mine(&state, &ctx, user.id).await?;
-    let telegram = telegram_view(&state, user.id).await?;
+    let telegram = telegram_view(
+        &state,
+        user.id,
+        ctx.actor.can(crate::perm::Capability::AdminPanel),
+    )
+    .await?;
 
     // The saved preference, or "" to follow the browser.
     let chosen = if ctx.skin.messages.has(&user.locale) {
@@ -195,6 +200,7 @@ pub async fn page(
 async fn telegram_view(
     state: &AppState,
     user_id: uuid::Uuid,
+    admin: bool,
 ) -> Result<Option<minijinja::Value>, AppError> {
     let Some(bot) = crate::telegram::bot() else {
         return Ok(None);
@@ -207,7 +213,8 @@ async fn telegram_view(
     .await?;
     let prefs = sqlx::query!(
         r#"SELECT COALESCE((settings->'telegram'->>'alerts')::boolean, true) AS "alerts!",
-                  COALESCE((settings->'telegram'->>'notifications')::boolean, false) AS "notifications!"
+                  COALESCE((settings->'telegram'->>'notifications')::boolean, false) AS "notifications!",
+                  COALESCE((settings->'telegram'->>'ops')::boolean, true) AS "ops!"
            FROM users WHERE id = $1"#,
         user_id
     )
@@ -220,6 +227,9 @@ async fn telegram_view(
         since => link.map(|l| l.linked_at.format("%Y-%m-%d").to_string()),
         alerts => prefs.alerts,
         notifications => prefs.notifications,
+        // Alerts about the wiki itself go to the people who run it.
+        admin => admin,
+        ops => prefs.ops,
         minutes => crate::telegram::LINK_MINUTES,
         // The Telegram login is this bot, so signing in with it links the chat.
         login_links => state
@@ -263,6 +273,7 @@ pub async fn telegram_link(
                 version => ENGINE_VERSION,
                 bot => bot.username(),
                 open_href => bot.start_link(&code),
+                code => code.clone(),
                 minutes => crate::telegram::LINK_MINUTES,
             }
         })
@@ -306,6 +317,8 @@ pub struct TelegramForm {
     alerts: Option<String>,
     #[serde(default)]
     notifications: Option<String>,
+    #[serde(default)]
+    ops: Option<String>,
 }
 
 /// POST /settings/telegram: what the bot may send.
@@ -320,6 +333,7 @@ pub async fn telegram_prefs(
     let prefs = serde_json::json!({
         "alerts": form.alerts.is_some(),
         "notifications": form.notifications.is_some(),
+        "ops": form.ops.is_some(),
     });
     sqlx::query!(
         "UPDATE users SET settings = jsonb_set(settings, '{telegram}', $2) WHERE id = $1",

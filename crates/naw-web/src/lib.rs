@@ -15,6 +15,7 @@ mod about;
 mod account;
 mod admin;
 mod admin_user;
+mod alerts;
 mod audit;
 mod auth;
 pub mod bootstrap;
@@ -36,6 +37,8 @@ mod landing;
 mod lang;
 mod locale_path;
 mod media;
+mod metrics;
+mod monitoring;
 mod moving;
 mod net;
 mod notify;
@@ -59,9 +62,10 @@ mod telegram;
 mod templates;
 mod translate;
 
-/// Starts the work that runs beside the server: the Telegram bot, when a
-/// token is set.
+/// Starts the work that runs beside the server: the metrics writer and the
+/// alerts, and the Telegram bot when a token is set.
 pub fn start_background(state: AppState) {
+    metrics::start(state.clone());
     telegram::start(state);
 }
 
@@ -186,6 +190,7 @@ fn routes(state: AppState) -> Router {
         .route("/admin/pages", get(admin::pages_list))
         .route("/admin/pages/{action}", post(admin::page_action))
         .route("/admin/audit", get(admin::audit_log))
+        .route("/admin/monitoring", get(monitoring::page))
         .route("/admin/review", get(review::queue))
         .route("/admin/review/{id}", get(review::show))
         .route("/admin/review/{id}/accept", post(review::accept))

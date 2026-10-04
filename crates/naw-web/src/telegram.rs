@@ -551,7 +551,7 @@ async fn set_commands(state: &AppState, bot: &Bot) {
         } else {
             lang.to_string()
         };
-        let commands: Vec<Value> = ["reset", "stop", "help"]
+        let commands: Vec<Value> = ["link", "unlink", "reset", "help"]
             .iter()
             .map(|c| json!({ "command": c, "description": text(state, &shown, &format!("command_{c}"), &[]) }))
             .collect();
@@ -669,9 +669,24 @@ async fn handle(state: &AppState, bot: &Bot, message: Message) {
     let (cmd, arg) = command(message.text.as_deref().unwrap_or(""));
     let (wiki, origin) = site(state).await;
     let reply = match cmd.as_str() {
-        "/start" if !arg.is_empty() => link(state, chat_id, tg_username, &arg, &lang, &wiki).await,
+        // `/link <code>` is the same as following the button: for when the
+        // t.me link does not open the app, the code can be pasted by hand.
+        "/start" | "/link" if !arg.is_empty() => {
+            link(state, chat_id, tg_username, &arg, &lang, &wiki).await
+        }
+        // A link always starts on the site, from the signed-in owner: a code
+        // made here and confirmed there could be confirmed by a victim.
+        "/link" => text(
+            state,
+            &lang,
+            "link_howto",
+            &[
+                ("wiki", &wiki),
+                ("settings", &format!("{origin}/settings#s-telegram")),
+            ],
+        ),
         "/reset" => reset(state, chat_id, &lang, &wiki, &origin).await,
-        "/stop" => unlink(state, chat_id, &lang, &wiki).await,
+        "/stop" | "/unlink" => unlink(state, chat_id, &lang, &wiki).await,
         _ => match account_of_chat(state, chat_id).await {
             Some((_, username)) => text(
                 state,

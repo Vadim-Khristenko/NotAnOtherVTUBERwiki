@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT minute, route, requests, server_errors, client_errors, hist, sum_ms, max_ms\n         FROM metrics_minutes WHERE minute >= $1 ORDER BY minute",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "minute",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "metrics_minutes",
+            "name": "minute"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "route",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metrics_minutes",
+            "name": "route"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "requests",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metrics_minutes",
+            "name": "requests"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "server_errors",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metrics_minutes",
+            "name": "server_errors"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "client_errors",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metrics_minutes",
+            "name": "client_errors"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "hist",
+        "type_info": "Int4Array",
+        "origin": {
+          "Table": {
+            "table": "metrics_minutes",
+            "name": "hist"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "sum_ms",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "metrics_minutes",
+            "name": "sum_ms"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "max_ms",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metrics_minutes",
+            "name": "max_ms"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b55da90d677be761d43463b5e5b67c389b05bd9336e9812a3e84d547cf3ac920"
+}

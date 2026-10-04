@@ -18,6 +18,8 @@
   </ol>
   <p><a class="button-save" href="{{ open_href }}" rel="noopener noreferrer">{{ t("telegram.link_open", bot=bot) }}</a></p>
   <p class="field-note">{{ t("telegram.link_expires", minutes=minutes) }}</p>
+  <p class="field-note">{{ t("telegram.link_by_hand") }}</p>
+  <p><code class="telegram-code">/link {{ code }}</code></p>
   <p><a href="/settings#s-telegram">{{ t("telegram.link_back") }}</a></p>
 </div>
 {% endblock %}

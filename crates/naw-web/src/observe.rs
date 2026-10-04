@@ -92,9 +92,15 @@ pub async fn layer(mut req: Request<Body>, next: Next) -> Response {
     }
 
     let started = Instant::now();
+    let in_flight = crate::metrics::begin();
     let mut response = next.run(req).await;
+    drop(in_flight);
     let elapsed_ms = started.elapsed().as_millis();
     let status = response.status().as_u16();
+    crate::metrics::record(method.as_str(), &path, status, elapsed_ms);
+    if status >= 500 {
+        crate::metrics::server_error(&id, method.as_str(), &path, status);
+    }
 
     if let Ok(value) = HeaderValue::from_str(&id) {
         response.headers_mut().insert(REQUEST_ID, value);

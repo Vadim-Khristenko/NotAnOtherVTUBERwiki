@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO metrics_load (minute, peak_in_flight) VALUES ($1, $2)\n         ON CONFLICT (minute) DO UPDATE SET peak_in_flight = GREATEST(metrics_load.peak_in_flight, EXCLUDED.peak_in_flight)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7075387ca3eb8879021f0e9923be47ec1b835e6bb6b09f85d7ebbc00d30a865c"
+}

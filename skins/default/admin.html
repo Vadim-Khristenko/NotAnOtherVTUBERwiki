@@ -42,6 +42,7 @@
       {% if can_reports %}{{ nav_item("/admin/reports", "reports", "flag", t("admin.reports"), open_reports | default(0)) }}{% endif %}
       {% if can_panel %}{{ nav_item("/admin/pages", "pages", "file-text", t("admin.pages")) }}{% endif %}
       {% if can_audit %}{{ nav_item("/admin/audit", "audit", "history", t("admin.audit")) }}{% endif %}
+      {% if can_panel %}{{ nav_item("/admin/monitoring", "monitoring", "activity", t("monitoring.title")) }}{% endif %}
       {% if can_panel %}
       <p class="admin-nav-group">{{ t("admin.group_people") }}</p>
       {{ nav_item("/admin/users", "users", "users", t("admin.accounts")) }}
@@ -199,6 +200,115 @@
     {% else %}
     <p class="muted-cell">{{ t("admin.nothing_yet") }}</p>
     {% endif %}
+  </section>
+
+{% elif section == "monitoring" %}
+  {#
+    The server at a glance. Charts are plain SVG with a <title> per bar, so
+    hovering shows the numbers and nothing here needs a script.
+  #}
+  <nav class="mon-ranges" aria-label="{{ t('monitoring.range') }}">
+    {% for r in ranges %}
+    <a class="mon-range" href="/admin/monitoring?range={{ r }}" {% if r == range %}aria-current="page"{% endif %}>{{ t("monitoring.range_" ~ r) }}</a>
+    {% endfor %}
+    <span class="muted-cell">{{ t("monitoring.live", n=live.in_flight) }}</span>
+  </nav>
+
+  {% if firing %}
+  <div class="notice notice-warn" role="alert">
+    <strong>{{ t("monitoring.firing") }}</strong>
+    {% for f in firing %}<span class="tag tag-warn">{{ f.label }} · {{ t("monitoring.for_minutes", n=f.minutes) }}</span> {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="mon-cards">
+    <div class="mon-card"><p class="mon-label">{{ t("monitoring.requests") }}</p><p class="mon-value">{{ total.requests }}</p><p class="muted-cell">{{ t("monitoring.per_minute", n=total.rpm) }}</p></div>
+    <div class="mon-card"><p class="mon-label">{{ t("monitoring.peak") }}</p><p class="mon-value">{{ peak.requests }}<small>/{{ t("monitoring.min") }}</small></p><p class="muted-cell">{% if peak.at %}{{ peak.at }} · {{ peak.rps }} rps{% endif %}</p></div>
+    <div class="mon-card"><p class="mon-label">{{ t("monitoring.in_flight") }}</p><p class="mon-value">{{ peak.in_flight }}</p><p class="muted-cell">{{ t("monitoring.in_flight_note") }}</p></div>
+    <div class="mon-card {% if total.server_errors %}mon-bad{% endif %}"><p class="mon-label">5xx</p><p class="mon-value">{{ total.server_errors }}</p><p class="muted-cell">{{ total.error_share }}% · 4xx {{ total.client_errors }}</p></div>
+  </div>
+
+  <div class="mon-percentiles" role="list" aria-label="{{ t('monitoring.latency') }}">
+    {% for k in ["p25", "p50", "p75", "p90", "p95", "p99", "max"] %}
+    <div class="mon-pct {% if k in ['p99', 'max'] %}mon-pct-tail{% endif %}" role="listitem"><span>{{ k }}</span><strong>{{ total.p[k] }}</strong></div>
+    {% endfor %}
+  </div>
+
+  <section class="settings-section">
+    <h2>{{ t("monitoring.load_chart") }}</h2>
+    <figure class="mon-chart">
+      <svg viewBox="0 0 {{ chart.w }} {{ chart.h }}" preserveAspectRatio="none" role="img" aria-label="{{ t('monitoring.load_chart') }}">
+        <line class="mon-grid" x1="0" y1="{{ chart.h / 2 }}" x2="{{ chart.w }}" y2="{{ chart.h / 2 }}" />
+        {% for b in chart.bars %}
+        <g><title>{{ b.title }}</title>
+          <rect class="mon-bar" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" />
+          {% if b.eh != "0.00" %}<rect class="mon-bar-err" x="{{ b.x }}" y="{{ b.ey }}" width="{{ b.w }}" height="{{ b.eh }}" />{% endif %}
+        </g>
+        {% endfor %}
+      </svg>
+      <figcaption class="mon-axis"><span>{{ chart.first }}</span><span>{{ chart.middle }}</span><span>{{ chart.last }}</span></figcaption>
+      <p class="mon-legend"><span class="mon-key mon-key-bar"></span>{{ t("monitoring.requests") }} · {{ t("monitoring.top", n=chart.top_requests) }} <span class="mon-key mon-key-err"></span>5xx</p>
+    </figure>
+  </section>
+
+  <section class="settings-section">
+    <h2>{{ t("monitoring.latency") }}</h2>
+    <figure class="mon-chart">
+      <svg viewBox="0 0 {{ chart.w }} {{ chart.h }}" preserveAspectRatio="none" role="img" aria-label="{{ t('monitoring.latency') }}">
+        <line class="mon-grid" x1="0" y1="{{ chart.h / 2 }}" x2="{{ chart.w }}" y2="{{ chart.h / 2 }}" />
+        {% if chart.p99 %}<polyline class="mon-line mon-p99" points="{{ chart.p99 }}" />{% endif %}
+        {% if chart.p95 %}<polyline class="mon-line mon-p95" points="{{ chart.p95 }}" />{% endif %}
+        {% if chart.p50 %}<polyline class="mon-line mon-p50" points="{{ chart.p50 }}" />{% endif %}
+      </svg>
+      <figcaption class="mon-axis"><span>{{ chart.first }}</span><span>{{ chart.middle }}</span><span>{{ chart.last }}</span></figcaption>
+      <p class="mon-legend"><span class="mon-key mon-p50-key"></span>p50 <span class="mon-key mon-p95-key"></span>p95 <span class="mon-key mon-p99-key"></span>p99 · {{ t("monitoring.top", n=chart.top_latency) }}, {{ t("monitoring.middle", n=chart.mid_latency) }}</p>
+    </figure>
+  </section>
+
+  <section class="settings-section">
+    <h2>{{ t("monitoring.routes") }}</h2>
+    {% if routes %}
+    <div class="table-wrap">
+    <table class="admin-table mon-table">
+      <thead><tr><th scope="col">{{ t("monitoring.route") }}</th><th scope="col">{{ t("monitoring.requests") }}</th><th scope="col">p50</th><th scope="col">p95</th><th scope="col">p99</th><th scope="col">max</th><th scope="col">5xx</th><th scope="col">4xx</th></tr></thead>
+      <tbody>
+      {% for r in routes %}
+        <tr {% if r.slow %}class="mon-slow"{% endif %}><td><code>{{ r.name }}</code></td><td>{{ r.requests }} <span class="muted-cell">{{ r.share }}%</span></td><td>{{ r.p.p50 }}</td><td>{{ r.p.p95 }}</td><td>{{ r.p.p99 }}</td><td>{{ r.p.max }}</td><td>{% if r.server_errors %}<strong class="mon-bad-text">{{ r.server_errors }}</strong>{% else %}0{% endif %}</td><td>{{ r.client_errors }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="muted-cell">{{ t("monitoring.no_data") }}</p>
+    {% endif %}
+  </section>
+
+  <section class="settings-section">
+    <h2>{{ t("monitoring.errors") }}</h2>
+    {% if errors %}
+    <ul class="mon-errors" role="list">
+      {% for e in errors %}
+      <li class="mon-error">
+        <div class="mon-error-head"><span class="tag {% if e.source == 'response' %}tag-warn{% endif %}">{{ t("monitoring.source_" ~ e.source) }}</span> <strong>×{{ e.count }}</strong> <span class="muted-cell">{{ t("monitoring.last_seen", when=e.last) }}</span></div>
+        <code class="mon-error-msg">{{ e.message }}</code>
+        <p class="muted-cell">{% if e.path %}<code>{{ e.path }}</code>{% endif %}{% if e.request_id %} · request id <code>{{ e.request_id }}</code>{% endif %}</p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="notice notice-ok">{{ t("monitoring.no_errors") }}</p>
+    {% endif %}
+  </section>
+
+  <section class="settings-section">
+    <h2>{{ t("monitoring.process") }}</h2>
+    <dl class="mon-facts">
+      <div><dt>{{ t("monitoring.uptime") }}</dt><dd>{{ live.uptime }}</dd></div>
+      <div><dt>{{ t("monitoring.in_flight") }}</dt><dd>{{ live.in_flight }}</dd></div>
+      <div><dt>{{ t("monitoring.pool") }}</dt><dd>{{ live.pool_size }} / {{ t("monitoring.idle", n=live.pool_idle) }}</dd></div>
+      {% if live.memory %}<div><dt>{{ t("monitoring.memory") }}</dt><dd>{{ live.memory }}</dd></div>{% endif %}
+      <div><dt>{{ t("monitoring.alerts") }}</dt><dd>{% if live.bot %}{{ t("monitoring.alerts_on") }}{% else %}{{ t("monitoring.alerts_off") }}{% endif %}</dd></div>
+    </dl>
   </section>
 
 {% elif section == "users" %}

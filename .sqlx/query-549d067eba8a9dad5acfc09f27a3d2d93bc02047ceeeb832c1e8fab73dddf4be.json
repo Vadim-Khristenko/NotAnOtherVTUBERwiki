@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT minute, peak_in_flight FROM metrics_load WHERE minute >= $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "minute",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "metrics_load",
+            "name": "minute"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "peak_in_flight",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metrics_load",
+            "name": "peak_in_flight"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "549d067eba8a9dad5acfc09f27a3d2d93bc02047ceeeb832c1e8fab73dddf4be"
+}

@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE((settings->'telegram'->>'alerts')::boolean, true) AS \"alerts!\",\n                  COALESCE((settings->'telegram'->>'notifications')::boolean, false) AS \"notifications!\",\n                  COALESCE((settings->'telegram'->>'ops')::boolean, true) AS \"ops!\"\n           FROM users WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "alerts!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "notifications!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "ops!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2b97db4d7f156e11e5ad58aa575ec768285c9a2e910b68c20eaf3db2e856ac23"
+}

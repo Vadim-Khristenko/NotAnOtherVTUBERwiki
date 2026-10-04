@@ -116,6 +116,7 @@
     <form method="post" action="/settings/telegram" class="settings-stack">
       <label class="check"><input type="checkbox" name="alerts" {% if telegram.alerts %}checked{% endif %} /> {{ t("telegram.settings_alerts") }}</label>
       <label class="check"><input type="checkbox" name="notifications" {% if telegram.notifications %}checked{% endif %} /> {{ t("telegram.settings_notifications") }}</label>
+      {% if telegram.admin %}<label class="check"><input type="checkbox" name="ops" {% if telegram.ops %}checked{% endif %} /> {{ t("telegram.settings_ops") }}</label>{% endif %}
       <button class="button-preview" type="submit">{{ t("settings.save") }}</button>
     </form>
     <p class="field-note">{{ t("telegram.settings_reset_note") }}</p>

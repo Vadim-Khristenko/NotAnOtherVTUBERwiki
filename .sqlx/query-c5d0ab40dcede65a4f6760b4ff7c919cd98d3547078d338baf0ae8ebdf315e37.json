@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO metrics_minutes\n               (minute, route, requests, server_errors, client_errors, hist, sum_ms, max_ms)\n             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n             ON CONFLICT (minute, route) DO UPDATE SET\n               requests = metrics_minutes.requests + EXCLUDED.requests,\n               server_errors = metrics_minutes.server_errors + EXCLUDED.server_errors,\n               client_errors = metrics_minutes.client_errors + EXCLUDED.client_errors,\n               sum_ms = metrics_minutes.sum_ms + EXCLUDED.sum_ms,\n               max_ms = GREATEST(metrics_minutes.max_ms, EXCLUDED.max_ms),\n               hist = ARRAY(SELECT COALESCE(a, 0) + COALESCE(b, 0)\n                            FROM unnest(metrics_minutes.hist, EXCLUDED.hist) AS t(a, b))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4Array",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c5d0ab40dcede65a4f6760b4ff7c919cd98d3547078d338baf0ae8ebdf315e37"
+}
