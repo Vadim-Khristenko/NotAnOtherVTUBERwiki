@@ -826,6 +826,16 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
 .notify-text { overflow-wrap: anywhere; }
 .notify-body .notify-note { margin-top: 0.2rem; color: var(--ink-soft); font-size: 0.92rem; overflow-wrap: anywhere; }
 .notify-stop { flex: none; font-size: 0.85rem; }
+/* Wide reading: the article takes the window on a large screen. Lines get
+   long, so it is the reader's choice, remembered in their browser. */
+@media (min-width: 64rem) {
+  html[data-width="wide"] .content:not(.content-wide) { max-width: none; padding-inline: clamp(var(--s4), 4vw, 4rem); }
+  html[data-width="wide"] .footer-inner { max-width: none; padding-inline: clamp(var(--s4), 4vw, 4rem); }
+}
+.width-toggle .width-compact { display: none; }
+html[data-width="wide"] .width-toggle .width-compact { display: inline; }
+html[data-width="wide"] .width-toggle .width-wide { display: none; }
+@media (max-width: 63.99rem) { .width-toggle { display: none !important; } }
 /* The rich editor sits over the textarea, which stays the form field. */
 .rich-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; border: 0 !important; opacity: 0; overflow: hidden; clip: rect(0 0 0 0); pointer-events: none; }
 .editor-mode { margin: var(--s2) 0 0; }
@@ -1209,6 +1219,8 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
     }
     var saved = localStorage.getItem("naw-theme");
     if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+    // Article width on a wide screen: compact column or the whole window.
+    if (localStorage.getItem("naw-width") === "wide") document.documentElement.dataset.width = "wide";
   } catch (e) {}
 })();
 </script>

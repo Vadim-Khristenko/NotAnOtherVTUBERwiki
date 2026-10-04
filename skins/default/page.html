@@ -26,6 +26,10 @@
     <a class="page-action" href="{{ base }}/{{ slug }}/edit" rel="nofollow" {% if protection %}title="{{ t('page.locked_hint') }}"{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-{% if protection %}lock{% else %}code{% endif %}" /></svg>{{ t("nav.view_source") }}</a>
   {% endif %}
   <a class="page-action" href="{{ base }}/{{ slug }}/history"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>{{ t("nav.history") }}</a>
+  {# Wide screens only; works by script, so hidden until the script shows it. #}
+  <button class="page-action width-toggle" type="button" data-width-toggle hidden title="{{ t('nav.width_hint') }}">
+    <svg class="icon" aria-hidden="true"><use href="#i-arrows-horizontal" /></svg><span class="width-wide">{{ t("nav.width_wide") }}</span><span class="width-compact">{{ t("nav.width_compact") }}</span>
+  </button>
   {% if watching is defined and watching is not none %}
   {# Signed-in readers only: a watch covers every language of this address. #}
   <form class="inline-form" method="post" action="{{ base }}/{{ slug }}/watch">

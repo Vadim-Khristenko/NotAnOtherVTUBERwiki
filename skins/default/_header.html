@@ -90,18 +90,18 @@
 
       {% if signed_in is defined and signed_in %}
       {% set unread = unread_notifications if unread_notifications is defined else 0 %}
-      <a class="nav-link nav-bell{% if unread %} has-unread{% endif %}" href="/notifications"
+      <a class="nav-link nav-bell{% if unread %} has-unread{% endif %}" href="{{ base }}/notifications"
          title="{{ tn('notify.unread', unread) if unread else t('notify.title') }}">
         <svg class="icon" aria-hidden="true"><use href="#i-bell" /></svg>
         {% if unread %}<b class="nav-badge" aria-hidden="true">{{ unread if unread < 100 else "99+" }}</b>{% endif %}
         <span class="visually-hidden">{{ tn('notify.unread', unread) if unread else t('notify.title') }}</span>
       </a>
-      <a class="nav-link nav-user" href="/user/{{ username }}" title="{{ display_name }}">
+      <a class="nav-link nav-user" href="{{ base }}/user/{{ username }}" title="{{ display_name }}">
         <b class="nav-avatar" aria-hidden="true">{% if avatar_url %}<img src="{{ avatar_url }}" alt="" width="28" height="28" />{% else %}{{ display_name[:1] | upper }}{% endif %}</b>
         <span class="visually-hidden"><bdi>{{ display_name }}</bdi></span>
       </a>
       {% else %}
-      <a class="nav-link nav-signin" href="/login">
+      <a class="nav-link nav-signin" href="{{ base }}/login">
         <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>
         <span>{{ t("nav.sign_in") }}</span>
       </a>
@@ -127,7 +127,7 @@
         <a class="menu-link" href="{{ base }}/system:random" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-arrows-shuffle" /></svg>{{ t("nav.random") }}</a>
         <a class="menu-link" href="{{ base }}/system:files"><svg class="icon" aria-hidden="true"><use href="#i-photo" /></svg>{{ t("nav.files") }}</a>
         {% if show_emotes is not defined or show_emotes %}
-        <a class="menu-link" href="/emotes"><svg class="icon" aria-hidden="true"><use href="#i-mood-smile" /></svg>{{ t("nav.emotes") }}</a>
+        <a class="menu-link" href="{{ base }}/emotes"><svg class="icon" aria-hidden="true"><use href="#i-mood-smile" /></svg>{{ t("nav.emotes") }}</a>
         {% endif %}
       </section>
 
@@ -149,7 +149,7 @@
         <h2 class="menu-heading">{{ t("nav.section_take_part") }}</h2>
         {% if can_create is defined and can_create %}
         <a class="menu-link" href="{{ base }}/new"><svg class="icon" aria-hidden="true"><use href="#i-file-plus" /></svg>{{ t("nav.new_page") }}</a>
-        <a class="menu-link" href="/media"><svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>{{ t("nav.upload") }}</a>
+        <a class="menu-link" href="{{ base }}/media"><svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>{{ t("nav.upload") }}</a>
         {% endif %}
         <a class="menu-link" href="{{ base }}/system"><svg class="icon" aria-hidden="true"><use href="#i-layout-grid" /></svg>{{ t("nav.system_pages") }}</a>
         {% if show_about is not defined or show_about %}
@@ -173,24 +173,28 @@
       <section class="menu-section">
         <h2 class="menu-heading">{{ t("nav.section_account") }}</h2>
         {% if signed_in is defined and signed_in %}
-        <a class="menu-link" href="/user/{{ username }}"><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg><bdi>{{ display_name }}</bdi></a>
-        <a class="menu-link" href="/notifications"><svg class="icon" aria-hidden="true"><use href="#i-bell" /></svg>{{ t("notify.title") }}{% if unread_notifications is defined and unread_notifications %} <b class="menu-count">{{ unread_notifications }}</b>{% endif %}</a>
-        <a class="menu-link" href="/watchlist"><svg class="icon" aria-hidden="true"><use href="#i-star" /></svg>{{ t("notify.watchlist_title") }}</a>
-        <a class="menu-link" href="/drafts"><svg class="icon" aria-hidden="true"><use href="#i-file-text" /></svg>{{ t("nav.drafts") }}</a>
-        <a class="menu-link" href="/settings"><svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg>{{ t("settings.title") }}</a>
+        <a class="menu-link" href="{{ base }}/user/{{ username }}"><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg><bdi>{{ display_name }}</bdi></a>
+        <a class="menu-link" href="{{ base }}/notifications"><svg class="icon" aria-hidden="true"><use href="#i-bell" /></svg>{{ t("notify.title") }}{% if unread_notifications is defined and unread_notifications %} <b class="menu-count">{{ unread_notifications }}</b>{% endif %}</a>
+        <a class="menu-link" href="{{ base }}/watchlist"><svg class="icon" aria-hidden="true"><use href="#i-star" /></svg>{{ t("notify.watchlist_title") }}</a>
+        <a class="menu-link" href="{{ base }}/drafts"><svg class="icon" aria-hidden="true"><use href="#i-file-text" /></svg>{{ t("nav.drafts") }}</a>
+        <a class="menu-link" href="{{ base }}/settings"><svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg>{{ t("settings.title") }}</a>
         {% if can_admin is defined and can_admin %}
-        <a class="menu-link" href="/admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>{{ t("nav.admin") }}</a>
+        <a class="menu-link" href="{{ base }}/admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>{{ t("nav.admin") }}</a>
         {% endif %}
         {% if can_reports is defined and can_reports %}
-        <a class="menu-link" href="/admin/reports"><svg class="icon" aria-hidden="true"><use href="#i-flag" /></svg>{{ t("nav.reports") }}</a>
+        <a class="menu-link" href="{{ base }}/admin/reports"><svg class="icon" aria-hidden="true"><use href="#i-flag" /></svg>{{ t("nav.reports") }}</a>
         {% endif %}
         {# Signing out changes state, so it is a POST, not a link. #}
         <form class="menu-form" method="post" action="/logout">
           <button class="menu-link" type="submit"><svg class="icon" aria-hidden="true"><use href="#i-logout" /></svg>{{ t("nav.sign_out") }}</button>
         </form>
         {% else %}
-        <a class="menu-link" href="/login"><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>{{ t("nav.sign_in") }}</a>
+        <a class="menu-link" href="{{ base }}/login"><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>{{ t("nav.sign_in") }}</a>
         {% endif %}
+        <button class="menu-link width-toggle" type="button" data-width-toggle hidden>
+          <svg class="icon" aria-hidden="true"><use href="#i-arrows-horizontal" /></svg>
+          <span class="width-wide">{{ t("nav.width_wide") }}</span><span class="width-compact">{{ t("nav.width_compact") }}</span>
+        </button>
         {% if show_theme is not defined or show_theme %}
         <button class="menu-link theme-toggle" id="theme-toggle" type="button">
           <svg class="icon icon-sun" aria-hidden="true"><use href="#i-sun" /></svg>
@@ -220,6 +224,16 @@
       try { localStorage.setItem("naw-theme", next); } catch (e) {}
     });
   }
+
+  // Article width: compact column or the whole window, remembered here.
+  document.querySelectorAll("[data-width-toggle]").forEach(function (btn) {
+    btn.hidden = false;
+    btn.addEventListener("click", function () {
+      var wide = root.dataset.width !== "wide";
+      if (wide) root.dataset.width = "wide"; else delete root.dataset.width;
+      try { localStorage.setItem("naw-width", wide ? "wide" : "compact"); } catch (e) {}
+    });
+  });
 
   // The checkboxes already open and close the drawer and the search panel;
   // this keeps one open at a time, moves focus in, and closes on Escape.
