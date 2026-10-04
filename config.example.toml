@@ -49,6 +49,12 @@ dev_mailbox = false
 # Usernames only an admin may grant.
 reserved_usernames = ["vai", "snacker", "filian", "admin", "moderator", "wiki", "support"]
 
+# The wiki's Telegram bot (@BotFather): password reset links, sign-in alerts
+# and notifications for people who link their chat. Empty: no bot.
+# telegram_bot_token = ""
+# Only one process may read a bot's messages; false on all others.
+# telegram_bot_polling = true
+
 # Per-provider client credentials can also be written here, but the
 # environment is preferred: NAW_GITHUB_CLIENT_ID, NAW_GITHUB_CLIENT_SECRET,
 # NAW_DISCORD_*, NAW_TELEGRAM_*, NAW_GOOGLE_*, NAW_YANDEX_*, NAW_TWITCH_*.

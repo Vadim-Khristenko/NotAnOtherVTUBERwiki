@@ -215,7 +215,8 @@ fn default_reload_interval_secs() -> u64 {
 }
 
 /// OAuth, sessions and mail. A provider is enabled by its credentials.
-/// Secrets come from the environment only and are redacted from `Debug`.
+/// Secrets may sit in config.toml (keep it root-only) or the environment,
+/// which wins, and are always redacted from `Debug`.
 #[derive(Clone, Deserialize)]
 pub struct AuthConfig {
     /// Master switch; when false every auth route answers 404.
@@ -255,8 +256,8 @@ pub struct AuthConfig {
     /// Steam Web API key for the profile lookup; login works without it.
     pub steam_api_key: Option<String>,
     /// The wiki's Telegram bot, from BotFather: password recovery, sign-in
-    /// alerts and notifications for the people who link it. Environment only.
-    #[serde(skip)]
+    /// alerts and notifications for the people who link it.
+    #[serde(default)]
     pub telegram_bot_token: Option<String>,
     /// Whether this process reads the bot's messages (long polling). Off
     /// when another process already does, since Telegram allows one reader.
@@ -264,6 +265,42 @@ pub struct AuthConfig {
     pub telegram_bot_polling: bool,
     #[serde(default = "default_mail")]
     pub mail: MailConfig,
+}
+
+impl AuthConfig {
+    /// A provider left as `client_id = ""` in the file is off, not a button
+    /// that fails; so is an empty bot token.
+    pub fn drop_blank_secrets(&mut self) {
+        for slot in [
+            &mut self.github,
+            &mut self.discord,
+            &mut self.telegram,
+            &mut self.google,
+            &mut self.yandex,
+            &mut self.twitch,
+        ] {
+            if slot
+                .as_ref()
+                .is_some_and(|c| c.client_id.trim().is_empty() || c.client_secret.trim().is_empty())
+            {
+                *slot = None;
+            }
+        }
+        if self
+            .telegram_bot_token
+            .as_deref()
+            .is_some_and(|t| t.trim().is_empty())
+        {
+            self.telegram_bot_token = None;
+        }
+        if self
+            .steam_api_key
+            .as_deref()
+            .is_some_and(|k| k.trim().is_empty())
+        {
+            self.steam_api_key = None;
+        }
+    }
 }
 
 impl Default for AuthConfig {
@@ -508,6 +545,7 @@ impl Config {
             cfg.trust_proxy = flag;
         }
         apply_auth_env(&mut cfg.auth)?;
+        cfg.auth.drop_blank_secrets();
         apply_accounts_env(&mut cfg.accounts)?;
         for (name, slot) in [
             ("NAW_UPLOAD_MAX_BYTES", &mut cfg.upload_max_bytes),
@@ -839,6 +877,50 @@ mod tests {
         assert!(!dumped.contains("smtps://"));
         assert!(!dumped.contains("Iv1.clientid"));
         assert!(dumped.contains("set"));
+    }
+
+    #[test]
+    fn every_secret_can_live_in_the_config_file() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [auth]
+            enabled = true
+            telegram_bot_token = "8100000000:file-token"
+            telegram_bot_polling = false
+            [auth.discord]
+            client_id = "1"
+            client_secret = "s"
+            "#,
+        )
+        .expect("parses");
+        assert_eq!(
+            cfg.auth.telegram_bot_token.as_deref(),
+            Some("8100000000:file-token")
+        );
+        assert!(!cfg.auth.telegram_bot_polling);
+        assert!(cfg.auth.discord.is_some());
+        assert!(!format!("{cfg:?}").contains("file-token"));
+    }
+
+    #[test]
+    fn a_blank_provider_in_the_file_stays_off() {
+        let mut cfg: Config = toml::from_str(
+            r#"
+            [auth]
+            telegram_bot_token = ""
+            [auth.github]
+            client_id = ""
+            client_secret = ""
+            [auth.discord]
+            client_id = "1"
+            client_secret = " "
+            "#,
+        )
+        .expect("parses");
+        cfg.auth.drop_blank_secrets();
+        assert!(cfg.auth.github.is_none());
+        assert!(cfg.auth.discord.is_none());
+        assert!(cfg.auth.telegram_bot_token.is_none());
     }
 
     #[test]
