@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT category, min(name) AS \"name!\", count(*) AS \"pages!\"\n               FROM page_categories\n               WHERE wiki_id = $1 AND (category ILIKE $2 OR name ILIKE $3)\n               GROUP BY category ORDER BY count(*) DESC, category\n               LIMIT $4",
+  "query": "SELECT pc.category, min(pc.name) AS \"name!\", count(*) AS \"pages!\"\n               FROM page_categories pc\n               JOIN pages p ON p.id = pc.page_id\n                           AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n               WHERE pc.wiki_id = $1 AND (pc.category ILIKE $2 OR pc.name ILIKE $3)\n               GROUP BY pc.category ORDER BY count(*) DESC, pc.category\n               LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -41,5 +41,5 @@
       null
     ]
   },
-  "hash": "24442ad3a221066eae1203be8f24c59969aefee04e56326c744a73e06ba98c4f"
+  "hash": "8173a5e6d503d37a98de92706d8212b42dbdf3d6d6b0bdc5586f094d04372263"
 }

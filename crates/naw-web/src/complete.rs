@@ -86,10 +86,12 @@ pub async fn complete(
             .collect()
         }
         "category" => sqlx::query!(
-            r#"SELECT category, min(name) AS "name!", count(*) AS "pages!"
-               FROM page_categories
-               WHERE wiki_id = $1 AND (category ILIKE $2 OR name ILIKE $3)
-               GROUP BY category ORDER BY count(*) DESC, category
+            r#"SELECT pc.category, min(pc.name) AS "name!", count(*) AS "pages!"
+               FROM page_categories pc
+               JOIN pages p ON p.id = pc.page_id
+                           AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
+               WHERE pc.wiki_id = $1 AND (pc.category ILIKE $2 OR pc.name ILIKE $3)
+               GROUP BY pc.category ORDER BY count(*) DESC, pc.category
                LIMIT $4"#,
             ctx.wiki.id,
             starts,
