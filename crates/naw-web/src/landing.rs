@@ -66,6 +66,22 @@ pub(crate) async fn page(
     headers: &HeaderMap,
 ) -> Result<Response, AppError> {
     let home_slug = home_slug(ctx);
+    // As for articles: `/` opens the front page in the reader's language
+    // when it exists there (see pages::page).
+    if ctx.locale_via == crate::resolve::LocaleVia::Default
+        && ctx.lang != ctx.content_locale
+        && crate::seo::live_languages(&state.db, ctx, &home_slug)
+            .await?
+            .contains(&ctx.lang)
+        && let Some(mut response) =
+            pages::redirect_response(axum::http::StatusCode::FOUND, &ctx.link_for(&ctx.lang, "/"))
+    {
+        response.headers_mut().insert(
+            axum::http::header::VARY,
+            axum::http::HeaderValue::from_static("Accept-Language, Cookie"),
+        );
+        return Ok(response);
+    }
     let home = pages::find_page(&state.db, ctx.wiki.id, &home_slug, &ctx.content_locale).await?;
     let (split, can_edit_home, home_html) = match &home {
         Some(page) => {

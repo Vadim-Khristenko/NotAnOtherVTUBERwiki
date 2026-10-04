@@ -903,6 +903,28 @@ pub async fn page(
     {
         return Ok(response);
     }
+    // The reader's language first: an address without one opens the article
+    // in the language they read in (chosen, their account's, their
+    // browser's) when it exists there. Temporary and varying by those, so a
+    // crawler, which names no language, keeps the wiki's own version.
+    if ctx.locale_via == crate::resolve::LocaleVia::Default
+        && ctx.lang != ctx.content_locale
+        && query.redirected.is_none()
+        && query.pending.is_none()
+        && crate::seo::live_languages(&state.db, &ctx, &slug)
+            .await?
+            .contains(&ctx.lang)
+        && let Some(mut response) = redirect_response(
+            StatusCode::FOUND,
+            &ctx.link_for(&ctx.lang, &format!("/{slug}")),
+        )
+    {
+        response.headers_mut().insert(
+            header::VARY,
+            header::HeaderValue::from_static("Accept-Language, Cookie"),
+        );
+        return Ok(response);
+    }
     let RenderedPage {
         html: body_html,
         render_ms,
