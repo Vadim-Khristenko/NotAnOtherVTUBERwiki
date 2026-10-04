@@ -83,8 +83,6 @@
 <label class="field">{{ t("editor.summary") }}
 <input class="field-input" name="summary" value="{{ summary_value }}" maxlength="200" />
 </label>
-{% if not fixed_title %}<label class="check"><input type="checkbox" name="minor" value="1" /> {{ t("editor.minor") }}</label>{% endif %}
-{% if translation_of %}<label class="check"><input type="checkbox" name="synced" value="1" /> {{ t("translate.synced", source=translation_of) }}</label>{% endif %}
 {#
   The editor frame: a toolbar, the text, a status line. The toolbar needs a
   script, so it shows only once the page script reveals it; without one the
@@ -137,11 +135,15 @@
     </details>
   </div>
   <div class="eb-spacer"></div>
-  <div class="eb-group eb-switches">
-    <label class="eb-switch" data-needs-rich hidden><input type="checkbox" id="editor-mode" /><span class="eb-switch-track" aria-hidden="true"></span><svg class="icon" aria-hidden="true"><use href="#i-sparkles" /></svg><span>Pretty Editor</span></label>
-    <label class="eb-switch"><input type="checkbox" id="preview-mode" checked /><span class="eb-switch-track" aria-hidden="true"></span><svg class="icon" aria-hidden="true"><use href="#i-eye" /></svg><span>{{ t("editor.preview_switch") }}</span></label>
-    <label class="eb-switch eb-wide-only"><input type="checkbox" id="split-mode" /><span class="eb-switch-track" aria-hidden="true"></span><svg class="icon" aria-hidden="true"><use href="#i-layout-columns" /></svg><span>{{ t("editor.split_switch") }}</span></label>
-  </div>
+  {# How the editor looks: one menu instead of a row of switches. #}
+  <details class="eb-more eb-view">
+    <summary class="eb eb-wide" title="{{ t('editor.view') }}"><svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg><span>{{ t("editor.view") }}</span><svg class="icon eb-chevron" aria-hidden="true"><use href="#i-chevron-down" /></svg></summary>
+    <div class="eb-menu eb-menu-switches">
+      <label class="eb-switch" data-needs-rich hidden><input type="checkbox" id="editor-mode" /><span class="eb-switch-track" aria-hidden="true"></span><svg class="icon" aria-hidden="true"><use href="#i-sparkles" /></svg><span>Pretty Editor<small>{{ t("editor.pretty_note") }}</small></span></label>
+      <label class="eb-switch"><input type="checkbox" id="preview-mode" checked /><span class="eb-switch-track" aria-hidden="true"></span><svg class="icon" aria-hidden="true"><use href="#i-eye" /></svg><span>{{ t("editor.preview_switch") }}<small>{{ t("editor.preview_note") }}</small></span></label>
+      <label class="eb-switch eb-wide-only"><input type="checkbox" id="split-mode" /><span class="eb-switch-track" aria-hidden="true"></span><svg class="icon" aria-hidden="true"><use href="#i-layout-columns" /></svg><span>{{ t("editor.split_switch") }}<small>{{ t("editor.split_note") }}</small></span></label>
+    </div>
+  </details>
   <input type="file" id="image-file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif" multiple hidden
          data-max="{{ upload_max }}" data-too-large="{{ t('media.refused_too_large', max=upload_max_mb) }}"
          data-uploading="{{ t('media.uploading', name='{name}') }}" data-failed="{{ t('media.failed') }}" />
@@ -166,6 +168,17 @@
 <p class="field-note editor-media-note"><a href="{{ base }}/media" target="_blank" rel="noopener">{{ t("media.upload_link") }}</a> · <a href="{{ base }}/emotes" target="_blank" rel="noopener">{{ t("emotes.title") }}</a> <span class="editor-media-status" id="image-status" role="status"></span></p>
 <div class="form-actions">
 <button class="button-save" type="submit">{{ t("editor.save") }}</button>
+{% if not fixed_title or translation_of %}
+{# Edit options in a menu by the save button. A native disclosure, so it
+   works without a script; the boxes inside are ordinary form fields. #}
+<details class="edit-options">
+  <summary class="button-preview"><svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg>{{ t("editor.options") }}<span class="edit-options-on" hidden></span><svg class="icon eb-chevron" aria-hidden="true"><use href="#i-chevron-down" /></svg></summary>
+  <div class="eb-menu eb-menu-switches edit-options-panel">
+    {% if not fixed_title %}<label class="eb-switch"><input type="checkbox" name="minor" value="1" /><span class="eb-switch-track" aria-hidden="true"></span><span>{{ t("editor.minor") }}<small>{{ t("editor.minor_note") }}</small></span></label>{% endif %}
+    {% if translation_of %}<label class="eb-switch"><input type="checkbox" name="synced" value="1" /><span class="eb-switch-track" aria-hidden="true"></span><span>{{ t("translate.synced", source=translation_of) }}<small>{{ t("editor.synced_note") }}</small></span></label>{% endif %}
+  </div>
+</details>
+{% endif %}
 <button class="button-preview" type="submit" formaction="/preview" formtarget="_blank">{{ t("editor.preview") }}</button>
 <span class="muted-cell autosave-status" id="autosave-status" role="status" aria-live="polite"></span>
 </div>
@@ -224,16 +237,52 @@
       if (ev.target.closest("button")) ev.preventDefault();
     });
   }
-  var more = document.querySelector(".eb-more");
-  if (more) {
-    more.addEventListener("click", function (ev) {
-      if (ev.target.closest(".eb-menu button")) more.open = false;
+  // The editor's menus: they open towards the side with room, so none can
+  // push the page sideways; a choice or a click elsewhere closes them, a
+  // switch inside leaves them open.
+  var menus = Array.prototype.slice.call(document.querySelectorAll(".eb-more, .edit-options"));
+  menus.forEach(function (menu) {
+    var panel = menu.querySelector(".eb-menu");
+    menu.addEventListener("toggle", function () {
+      if (!menu.open || !panel) return;
+      menus.forEach(function (other) { if (other !== menu) other.open = false; });
+      panel.classList.remove("align-end");
+      var box = panel.getBoundingClientRect();
+      if (box.right > document.documentElement.clientWidth - 8) panel.classList.add("align-end");
     });
-    document.addEventListener("click", function (ev) {
-      if (more.open && !more.contains(ev.target)) more.open = false;
+    menu.addEventListener("click", function (ev) {
+      if (ev.target.closest(".eb-menu button")) menu.open = false;
     });
+  });
+  document.addEventListener("click", function (ev) {
+    menus.forEach(function (menu) { if (menu.open && !menu.contains(ev.target)) menu.open = false; });
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape") return;
+    menus.forEach(function (menu) { if (menu.open) { menu.open = false; var s = menu.querySelector("summary"); if (s) s.focus(); } });
+  });
+  // The options button shows a dot while any option is on.
+  var options = document.querySelector(".edit-options");
+  if (options) {
+    var dot = options.querySelector(".edit-options-on");
+    var mark = function () {
+      if (dot) dot.hidden = !options.querySelector("input:checked");
+    };
+    options.addEventListener("change", mark);
+    mark();
   }
   function surround(before, after) {
+    after = after === undefined ? before : after;
+    // With the editor script loaded, a mark toggles: a second press takes it
+    // off, part of a run splits it, and overlapping runs join.
+    if (window.nawMarks) {
+      var edit = window.nawMarks.toggleMarks(area.value, area.selectionStart, area.selectionEnd, before, after);
+      area.value = area.value.slice(0, edit.from) + edit.insert + area.value.slice(edit.to);
+      area.focus();
+      area.setSelectionRange(edit.anchor, edit.head);
+      area.dispatchEvent(new Event("input"));
+      return;
+    }
     var s = area.selectionStart, e = area.selectionEnd, v = area.value;
     var sel = v.slice(s, e) || "text";
     after = after === undefined ? before : after;
@@ -244,6 +293,17 @@
     area.dispatchEvent(new Event("input"));
   }
   function prefixLines(prefix) {
+    if (window.nawMarks) {
+      var changes = window.nawMarks.togglePrefix(area.value, area.selectionStart, area.selectionEnd, prefix);
+      var text = area.value;
+      for (var i = changes.length - 1; i >= 0; i--) {
+        text = text.slice(0, changes[i].from) + changes[i].insert + text.slice(changes[i].to);
+      }
+      area.value = text;
+      area.focus();
+      area.dispatchEvent(new Event("input"));
+      return;
+    }
     var s = area.selectionStart, v = area.value;
     var lineStart = v.lastIndexOf("\n", s - 1) + 1;
     var e = area.selectionEnd;

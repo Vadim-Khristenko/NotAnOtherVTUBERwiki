@@ -860,6 +860,21 @@ html[data-width="wide"] .width-toggle .width-wide { display: none; }
 .eb-menu button { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.6rem; border: 0; border-radius: 0.4rem; background: none; color: var(--ink); font: inherit; font-size: 0.9rem; text-align: left; cursor: pointer; }
 .eb-menu button:hover { background: var(--surface-sunken); }
 .eb-menu .icon { width: 1rem; height: 1rem; color: var(--muted); }
+.eb-menu.align-end { left: auto; right: 0; }
+.eb-wide { width: auto; display: inline-flex; gap: 0.35rem; padding: 0 0.55rem; font: inherit; font-size: 0.85rem; font-weight: 600; }
+.eb-chevron { width: 0.85rem !important; height: 0.85rem !important; transition: transform var(--fast) var(--ease); }
+details[open] > summary .eb-chevron { transform: rotate(180deg); }
+.eb-view { margin-left: auto; }
+.eb-menu-switches { gap: 0.15rem; min-width: 17rem; }
+.eb-menu-switches .eb-switch { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 0.55rem; padding: 0.55rem 0.6rem; border-radius: 0.4rem; white-space: normal; font-size: 0.9rem; color: var(--ink); }
+.eb-menu-switches .eb-switch:hover { background: var(--surface-sunken); }
+.eb-menu-switches .eb-switch small { display: block; font-size: 0.76rem; font-weight: 400; color: var(--muted); margin-top: 0.1rem; }
+.eb-menu-switches .eb-switch:not(:has(svg)) { grid-template-columns: auto 1fr; }
+.edit-options { position: relative; }
+.edit-options > summary { display: inline-flex; align-items: center; gap: 0.4rem; list-style: none; cursor: pointer; }
+.edit-options > summary::-webkit-details-marker { display: none; }
+.edit-options .eb-menu { top: auto; bottom: calc(100% + 0.4rem); }
+.edit-options-on { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--accent); }
 .eb-switches { gap: 0.6rem; flex-wrap: wrap; }
 .eb-switch { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; font-weight: 600; color: var(--ink-soft); cursor: pointer; user-select: none; white-space: nowrap; }
 .eb-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }

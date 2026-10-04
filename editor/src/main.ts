@@ -39,6 +39,10 @@ import {
   type CompletionResult,
 } from "@codemirror/autocomplete";
 import { tags as t } from "@lezer/highlight";
+import { toggleMarks, togglePrefix } from "./marks";
+
+// The plain textarea toggles marks the same way when this file is loaded.
+(window as unknown as { nawMarks: unknown }).nawMarks = { toggleMarks, togglePrefix };
 
 const PREF_KEY = "naw-editor";
 
@@ -180,15 +184,16 @@ async function wikiRefs(ctx: CompletionContext): Promise<CompletionResult | null
   return null;
 }
 
+/// A mark that toggles (see marks.ts): on, off, split or joined.
 function wrap(view: EditorView, before: string, after = before): boolean {
-  const changes = view.state.changeByRange((range) => {
-    const text = view.state.sliceDoc(range.from, range.to) || "text";
-    return {
-      changes: { from: range.from, to: range.to, insert: before + text + after },
-      range: EditorSelection.range(range.from + before.length, range.from + before.length + text.length),
-    };
+  const { from, to } = view.state.selection.main;
+  const edit = toggleMarks(view.state.doc.toString(), from, to, before, after);
+  view.dispatch({
+    changes: { from: edit.from, to: edit.to, insert: edit.insert },
+    selection: EditorSelection.single(edit.anchor, edit.head),
+    scrollIntoView: true,
+    userEvent: "input",
   });
-  view.dispatch(view.state.update(changes, { scrollIntoView: true, userEvent: "input" }));
   return true;
 }
 
@@ -206,21 +211,10 @@ function linkCmd(view: EditorView): boolean {
   return true;
 }
 
-/// Prefixes every line the selection touches, once.
+/// A line prefix that toggles on the lines the selection touches.
 function prefixLines(view: EditorView, prefix: string): boolean {
-  const { state } = view;
-  const changes: { from: number; insert: string }[] = [];
-  const seen = new Set<number>();
-  for (const range of state.selection.ranges) {
-    for (let pos = range.from; pos <= range.to; ) {
-      const line = state.doc.lineAt(pos);
-      if (!seen.has(line.number)) {
-        seen.add(line.number);
-        if (!line.text.startsWith(prefix)) changes.push({ from: line.from, insert: prefix });
-      }
-      pos = line.to + 1;
-    }
-  }
+  const { from, to } = view.state.selection.main;
+  const changes = togglePrefix(view.state.doc.toString(), from, to, prefix);
   view.dispatch({ changes, scrollIntoView: true, userEvent: "input" });
   return true;
 }
