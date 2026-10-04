@@ -20,6 +20,7 @@ refused_type = "This wiki does not take that type of file. It takes pictures in 
 refused_dimensions = "The image is too large on screen: at most 16384 pixels on each side."
 refused_quota = "That is a lot of uploads for one day. Try again tomorrow, or ask an admin."
 from_url = "From a link"
+from_computer = "File from this device"
 from_url_note = "The image is downloaded and kept here, so the article never depends on the other site. Outside images in an article are also copied here when you save it."
 import = "Import"
 refused_address = "That link is not a public web address this wiki may fetch from."

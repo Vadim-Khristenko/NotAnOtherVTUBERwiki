@@ -158,6 +158,7 @@
    same job on its own page: upload, then copy the Markdown it gives back. #}
 <div class="editor-import" id="image-import" hidden>
   <label class="visually-hidden" for="image-url">{{ t("media.from_url") }}</label>
+  <button class="button-preview" type="button" id="image-pick"><svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>{{ t("media.from_computer") }}</button>
   <input class="field-input" id="image-url" type="url" placeholder="{{ t('media.from_url') }}: https://..." />
   <button class="button-preview" type="button" id="image-url-go">{{ t("media.import") }}</button>
 </div>
@@ -426,7 +427,16 @@
           });
         }, function () { return file.name + ": " + imageFile.dataset.failed; });
     };
-    imageBtn.addEventListener("click", function () { imageFile.click(); });
+    // The picture button opens a row: a file from this device, or an address.
+    imageBtn.addEventListener("click", function () {
+      var row = document.getElementById("image-import");
+      if (!row) { imageFile.click(); return; }
+      row.hidden = !row.hidden;
+      imageBtn.setAttribute("aria-expanded", row.hidden ? "false" : "true");
+      if (!row.hidden) { var url = document.getElementById("image-url"); if (url) url.focus(); }
+    });
+    var pick = document.getElementById("image-pick");
+    if (pick) pick.addEventListener("click", function () { imageFile.click(); });
     imageFile.addEventListener("change", function () {
       var files = Array.prototype.slice.call(imageFile.files || []);
       var problems = [];
@@ -443,7 +453,6 @@
   var importUrl = document.getElementById("image-url");
   var importGo = document.getElementById("image-url-go");
   if (importRow && importUrl && importGo && window.fetch) {
-    importRow.hidden = false;
     var runImport = function () {
       var url = importUrl.value.trim();
       if (!url) return;
