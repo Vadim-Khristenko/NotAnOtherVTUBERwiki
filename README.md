@@ -195,8 +195,8 @@ cargo sqlx migrate run
 cargo run -p naw-cli -- serve
 # health: http://127.0.0.1:4242/health, readiness: /ready
 
-# 5. Optionally build the authoring UI
-cd ui && bun install && bun run build
+# 5. Optionally rebuild the rich editor (a built copy ships in the skin)
+cd editor && bun install && bun run build
 ```
 
 The web tier serves cached HTML on the reader path; rendering happens on write.
@@ -214,12 +214,13 @@ The worker in `worker/` is optional and never on the request path.
 | `.github/AI-POLICY.md` | Using AI is allowed, but you must be able to explain your own changes |
 | `AI-ASSETS.md`       | Artwork, AI generated images, and submission terms     |
 | `.github/assets/`    | Project art, see [AI-ASSETS.md](AI-ASSETS.md).        |
-| `naw-core`           | Domain, services, database. (not scaffolded yet)      |
-| `naw-web`            | Axum, routes, middleware, API. (not scaffolded yet)   |
-| `naw-markdown`       | The render pipeline. (not scaffolded yet)             |
-| `naw-cli`            | Admin, migrate, seed, import. (not scaffolded yet)    |
-| `ui/`                | Vue 3 authoring app. (not scaffolded yet)             |
-| `worker/`            | Bun service. (not scaffolded yet)                     |
+| `crates/naw-core`    | Configuration, state, skins, limits, logging.          |
+| `crates/naw-web`     | Axum, routes, pages, auth, admin, monitoring.          |
+| `crates/naw-markdown`| The render pipeline.                                   |
+| `crates/naw-cli`     | Serve, migrate, seed, users, limits.                   |
+| `skins/`             | Templates, styles, scripts and fonts per skin.         |
+| `editor/`            | The rich editor (TypeScript, CodeMirror), built into the default skin. |
+| `worker/`            | Bun service. (a stub for now)                          |
 
 ---
 

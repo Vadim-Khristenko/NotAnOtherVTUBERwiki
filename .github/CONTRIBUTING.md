@@ -73,7 +73,7 @@ You need:
 - Rust 1.98.0 or newer, edition 2024
 - `sqlx-cli` (`cargo install sqlx-cli --no-default-features --features postgres,rustls`)
 - Docker, or a local PostgreSQL 18 and Valkey 9
-- Bun 1.4.0 and Node, only if you are touching `worker/` or `ui/`
+- Bun 1.4.0, only if you are touching `worker/` or `editor/`
 
 If the database is unreachable, build with `SQLX_OFFLINE=true` and rely on the committed
 `.sqlx` directory. If you changed any SQL, you must regenerate it and commit the change.

@@ -73,7 +73,7 @@ cargo run --bin naw -- serve
 - Rust 1.98.0 или новее, edition 2024
 - `sqlx-cli` (`cargo install sqlx-cli --no-default-features --features postgres,rustls`)
 - Docker либо локальные PostgreSQL 18 и Valkey 9
-- Bun 1.4.0 и Node, только если вы трогаете `worker/` или `ui/`
+- Bun 1.4.0, только если вы трогаете `worker/` или `editor/`
 
 Если база недоступна, собирайтесь с `SQLX_OFFLINE=true` и опирайтесь на закоммиченную
 папку `.sqlx`. Если вы меняли SQL, её надо перегенерировать и закоммитить.

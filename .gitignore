@@ -364,3 +364,4 @@ PLAN.md
 # re-included, otherwise file-level ! rules stop working)
 !.vscode/
 !.devcontainer/
+editor/node_modules/
