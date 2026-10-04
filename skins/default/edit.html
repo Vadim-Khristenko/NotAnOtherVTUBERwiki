@@ -44,7 +44,9 @@
   for an existing one. Editors without it (a profile, a translation) keep only
   the browser's own draft.
 #}
-<form method="post" action="{{ form_action }}"{% if draft_kind is defined and draft_kind %} data-draft-kind="{{ draft_kind }}" data-draft-path="{{ draft_path | default('') }}" data-saved="{{ t('editor.autosaved') }}" data-failed="{{ t('editor.autosave_failed') }}"{% endif %}>
+{# The form and the live preview, side by side when the reader asks for it. #}
+<div class="editor-shell" id="editor-shell">
+<form class="editor-form" method="post" action="{{ form_action }}"{% if draft_kind is defined and draft_kind %} data-draft-kind="{{ draft_kind }}" data-draft-path="{{ draft_path | default('') }}" data-saved="{{ t('editor.autosaved') }}" data-failed="{{ t('editor.autosave_failed') }}"{% endif %}>
 {# Where the preview's "back to editing" leads: this editor, filled in by the script. #}
 <input type="hidden" name="back" id="editor-back" value="" />
 <input type="hidden" name="draft_id" value="{{ draft_id | default('') }}" />
@@ -83,31 +85,66 @@
 </label>
 {% if not fixed_title %}<label class="check"><input type="checkbox" name="minor" value="1" /> {{ t("editor.minor") }}</label>{% endif %}
 {% if translation_of %}<label class="check"><input type="checkbox" name="synced" value="1" /> {{ t("translate.synced", source=translation_of) }}</label>{% endif %}
-<div class="toolbar" role="toolbar" aria-label="Formatting">
-<button type="button" data-wrap="**" title="Bold"><b>B</b></button>
-<button type="button" data-wrap="*" title="Italic"><i>I</i></button>
-<button type="button" data-wrap="__" title="Italic (__)"><i>__</i></button>
-<button type="button" data-wrap="~~" title="Strikethrough"><s>S</s></button>
-<button type="button" data-wrap="++" title="Underline"><u>U</u></button>
-<button type="button" data-wrap="==" title="Highlight">H</button>
-<button type="button" data-wrap="==yellow|" data-suffix="==" title="Colored highlight">H+</button>
-<button type="button" data-wrap="||" title="Spoiler">&#9618;</button>
-<button type="button" data-wrap="((" data-suffix="))" title="Keyboard key"><kbd>K</kbd></button>
-<button type="button" data-snippet=":sparkles:" title="Emoji">&#9786;</button>
-<button type="button" data-prefix="## " title="Heading">H</button>
-<button type="button" data-link title="Link">link</button>
-<button type="button" data-prefix="&gt; " title="Quote">&rdquo;</button>
-<button type="button" data-block=">! Summary&#10;> " title="Collapsible quote">?! </button>
-<button type="button" data-block=":::details Title&#10;&#10;:::" title="Details block">+</button>
-<button type="button" data-block="```mermaid&#10;graph TD;&#10;```" title="Mermaid diagram">M</button>
-<button type="button" data-wrap="$" title="Inline math">$</button>
-<button type="button" data-prefix="- " title="List">&bull;</button>
-<button type="button" data-footnote title="Footnote">[^]</button>
-<button type="button" data-emotes title="{{ t('emotes.insert') }}" aria-expanded="false" aria-controls="emote-picker" hidden><svg class="icon" aria-hidden="true"><use href="#i-mood-smile" /></svg></button>
-<button type="button" data-image title="{{ t('media.insert') }}" hidden><svg class="icon" aria-hidden="true"><use href="#i-photo" /></svg></button>
-<input type="file" id="image-file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif" multiple hidden
-       data-max="{{ upload_max }}" data-too-large="{{ t('media.refused_too_large', max=upload_max_mb) }}"
-       data-uploading="{{ t('media.uploading', name='{name}') }}" data-failed="{{ t('media.failed') }}" />
+{#
+  The editor frame: a toolbar, the text, a status line. The toolbar needs a
+  script, so it shows only once the page script reveals it; without one the
+  textarea alone is the editor. Formatting buttons speak a small data API
+  (data-wrap, data-prefix, data-block, data-link, data-footnote, data-snippet)
+  that both the page script and the rich editor understand.
+#}
+<p class="field editor-label"><label for="body-md">{{ t("editor.body") }}</label></p>
+<div class="editor-frame" id="editor-frame">
+<div class="editor-bar" id="editor-bar" role="toolbar" aria-label="{{ t('editor.toolbar') }}" hidden>
+  <div class="eb-group" data-rich-only hidden>
+    <button type="button" class="eb" data-rich-undo title="{{ t('editor.undo') }} (Ctrl+Z)"><svg class="icon" aria-hidden="true"><use href="#i-arrow-back-up" /></svg></button>
+    <button type="button" class="eb" data-rich-redo title="{{ t('editor.redo') }} (Ctrl+Shift+Z)"><svg class="icon" aria-hidden="true"><use href="#i-arrow-forward-up" /></svg></button>
+  </div>
+  <div class="eb-group">
+    <button type="button" class="eb" data-prefix="## " title="{{ t('editor.heading') }}"><svg class="icon" aria-hidden="true"><use href="#i-heading" /></svg></button>
+    <button type="button" class="eb" data-wrap="**" title="{{ t('editor.bold') }} (Ctrl+B)"><svg class="icon" aria-hidden="true"><use href="#i-bold" /></svg></button>
+    <button type="button" class="eb" data-wrap="*" title="{{ t('editor.italic') }} (Ctrl+I)"><svg class="icon" aria-hidden="true"><use href="#i-italic" /></svg></button>
+    <button type="button" class="eb" data-wrap="~~" title="{{ t('editor.strike') }}"><svg class="icon" aria-hidden="true"><use href="#i-strikethrough" /></svg></button>
+    <button type="button" class="eb" data-wrap="++" title="{{ t('editor.underline') }}"><svg class="icon" aria-hidden="true"><use href="#i-underline" /></svg></button>
+    <button type="button" class="eb" data-wrap="==" title="{{ t('editor.highlight') }}"><svg class="icon" aria-hidden="true"><use href="#i-highlight" /></svg></button>
+    <button type="button" class="eb" data-wrap="||" title="{{ t('editor.spoiler') }}"><svg class="icon" aria-hidden="true"><use href="#i-eye-off" /></svg></button>
+    <button type="button" class="eb" data-wrap="`" title="{{ t('editor.code') }}"><svg class="icon" aria-hidden="true"><use href="#i-code" /></svg></button>
+  </div>
+  <div class="eb-group">
+    <button type="button" class="eb" data-link title="{{ t('editor.link') }} (Ctrl+K)"><svg class="icon" aria-hidden="true"><use href="#i-link" /></svg></button>
+    <button type="button" class="eb" data-prefix="- " title="{{ t('editor.list') }}"><svg class="icon" aria-hidden="true"><use href="#i-list" /></svg></button>
+    <button type="button" class="eb" data-prefix="1. " title="{{ t('editor.numbered') }}"><svg class="icon" aria-hidden="true"><use href="#i-list-numbers" /></svg></button>
+    <button type="button" class="eb" data-prefix="&gt; " title="{{ t('editor.quote') }}"><svg class="icon" aria-hidden="true"><use href="#i-blockquote" /></svg></button>
+    <button type="button" class="eb" data-block="| {{ t('editor.table_column') }} | {{ t('editor.table_column') }} |&#10;| --- | --- |&#10;|  |  |" title="{{ t('editor.table') }}"><svg class="icon" aria-hidden="true"><use href="#i-table" /></svg></button>
+    <button type="button" class="eb" data-footnote title="{{ t('editor.footnote') }}"><svg class="icon" aria-hidden="true"><use href="#i-superscript" /></svg></button>
+    <button type="button" class="eb" data-wrap="{{ '{{' }}" data-suffix="{{ '}}' }}" title="{{ t('editor.template') }}"><svg class="icon" aria-hidden="true"><use href="#i-template" /></svg></button>
+  </div>
+  <div class="eb-group">
+    <button type="button" class="eb" data-emotes title="{{ t('emotes.insert') }}" aria-expanded="false" aria-controls="emote-picker" hidden><svg class="icon" aria-hidden="true"><use href="#i-mood-smile" /></svg></button>
+    <button type="button" class="eb" data-image title="{{ t('media.insert') }}" hidden><svg class="icon" aria-hidden="true"><use href="#i-photo" /></svg></button>
+    <details class="eb-more">
+      <summary class="eb" title="{{ t('editor.more') }}"><svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg></summary>
+      <div class="eb-menu" role="menu">
+        <button type="button" role="menuitem" data-block="&#10;---&#10;"><svg class="icon" aria-hidden="true"><use href="#i-separator" /></svg>{{ t("editor.separator") }}</button>
+        <button type="button" role="menuitem" data-wrap="$"><svg class="icon" aria-hidden="true"><use href="#i-math" /></svg>{{ t("editor.math") }}</button>
+        <button type="button" role="menuitem" data-block=">! {{ t('editor.summary_word') }}&#10;> "><svg class="icon" aria-hidden="true"><use href="#i-chevron-down" /></svg>{{ t("editor.collapsible") }}</button>
+        <button type="button" role="menuitem" data-block=":::details {{ t('editor.summary_word') }}&#10;&#10;:::"><svg class="icon" aria-hidden="true"><use href="#i-list-details" /></svg>{{ t("editor.details") }}</button>
+        <button type="button" role="menuitem" data-block="&gt; [!NOTE]&#10;&gt; "><svg class="icon" aria-hidden="true"><use href="#i-info-circle" /></svg>{{ t("editor.alert") }}</button>
+        <button type="button" role="menuitem" data-wrap="==yellow|" data-suffix="=="><svg class="icon" aria-hidden="true"><use href="#i-palette" /></svg>{{ t("editor.color_mark") }}</button>
+        <button type="button" role="menuitem" data-wrap="((" data-suffix="))"><svg class="icon" aria-hidden="true"><use href="#i-copy" /></svg>{{ t("editor.key") }}</button>
+        <button type="button" role="menuitem" data-block="```mermaid&#10;graph TD;&#10;```"><svg class="icon" aria-hidden="true"><use href="#i-chart-bar" /></svg>{{ t("editor.diagram") }}</button>
+        <button type="button" role="menuitem" data-snippet="[[toc]]&#10;"><svg class="icon" aria-hidden="true"><use href="#i-list" /></svg>{{ t("editor.toc") }}</button>
+      </div>
+    </details>
+  </div>
+  <div class="eb-spacer"></div>
+  <div class="eb-group eb-switches">
+    <label class="eb-switch" data-needs-rich hidden><input type="checkbox" id="editor-mode" /><span class="eb-switch-track" aria-hidden="true"></span><svg class="icon" aria-hidden="true"><use href="#i-sparkles" /></svg><span>Pretty Editor</span></label>
+    <label class="eb-switch"><input type="checkbox" id="preview-mode" checked /><span class="eb-switch-track" aria-hidden="true"></span><svg class="icon" aria-hidden="true"><use href="#i-eye" /></svg><span>{{ t("editor.preview_switch") }}</span></label>
+    <label class="eb-switch eb-wide-only"><input type="checkbox" id="split-mode" /><span class="eb-switch-track" aria-hidden="true"></span><svg class="icon" aria-hidden="true"><use href="#i-layout-columns" /></svg><span>{{ t("editor.split_switch") }}</span></label>
+  </div>
+  <input type="file" id="image-file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif" multiple hidden
+         data-max="{{ upload_max }}" data-too-large="{{ t('media.refused_too_large', max=upload_max_mb) }}"
+         data-uploading="{{ t('media.uploading', name='{name}') }}" data-failed="{{ t('media.failed') }}" />
 </div>
 <div class="emote-picker" id="emote-picker" hidden>
   <label class="visually-hidden" for="emote-picker-q">{{ t("emotes.search") }}</label>
@@ -122,14 +159,11 @@
   <input class="field-input" id="image-url" type="url" placeholder="{{ t('media.from_url') }}: https://..." />
   <button class="button-preview" type="button" id="image-url-go">{{ t("media.import") }}</button>
 </div>
-<p class="field-note editor-media-note"><a href="/media" target="_blank" rel="noopener">{{ t("media.upload_link") }}</a> · <a href="/emotes" target="_blank" rel="noopener">{{ t("emotes.title") }}</a> <span class="editor-media-status" id="image-status" role="status"></span></p>
-{# The rich editor, when the skin ships it: a toggle shown by its script,
-   so without JavaScript nobody sees a switch that does nothing. #}
-<p class="editor-mode" hidden><label class="check"><input type="checkbox" id="editor-mode" /> {{ t("editor.rich") }}</label></p>
-<label class="field">{{ t("editor.body") }}
 <textarea class="field-body" id="body-md" name="body_md" rows="20" required
           data-max="{{ body_max }}" data-too-large="{{ t('editor.body_too_large', max=body_max_mb) }}">{{ body_md }}</textarea>
-</label>
+<div class="editor-status" id="editor-status" aria-live="off" data-format="{{ t('editor.status', words='{words}', chars='{chars}', line='{line}', col='{col}') }}"></div>
+</div>
+<p class="field-note editor-media-note"><a href="{{ base }}/media" target="_blank" rel="noopener">{{ t("media.upload_link") }}</a> · <a href="{{ base }}/emotes" target="_blank" rel="noopener">{{ t("emotes.title") }}</a> <span class="editor-media-status" id="image-status" role="status"></span></p>
 <div class="form-actions">
 <button class="button-save" type="submit">{{ t("editor.save") }}</button>
 <button class="button-preview" type="submit" formaction="/preview" formtarget="_blank">{{ t("editor.preview") }}</button>
@@ -155,6 +189,7 @@
 {% endif %}
 <div id="live-preview" class="preview-body"><p>{{ t("editor.live_preview_hint") }}</p></div>
 </div>
+</div>
 <details class="syntax-help">
 <summary>{{ t("editor.cheatsheet") }}</summary>
 <ul>
@@ -179,6 +214,25 @@
   var area = document.getElementById("body-md");
   var selbar = document.getElementById("selbar");
   if (!area) return;
+  // The toolbar works only with a script, so it appears with one.
+  var bar = document.getElementById("editor-bar");
+  if (bar) {
+    bar.hidden = false;
+    // A press must not take the focus, or the selection it acts on, away
+    // from the text.
+    bar.addEventListener("mousedown", function (ev) {
+      if (ev.target.closest("button")) ev.preventDefault();
+    });
+  }
+  var more = document.querySelector(".eb-more");
+  if (more) {
+    more.addEventListener("click", function (ev) {
+      if (ev.target.closest(".eb-menu button")) more.open = false;
+    });
+    document.addEventListener("click", function (ev) {
+      if (more.open && !more.contains(ev.target)) more.open = false;
+    });
+  }
   function surround(before, after) {
     var s = area.selectionStart, e = area.selectionEnd, v = area.value;
     var sel = v.slice(s, e) || "text";
@@ -200,6 +254,7 @@
     }).join("\n");
     area.value = v.slice(0, lineStart) + block + v.slice(end);
     area.focus();
+    area.dispatchEvent(new Event("input"));
   }
   function insertLink() {
     var s = area.selectionStart, e = area.selectionEnd, v = area.value;
@@ -210,6 +265,7 @@
     var urlStart = s + sel.length + 3;
     area.selectionStart = urlStart;
     area.selectionEnd = urlStart + 8;
+    area.dispatchEvent(new Event("input"));
   }
   function insertFootnote() {
     var v = area.value, n = 1, m;
@@ -222,6 +278,8 @@
       area.value += (area.value.endsWith("\n") ? "" : "\n") + "\n[^" + n + "]: ";
     }
     area.focus();
+    area.selectionStart = area.selectionEnd = s + ins.length;
+    area.dispatchEvent(new Event("input"));
   }
   function insertBlock(template) {
     var s = area.selectionStart, e = area.selectionEnd, v = area.value;
@@ -359,6 +417,8 @@
     area.addEventListener("input", function () { area.setCustomValidity(""); });
   }
   document.addEventListener("click", function (ev) {
+    // The rich editor handles its own presses first and marks them done.
+    if (ev.defaultPrevented) return;
     var btn = ev.target.closest("button[data-wrap],button[data-prefix],button[data-link],button[data-footnote],button[data-block],button[data-snippet]");
     if (!btn) return;
     if (btn.hasAttribute("data-wrap")) surround(btn.getAttribute("data-wrap"), btn.getAttribute("data-suffix") || btn.getAttribute("data-wrap"));
@@ -370,6 +430,8 @@
   });
   document.addEventListener("selectionchange", function () {
     if (!selbar) return;
+    // Under the rich editor the textarea is hidden; its own shortcuts do this.
+    if (area.classList.contains("rich-hidden")) { selbar.setAttribute("hidden", ""); return; }
     var active = document.activeElement === area;
     var sel = active && area.selectionStart !== area.selectionEnd;
     if (sel) selbar.removeAttribute("hidden");
@@ -489,9 +551,42 @@
   }
 
   var preview = document.getElementById("live-preview");
+  var previewBox = document.querySelector(".live-preview");
+  var previewToggle = document.getElementById("preview-mode");
+  var splitToggle = document.getElementById("split-mode");
   var timer = null;
+  // The live preview can be turned off: then it is neither shown nor asked
+  // for. Side by side puts it next to the text on a wide screen. Both
+  // choices stay in this browser.
+  function remembered(key, fallback) {
+    try { var v = localStorage.getItem(key); return v === null ? fallback : v === "on"; } catch (e) { return fallback; }
+  }
+  function remember(key, on) {
+    try { localStorage.setItem(key, on ? "on" : "off"); } catch (e) {}
+  }
+  function previewOn() { return !previewToggle || previewToggle.checked; }
+  function applyLayout() {
+    if (previewBox) previewBox.hidden = !previewOn();
+    document.documentElement.classList.toggle("editor-split", previewOn() && !!splitToggle && splitToggle.checked);
+  }
+  if (previewToggle) {
+    previewToggle.checked = remembered("naw-preview", true);
+    previewToggle.addEventListener("change", function () {
+      remember("naw-preview", previewToggle.checked);
+      applyLayout();
+      if (previewToggle.checked) livePreview();
+    });
+  }
+  if (splitToggle) {
+    splitToggle.checked = remembered("naw-split", false);
+    splitToggle.addEventListener("change", function () {
+      remember("naw-split", splitToggle.checked);
+      applyLayout();
+    });
+  }
+  applyLayout();
   function livePreview() {
-    if (!preview) return;
+    if (!preview || !previewOn()) return;
     var body = new URLSearchParams();
     body.set("title", "Preview");
     body.set("body_md", area.value);
@@ -512,6 +607,7 @@
   var onPageSelect = document.getElementById("preview-on");
   if (onPageSelect) onPageSelect.addEventListener("change", livePreview);
   area.addEventListener("input", function () {
+    if (!previewOn()) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(livePreview, 400);
   });

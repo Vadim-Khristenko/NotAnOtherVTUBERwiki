@@ -21,7 +21,7 @@ import {
   placeholder as placeholderExt,
   dropCursor,
 } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, undo, redo } from "@codemirror/commands";
 import {
   syntaxHighlighting,
   HighlightStyle,
@@ -82,14 +82,13 @@ const highlight = HighlightStyle.define([
 ]);
 
 const theme = EditorView.theme({
+  // The frame around the toolbar and the text draws the border and the focus.
   "&": {
     color: "var(--ink)",
     backgroundColor: "var(--surface)",
-    border: "1px solid var(--border-strong, var(--line))",
-    borderRadius: "var(--radius, 8px)",
     fontSize: "0.95rem",
   },
-  "&.cm-focused": { outline: "2px solid var(--accent)", outlineOffset: "1px" },
+  "&.cm-focused": { outline: "none" },
   ".cm-content": {
     fontFamily: "var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace)",
     lineHeight: "1.6",
@@ -207,8 +206,117 @@ function linkCmd(view: EditorView): boolean {
   return true;
 }
 
-function mount(area: HTMLTextAreaElement) {
+/// Prefixes every line the selection touches, once.
+function prefixLines(view: EditorView, prefix: string): boolean {
+  const { state } = view;
+  const changes: { from: number; insert: string }[] = [];
+  const seen = new Set<number>();
+  for (const range of state.selection.ranges) {
+    for (let pos = range.from; pos <= range.to; ) {
+      const line = state.doc.lineAt(pos);
+      if (!seen.has(line.number)) {
+        seen.add(line.number);
+        if (!line.text.startsWith(prefix)) changes.push({ from: line.from, insert: prefix });
+      }
+      pos = line.to + 1;
+    }
+  }
+  view.dispatch({ changes, scrollIntoView: true, userEvent: "input" });
+  return true;
+}
+
+/// A block on lines of its own, around the selection when there is one.
+function insertBlock(view: EditorView, template: string): boolean {
+  const { from, to } = view.state.selection.main;
+  const selected = view.state.sliceDoc(from, to);
+  const body = selected ? template.replace("\n\n", `\n${selected}\n`) : template;
+  const before = from > 0 && view.state.sliceDoc(from - 1, from) !== "\n" ? "\n" : "";
+  const insert = `${before}${body}\n`;
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: from + insert.length },
+    scrollIntoView: true,
+    userEvent: "input",
+  });
+  return true;
+}
+
+function insertSnippet(view: EditorView, snippet: string): boolean {
+  const { from, to } = view.state.selection.main;
+  view.dispatch({
+    changes: { from, to, insert: snippet },
+    selection: { anchor: from + snippet.length },
+    scrollIntoView: true,
+    userEvent: "input",
+  });
+  return true;
+}
+
+/// `[^n]` at the cursor and its definition at the end, numbered after the
+/// highest one already there.
+function insertFootnote(view: EditorView): boolean {
+  const doc = view.state.doc.toString();
+  let n = 1;
+  for (const m of doc.matchAll(/\[\^(\d+)\]/g)) n = Math.max(n, Number(m[1]) + 1);
+  const mark = `[^${n}]`;
+  const { from, to } = view.state.selection.main;
+  const end = view.state.doc.length;
+  const tail = `${doc.endsWith("\n") ? "" : "\n"}\n${mark}: `;
+  view.dispatch({
+    changes: [
+      { from, to, insert: mark },
+      { from: end, insert: tail },
+    ],
+    selection: { anchor: end + mark.length - (to - from) + tail.length },
+    scrollIntoView: true,
+    userEvent: "input",
+  });
+  return true;
+}
+
+/// Runs a toolbar button's action in the editor. `true` when it was one.
+function runButton(view: EditorView, btn: HTMLElement): boolean {
+  if (btn.hasAttribute("data-rich-undo")) return undo(view);
+  if (btn.hasAttribute("data-rich-redo")) return redo(view);
+  if (btn.hasAttribute("data-wrap")) {
+    const before = btn.getAttribute("data-wrap") ?? "";
+    return wrap(view, before, btn.getAttribute("data-suffix") ?? before);
+  }
+  if (btn.hasAttribute("data-prefix")) return prefixLines(view, btn.getAttribute("data-prefix") ?? "");
+  if (btn.hasAttribute("data-link")) return linkCmd(view);
+  if (btn.hasAttribute("data-footnote")) return insertFootnote(view);
+  if (btn.hasAttribute("data-block")) return insertBlock(view, btn.getAttribute("data-block") ?? "");
+  if (btn.hasAttribute("data-snippet")) return insertSnippet(view, btn.getAttribute("data-snippet") ?? "");
+  return false;
+}
+
+const BUTTONS =
+  "button[data-wrap],button[data-prefix],button[data-link],button[data-footnote],button[data-block],button[data-snippet],button[data-rich-undo],button[data-rich-redo]";
+
+/// Words, characters and the cursor's line and column, in the page's words.
+function status(view: EditorView, el: HTMLElement | null) {
+  if (!el) return;
+  const format = el.dataset.format;
+  if (!format) return;
+  const doc = view.state.doc;
+  const text = doc.toString();
+  const words = (text.match(/[\p{L}\p{N}]+/gu) ?? []).length;
+  const head = view.state.selection.main.head;
+  const line = doc.lineAt(head);
+  el.textContent = format
+    .replace("{words}", String(words))
+    .replace("{chars}", String(text.length))
+    .replace("{line}", String(line.number))
+    .replace("{col}", String(head - line.from + 1));
+}
+
+type Mounted = { view: EditorView; destroy: () => void };
+
+function mount(area: HTMLTextAreaElement): Mounted {
   const form = area.form;
+  const statusEl = document.getElementById("editor-status");
+  // Every listener of this mount goes when it is turned off.
+  const off = new AbortController();
   let syncing = false;
 
   // A text change goes to the textarea with an `input` event (drafts,
@@ -240,7 +348,7 @@ function mount(area: HTMLTextAreaElement) {
     autocompletion({ override: [emotes, wikiRefs], activateOnTyping: true, maxRenderedOptions: 40 }),
     placeholderExt(area.getAttribute("placeholder") || ""),
     EditorView.contentAttributes.of({
-      "aria-label": area.closest("label")?.firstChild?.textContent?.trim() || "Text",
+      "aria-label": document.querySelector(`label[for="${area.id}"]`)?.textContent?.trim() || "Text",
       spellcheck: "true",
       lang: document.documentElement.lang || "en",
     }),
@@ -259,10 +367,12 @@ function mount(area: HTMLTextAreaElement) {
       ...searchKeymap,
       ...historyKeymap,
       ...defaultKeymap,
-      indentWithTab,
     ]),
     EditorView.updateListener.of((update) => {
-      if (update.docChanged || update.selectionSet) pushToArea(update.view, update.docChanged);
+      if (update.docChanged || update.selectionSet) {
+        pushToArea(update.view, update.docChanged);
+        status(update.view, statusEl);
+      }
     }),
     // Pictures pasted or dropped go through the page's own upload, which
     // puts their Markdown at the cursor.
@@ -276,38 +386,68 @@ function mount(area: HTMLTextAreaElement) {
     state: EditorState.create({ doc: area.value, extensions }),
   });
 
-  // The page writes into the textarea (toolbar, emotes, images, a draft
-  // coming back): the editor follows, cursor included.
-  area.addEventListener("input", () => {
-    if (syncing) return;
-    const doc = view.state.doc.toString();
-    const next = area.value;
-    const anchor = Math.min(area.selectionStart ?? next.length, next.length);
-    const head = Math.min(area.selectionEnd ?? anchor, next.length);
-    if (doc !== next) {
-      view.dispatch({ changes: { from: 0, to: doc.length, insert: next }, selection: { anchor, head } });
-    } else {
-      view.dispatch({ selection: { anchor, head } });
-    }
-    view.focus();
-  });
+  // The page writes into the textarea (emotes, images, a draft coming
+  // back): the editor follows, cursor included.
+  area.addEventListener(
+    "input",
+    () => {
+      if (syncing) return;
+      const doc = view.state.doc.toString();
+      const next = area.value;
+      const anchor = Math.min(area.selectionStart ?? next.length, next.length);
+      const head = Math.min(area.selectionEnd ?? anchor, next.length);
+      if (doc !== next) {
+        view.dispatch({ changes: { from: 0, to: doc.length, insert: next }, selection: { anchor, head } });
+      } else {
+        view.dispatch({ selection: { anchor, head } });
+      }
+      view.focus();
+    },
+    { signal: off.signal },
+  );
 
-  // The toolbar acts on the textarea's selection: keep it where the cursor is.
-  area.addEventListener("focus", () => {
-    const sel = view.state.selection.main;
-    try {
-      area.setSelectionRange(sel.from, sel.to);
-    } catch {
-      /* ignore */
-    }
-  });
+  // Whatever sends the focus to the hidden textarea (its label, the page's
+  // script, a validation bubble) sends it on to the editor.
+  area.addEventListener("focus", () => view.focus(), { signal: off.signal });
+
+  // Toolbar presses act here, before the page script would act on the
+  // hidden textarea, and are marked done so it leaves them alone.
+  document.addEventListener(
+    "click",
+    (event) => {
+      const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>(BUTTONS);
+      if (!btn || !btn.closest("#editor-bar, #selbar")) return;
+      if (runButton(view, btn)) {
+        event.preventDefault();
+        event.stopPropagation();
+        view.focus();
+      }
+    },
+    { capture: true, signal: off.signal },
+  );
 
   area.classList.add("rich-hidden");
   area.setAttribute("tabindex", "-1");
   area.setAttribute("aria-hidden", "true");
   area.insertAdjacentElement("afterend", view.dom);
   view.dom.classList.add("rich-editor");
-  return view;
+  document.querySelectorAll<HTMLElement>("[data-rich-only]").forEach((el) => (el.hidden = false));
+  document.getElementById("editor-frame")?.classList.add("is-rich");
+  status(view, statusEl);
+
+  return {
+    view,
+    destroy: () => {
+      off.abort();
+      view.destroy();
+      area.classList.remove("rich-hidden");
+      area.removeAttribute("tabindex");
+      area.removeAttribute("aria-hidden");
+      document.querySelectorAll<HTMLElement>("[data-rich-only]").forEach((el) => (el.hidden = true));
+      document.getElementById("editor-frame")?.classList.remove("is-rich");
+      if (statusEl) statusEl.textContent = "";
+    },
+  };
 }
 
 function uploadFiles(files: FileList | null | undefined): boolean {
@@ -326,22 +466,19 @@ function start() {
   const area = document.getElementById("body-md") as HTMLTextAreaElement | null;
   const toggle = document.getElementById("editor-mode") as HTMLInputElement | null;
   if (!area) return;
-  let view: EditorView | null = null;
+  let mounted: Mounted | null = null;
   const turnOn = () => {
-    if (view) return;
-    view = mount(area);
+    if (mounted) return;
+    mounted = mount(area);
   };
   const turnOff = () => {
-    if (!view) return;
-    view.destroy();
-    view = null;
-    area.classList.remove("rich-hidden");
-    area.removeAttribute("tabindex");
-    area.removeAttribute("aria-hidden");
+    if (!mounted) return;
+    mounted.destroy();
+    mounted = null;
     area.focus();
   };
   if (toggle) {
-    toggle.closest("[hidden]")?.removeAttribute("hidden");
+    toggle.closest<HTMLElement>("[data-needs-rich]")?.removeAttribute("hidden");
     toggle.checked = preferred();
     toggle.addEventListener("change", () => {
       remember(toggle.checked);
