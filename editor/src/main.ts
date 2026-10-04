@@ -420,6 +420,8 @@ function mount(area: HTMLTextAreaElement): Mounted {
       if (runButton(view, btn)) {
         event.preventDefault();
         event.stopPropagation();
+        // The press stops here, so the menu it came from closes here too.
+        btn.closest("details")?.removeAttribute("open");
         view.focus();
       }
     },
