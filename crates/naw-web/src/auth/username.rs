@@ -8,6 +8,15 @@ pub const USERNAME_MIN: usize = 3;
 pub const USERNAME_MAX: usize = 32;
 
 /// The full rule set.
+/// What a deleted account is renamed to begins with this; nobody may claim
+/// such a name, so a deleted author never looks like a living one.
+pub const DELETED_PREFIX: &str = "deleted-";
+
+/// Whether `username` is the shape a deleted account is given.
+pub fn is_deleted_name(username: &str) -> bool {
+    username.to_ascii_lowercase().starts_with(DELETED_PREFIX)
+}
+
 pub fn is_valid(username: &str) -> bool {
     let len = username.chars().count();
     if !(USERNAME_MIN..=USERNAME_MAX).contains(&len) {
@@ -77,9 +86,10 @@ pub async fn claim(
     }
     let mut candidate = stem.clone();
     for round in 2..=100 {
-        let reserved_hit = reserved
-            .iter()
-            .any(|name| name.eq_ignore_ascii_case(&candidate));
+        let reserved_hit = is_deleted_name(&candidate)
+            || reserved
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(&candidate));
         if !reserved_hit {
             let taken = sqlx::query!(
                 "SELECT 1 AS one FROM users WHERE username = $1

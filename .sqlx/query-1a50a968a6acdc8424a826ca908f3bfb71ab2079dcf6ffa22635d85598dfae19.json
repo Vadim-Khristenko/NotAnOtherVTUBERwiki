@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET policy_version = GREATEST(policy_version, $2), policy_accepted_at = now()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1a50a968a6acdc8424a826ca908f3bfb71ab2079dcf6ffa22635d85598dfae19"
+}

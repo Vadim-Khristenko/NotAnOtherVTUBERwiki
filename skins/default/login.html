@@ -12,6 +12,8 @@
   `next`                 already guarded by redirect::safe_next; `next_encoded`
                          is the same value ready for a query string
   `error`                a finished message, never text from the request
+  `consent`              signing in takes the ticked box accepting the wiki's
+                         terms and privacy policy (legal.rs)
 #}
 {% block body %}
 <div class="auth-card">
@@ -20,32 +22,49 @@
 
   {% if error %}<p class="notice notice-warn" role="alert">{{ error }}</p>{% endif %}
 
-  {% if password_login %}
-  <form class="auth-form" method="post" action="/login/password">
+  {#
+    One form for every way in, so one ticked box covers them all: the button
+    pressed says which. It posts, so a password typed and then left behind for
+    a provider button never ends up in an address. The fields carry no
+    `required`, or a provider button would be stopped by an empty password;
+    the server asks for them when the password button is pressed.
+  #}
+  {% if password_login or providers %}
+  <form class="auth-form" method="post" action="/login">
     <input type="hidden" name="next" value="{{ next }}" />
+    {% if password_login %}
     <label class="field">{{ t("account.username") }}
-      <input class="field-input" name="username" value="{{ form_username }}" required maxlength="64"
+      <input class="field-input" name="username" value="{{ form_username }}" maxlength="64"
              autocomplete="username" autocapitalize="none" spellcheck="false" autofocus />
     </label>
     <label class="field">{{ t("account.password") }}
-      <input class="field-input" name="password" type="password" required maxlength="256"
+      <input class="field-input" name="password" type="password" maxlength="256"
              autocomplete="current-password" />
     </label>
+    {% endif %}
+    {% if consent %}
+    <label class="auth-consent">
+      <input type="checkbox" name="agree" value="1" required />
+      <span>{{ t("legal.consent_lead") }} <a href="{{ terms_href }}" target="_blank" rel="noopener">{{ t("legal.consent_terms") }}</a>
+        {{ t("legal.consent_and") }} <a href="{{ privacy_href }}" target="_blank" rel="noopener">{{ t("legal.consent_privacy") }}</a>{{ t("legal.consent_tail") }}</span>
+    </label>
+    {% endif %}
+    {% if password_login %}
     <div class="form-actions">
-      <button class="button-save" type="submit">{{ t("account.sign_in") }}</button>
+      <button class="button-save" type="submit" name="method" value="password">{{ t("account.sign_in") }}</button>
       {% if recovery %}<a class="auth-forgot" href="/password/forgot">{{ t("recovery.forgot_link") }}</a>{% endif %}
     </div>
+    {% endif %}
+    {% if providers %}
+    {% if password_login %}<p class="auth-or"><span>{{ t("account.or") }}</span></p>{% endif %}
+    <ul class="provider-list">
+      {% for provider in providers %}
+      <li><button class="provider-btn" type="submit" name="method" value="{{ provider.slug }}">{{ t("account.continue_with", provider=provider.label) }}</button></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
   </form>
-  {% endif %}
-
-  {% if providers %}
-  {% if password_login %}<p class="auth-or"><span>{{ t("account.or") }}</span></p>{% endif %}
-  <ul class="provider-list">
-    {% for provider in providers %}
-    <li><a class="provider-btn" href="/auth/{{ provider.slug }}?next={{ next_encoded }}" rel="nofollow">{{ t("account.continue_with", provider=provider.label) }}</a></li>
-    {% endfor %}
-  </ul>
-  {% elif not password_login %}
+  {% else %}
   <p class="notice">{{ t("account.no_methods") }}</p>
   {% endif %}
 

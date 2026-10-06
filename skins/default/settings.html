@@ -239,6 +239,25 @@
     </form>
     {% endif %}
   </section>
+
+  {# The end of the account, in the owner's hands when the wiki allows it.
+     What goes and what stays is said before, not after (see legal.rs). #}
+  <section class="settings-card settings-card-wide danger-zone" id="delete" aria-labelledby="s-delete">
+    <h2 id="s-delete"><svg class="icon" aria-hidden="true"><use href="#i-alert-triangle" /></svg>{{ t("legal.self_delete_title") }}</h2>
+    <p>{{ t("legal.self_delete_goes") }}</p>
+    <p>{{ t("legal.self_delete_stays") }} <a href="{{ privacy_href }}">{{ t("legal.privacy") }}</a></p>
+    {% if self_delete %}
+    {% if error and error.startswith("delete_") %}<p class="notice notice-warn" role="alert">{{ t("legal." ~ error) }}</p>{% endif %}
+    <form method="post" action="/settings/delete" class="auth-form">
+      <label class="field">{{ t("legal.self_delete_confirm", name=username) }}
+        <input class="field-input" name="confirm" required maxlength="64" autocomplete="off" spellcheck="false" />
+      </label>
+      <div class="form-actions"><button class="button-save" type="submit">{{ t("legal.self_delete_submit") }}</button></div>
+    </form>
+    {% else %}
+    <p class="notice">{{ t("legal.self_delete_by_request") }}</p>
+    {% endif %}
+  </section>
 </div>
 
 <form method="post" action="/logout" class="settings-signout">

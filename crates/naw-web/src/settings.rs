@@ -187,7 +187,8 @@ pub async fn page(
                 telegram => telegram,
                 discord => discord,
                 saved => query.saved.as_deref().filter(|s| matches!(*s, "language" | "sessions" | "username" | "display_name" | "avatar" | "avatar_removed" | "telegram" | "telegram_unlinked" | "discord_unlinked")),
-                error => crate::pages::message_key(query.error.as_deref(), &["rename_", "display_name_", "avatar_"]),
+                error => crate::pages::message_key(query.error.as_deref(), &["rename_", "display_name_", "avatar_", "delete_"]),
+                self_delete => crate::legal::Policy::of(&ctx.wiki.settings).self_delete,
                 rename_enabled => policy.rename_enabled,
                 rename_cooldown => policy.rename_cooldown_days,
                 alias_days => policy.alias_days,
@@ -662,6 +663,7 @@ async fn rename_refusal(
         .reserved_usernames
         .iter()
         .any(|name| name.eq_ignore_ascii_case(wanted))
+        || crate::auth::username::is_deleted_name(wanted)
     {
         return Ok(Some("rename_reserved"));
     }

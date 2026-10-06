@@ -81,6 +81,8 @@ pub struct Ctx {
     /// `https://wiki.example`: the wiki's own domain, else the host asked.
     /// Links that leave the page (canonical, share cards, the sitemap) use it.
     pub origin: String,
+    /// The wiki's documents changed since this reader last saw them (legal.rs).
+    pub policy_notice: bool,
 }
 
 /// Where the article language of a request came from.
@@ -340,6 +342,11 @@ impl Ctx {
             can_admin => self.actor.can(Capability::AdminPanel),
             can_reports => self.actor.can(Capability::ReportHandle),
             unread_notifications => self.unread,
+            policy_notice => self.policy_notice,
+            terms_href => self.link("/terms"),
+            privacy_href => self.link("/privacy"),
+            // Where "got it" returns to: this very page.
+            here => self.link(&self.path),
         }
     }
 }
@@ -396,6 +403,12 @@ pub async fn context(
         None => 0,
     };
     let origin = origin_of(wiki.domain.as_deref(), request_host(headers));
+    let policy_notice = crate::legal::notice_due(
+        &crate::legal::Policy::of(&wiki.settings),
+        user.map(|u| u.policy_version),
+        crate::legal::cookie_version(headers),
+        chrono::Utc::now(),
+    );
     Ok(Some(Ctx {
         wiki,
         actor,
@@ -408,6 +421,7 @@ pub async fn context(
         limits,
         unread,
         origin,
+        policy_notice,
     }))
 }
 

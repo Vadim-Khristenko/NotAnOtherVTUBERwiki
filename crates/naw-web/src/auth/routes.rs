@@ -85,6 +85,24 @@ pub async fn start(
     let nonce = super::random_token();
     let next = safe_next(params.get("next").map(String::as_str));
 
+    // Signing in takes the box accepting the wiki's documents, ticked on the
+    // sign-in form, which sends `agree=1` on. Linking another provider to an
+    // account that already agreed does not ask again.
+    let agreed = params.get("agree").map(String::as_str) == Some("1");
+    if !linking && !agreed {
+        let consent = match crate::resolve::context(&state, &headers, None).await {
+            Ok(Some(ctx)) => crate::legal::Policy::of(&ctx.wiki.settings).consent,
+            _ => false,
+        };
+        if consent {
+            let back = format!(
+                "/login?err=agree&next={}",
+                super::redirect::encode_component(&next)
+            );
+            return (StatusCode::SEE_OTHER, [(header::LOCATION, back)]).into_response();
+        }
+    }
+
     let flow = FlowState {
         provider: id.as_str().to_string(),
         mode: if user_id.is_some() {
@@ -96,6 +114,7 @@ pub async fn start(
         nonce: nonce.clone(),
         next,
         user_id,
+        agreed,
     };
     let state_token = match state_store::begin(&state.valkey, flow).await {
         Ok(token) => token,
@@ -190,6 +209,16 @@ pub async fn callback(
         Err(err) => {
             tracing::error!(error = %err, "ban check failed after a provider login");
             return render::auth_error(&super::AuthError::Upstream("ban check failed".to_string()));
+        }
+    }
+    // The box ticked on the sign-in form: this account accepts the current
+    // version of the wiki's documents.
+    if flow.agreed
+        && let Ok(Some(ctx)) = crate::resolve::context(&state, &headers, None).await
+    {
+        let version = crate::legal::Policy::of(&ctx.wiki.settings).version;
+        if let Err(err) = crate::legal::accept(&state.db, user_id, version).await {
+            tracing::error!(error = %err, "consent could not be recorded");
         }
     }
     // A Telegram sign-in that let the wiki's bot write links the chat too.

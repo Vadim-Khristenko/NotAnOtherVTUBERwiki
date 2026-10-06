@@ -23,6 +23,7 @@ error_missing = "Enter both your username and your password."
 error_password = "That username and password do not match an account."
 error_suspended = "This account is suspended. If you think that is a mistake, write to the wiki's admins."
 error_throttled = "Too many attempts. Wait fifteen minutes and try again."
+error_agree = "Tick the box accepting the Terms of use and the Privacy policy to sign in."
 
 password_title = "Change your password"
 password_lede = "Pick something long. A few unrelated words make a better password than one word with symbols."

@@ -24,6 +24,8 @@ pub struct FlowState {
     pub next: String,
     /// The account for a link flow.
     pub user_id: Option<uuid::Uuid>,
+    /// The box accepting the wiki's documents was ticked (see legal.rs).
+    pub agreed: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -35,6 +37,8 @@ struct Stored {
     next: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     user_id: Option<uuid::Uuid>,
+    #[serde(default)]
+    agreed: bool,
 }
 
 impl Serialize for Flow {
@@ -72,6 +76,7 @@ pub async fn begin(
         nonce: state_in.nonce,
         next: state_in.next,
         user_id: state_in.user_id,
+        agreed: state_in.agreed,
     };
     let payload = serde_json::to_string(&stored)
         .map_err(|_| crate::auth::AuthError::Upstream("state encode failed".to_string()))?;
@@ -121,6 +126,7 @@ pub async fn take(
         nonce: stored.nonce,
         next: stored.next,
         user_id: stored.user_id,
+        agreed: stored.agreed,
     })
 }
 
@@ -150,8 +156,16 @@ mod tests {
             nonce: "n".to_string(),
             next: "/".to_string(),
             user_id: None,
+            agreed: true,
         };
         let raw = serde_json::to_string(&stored).expect("serializes");
+        let back: Stored = serde_json::from_str(&raw).expect("parses");
+        assert!(back.agreed, "consent survives the round trip");
+        let old: Stored = serde_json::from_str(
+            r#"{"provider":"github","mode":"login","verifier":"v","nonce":"n","next":"/"}"#,
+        )
+        .expect("a flow begun before the field existed still parses");
+        assert!(!old.agreed);
         assert!(raw.contains("\"mode\":\"link\""));
         assert!(
             !raw.contains("user_id"),

@@ -39,6 +39,7 @@ pub mod indexing;
 mod ipblock;
 mod landing;
 mod lang;
+mod legal;
 mod locale_path;
 mod media;
 mod metrics;
@@ -110,7 +111,10 @@ fn routes(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
-        .route("/login", get(account::login_page))
+        .route(
+            "/login",
+            get(account::login_page).post(account::login_submit),
+        )
         .route("/login/password", post(account::password_login))
         .route("/login/relay", get(relay::page))
         .route("/login/relay/start", post(relay::start))
@@ -200,6 +204,14 @@ fn routes(state: AppState) -> Router {
         .route("/admin/pages/{action}", post(admin::page_action))
         .route("/admin/audit", get(admin::audit_log))
         .route("/admin/monitoring", get(monitoring::page))
+        .route(
+            "/admin/legal",
+            get(legal::admin_page).post(legal::admin_save),
+        )
+        .route("/admin/legal/announce", post(legal::admin_announce))
+        .route("/admin/user/{name}/delete", post(legal::admin_delete))
+        .route("/legal/ack", post(legal::ack))
+        .route("/settings/delete", post(legal::self_delete))
         .route("/admin/blocks", get(ipblock::admin_page))
         .route("/admin/blocks/add", post(ipblock::add))
         .route("/admin/blocks/{id}/remove", post(ipblock::remove))

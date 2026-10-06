@@ -63,6 +63,8 @@ pub struct CurrentUser {
     pub locale: String,
     /// An admin-issued password not replaced yet; only the change page is open.
     pub must_change_password: bool,
+    /// The version of the wiki's documents last accepted (see legal.rs).
+    pub policy_version: i32,
 }
 
 /// Path=/, HttpOnly, SameSite=Lax, Secure on https, Max-Age from the TTL.
@@ -123,10 +125,12 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
                u.email AS email_opt,
                (u.email_verified_at IS NOT NULL) AS email_verified,
                u.global_role, u.locale, u.must_change_password, u.display_name,
-               u.avatar_key
+               u.avatar_key, u.policy_version
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.id = $1
+          -- A deleted account signs in nowhere, even with a session left over.
+          AND u.deleted_at IS NULL
           -- An install-wide ban ends the sessions where they stand.
           AND NOT EXISTS (
             SELECT 1 FROM sanctions b
@@ -165,6 +169,7 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
         global_role: row.global_role,
         locale: row.locale,
         must_change_password: row.must_change_password,
+        policy_version: row.policy_version,
     })
 }
 

@@ -146,6 +146,10 @@ fn is_allowed_write(path: &str) -> bool {
     path == "/logout"
         || path == "/lang"
         || path == "/settings/language"
+        // Not writing to the wiki: a notice dismissed, an account deleted by
+        // its owner, which a block must never stand in the way of.
+        || path == "/legal/ack"
+        || path == "/settings/delete"
         || path == "/discord/interactions"
         || path == "/login"
         || path.starts_with("/login/")

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT s.expires_at, s.last_seen_at, u.id AS user_id, u.username,\n               u.email AS email_opt,\n               (u.email_verified_at IS NOT NULL) AS email_verified,\n               u.global_role, u.locale, u.must_change_password, u.display_name,\n               u.avatar_key\n        FROM sessions s\n        JOIN users u ON u.id = s.user_id\n        WHERE s.id = $1\n          -- An install-wide ban ends the sessions where they stand.\n          AND NOT EXISTS (\n            SELECT 1 FROM sanctions b\n            WHERE b.user_id = u.id AND b.wiki_id IS NULL AND b.kind = 'ban'\n              AND b.lifted_at IS NULL AND (b.expires_at IS NULL OR b.expires_at > now()))\n        ",
+  "query": "\n        SELECT s.expires_at, s.last_seen_at, u.id AS user_id, u.username,\n               u.email AS email_opt,\n               (u.email_verified_at IS NOT NULL) AS email_verified,\n               u.global_role, u.locale, u.must_change_password, u.display_name,\n               u.avatar_key, u.policy_version\n        FROM sessions s\n        JOIN users u ON u.id = s.user_id\n        WHERE s.id = $1\n          -- A deleted account signs in nowhere, even with a session left over.\n          AND u.deleted_at IS NULL\n          -- An install-wide ban ends the sessions where they stand.\n          AND NOT EXISTS (\n            SELECT 1 FROM sanctions b\n            WHERE b.user_id = u.id AND b.wiki_id IS NULL AND b.kind = 'ban'\n              AND b.lifted_at IS NULL AND (b.expires_at IS NULL OR b.expires_at > now()))\n        ",
   "describe": {
     "columns": [
       {
@@ -118,6 +118,17 @@
             "name": "avatar_key"
           }
         }
+      },
+      {
+        "ordinal": 11,
+        "name": "policy_version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "policy_version"
+          }
+        }
       }
     ],
     "parameters": {
@@ -136,8 +147,9 @@
       false,
       false,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "7bb25119c5f46668475d3c7787815951022e146dd63e4a854efb28da7f1f6fbb"
+  "hash": "9e79b7c86ae38dc6d7b61df122805116caaaa8ccaba636b7c223667dcd2da9f9"
 }

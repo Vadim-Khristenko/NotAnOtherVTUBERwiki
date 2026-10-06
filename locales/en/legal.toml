@@ -1,0 +1,54 @@
+# English interface messages: the wiki's documents, consent and deleting an account.
+#
+# Keys here are asked for as legal.<key>. The file name is the prefix.
+
+terms = "Terms of use"
+privacy = "Privacy policy"
+
+# The sign-in form: "I accept the Terms of use and the Privacy policy."
+consent_lead = "I accept the"
+consent_terms = "Terms of use"
+consent_and = "and the"
+consent_privacy = "Privacy policy"
+consent_tail = "."
+
+# The notice after a change.
+notice_label = "The wiki's documents changed"
+notice_text = "We have updated the wiki's documents. Please take a look:"
+notice_ok = "Got it"
+
+# Admin, Documents.
+admin_title = "Documents"
+admin_note = "The texts are ordinary pages, edited like any other. Here is what the wiki does about them."
+admin_version = "Current version"
+admin_accepted = "Accounts on it"
+admin_changed = "Last changed"
+admin_consent = "Signing in takes a ticked box accepting the Terms and the Privacy policy"
+admin_self_delete = "People may delete their own account from the settings"
+admin_save = "Save"
+admin_announce_title = "A new version"
+admin_announce_note = "After a change in substance, raise the version. Everyone who signs in from then on accepts it, and with the box below, readers who saw the old one are told once. A typo needs no new version."
+admin_announce_notify = "Tell readers about it"
+admin_announce_submit = "Publish a new version"
+done_saved = "Saved."
+done_announced = "A new version is out."
+
+# Deleting an account.
+erase_account = "The account and profile only: edits and files stay, under a deleted name"
+erase_files = "Also hide every file they uploaded"
+erase_full = "Also take back their text: where their edit is the current version, the last version by someone else returns, and an article only they wrote is archived"
+erase_summary = "The text of {who}, a deleted account, taken back"
+
+admin_delete_title = "Delete the account"
+admin_delete_note = "The account loses its name, profile, contacts and every way to sign in. The history keeps its edits under a deleted name. This cannot be undone."
+admin_delete_how = "What goes with it"
+admin_delete_confirm = "Type {name} to confirm"
+admin_delete_submit = "Delete the account"
+
+self_delete_title = "Delete your account"
+self_delete_goes = "Your account goes, and with it your name, profile, avatar, sign-in methods, linked bots, drafts, watchlist and notifications. You will be signed out everywhere. This cannot be undone."
+self_delete_stays = "Your edits to articles stay in their history under a deleted name, and the files you uploaded stay on the wiki. To have files removed, or for anything beyond this, write to the wiki's admins. More in the"
+self_delete_confirm = "Type your username, {name}, to confirm"
+self_delete_submit = "Delete my account"
+self_delete_by_request = "On this wiki an account is deleted by its admins: write to them, and they will do it."
+delete_mismatch = "The username did not match, so nothing was deleted."

@@ -31,6 +31,12 @@ pub struct LoginForm {
     password: String,
     #[serde(default)]
     next: String,
+    /// The box accepting the wiki's documents, `1` when ticked.
+    #[serde(default)]
+    agree: String,
+    /// The button pressed: `password`, or a provider's slug.
+    #[serde(default)]
+    method: String,
 }
 
 /// The change password form.
@@ -101,6 +107,7 @@ fn render_login(
                 next_encoded => encode_component(view.next),
                 error => view.error.map(|key| ctx.t(&format!("account.{key}"))),
                 form_username => view.username,
+                consent => crate::legal::Policy::of(&ctx.wiki.settings).consent,
             }
         })
         .map_err(template_error)?;
@@ -128,6 +135,7 @@ pub async fn login_page(
     let error = params.get("err").map(|err| match err.as_str() {
         "cancelled" => "error_cancelled",
         "expired" => "error_expired",
+        "agree" => "error_agree",
         _ => "error_generic",
     });
     render_login(
@@ -140,6 +148,55 @@ pub async fn login_page(
             username: "",
         },
     )
+}
+
+/// POST /login: the one sign-in form. The button pressed picks the way in;
+/// the consent box, when the wiki asks for it, covers every way.
+pub async fn login_submit(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Form(form): Form<LoginForm>,
+) -> Result<Response, AppError> {
+    let auth = &state.config.auth;
+    if !auth.enabled {
+        return Ok(crate::errors::not_found());
+    }
+    if form.method.is_empty() || form.method == "password" {
+        return password_login(State(state), ConnectInfo(peer), headers, Form(form)).await;
+    }
+    let Some(ctx) = context(&state, &headers, None).await? else {
+        return Ok(crate::errors::not_found());
+    };
+    let next = safe_next(Some(form.next.as_str()));
+    let agreed = form.agree == "1";
+    if crate::legal::Policy::of(&ctx.wiki.settings).consent && !agreed {
+        return render_login(
+            &state,
+            &ctx,
+            StatusCode::BAD_REQUEST,
+            &LoginView {
+                next: &next,
+                error: Some("error_agree"),
+                username: form.username.trim(),
+            },
+        );
+    }
+    let Some(provider) = providers::enabled(auth)
+        .into_iter()
+        .find(|provider| provider.id().as_str() == form.method)
+    else {
+        return Ok(crate::errors::not_found());
+    };
+    let mut target = format!(
+        "/auth/{}?next={}",
+        provider.id().as_str(),
+        encode_component(&next)
+    );
+    if agreed {
+        target.push_str("&agree=1");
+    }
+    Ok(Redirect::to(&target).into_response())
 }
 
 /// POST /login/password
@@ -156,6 +213,8 @@ pub async fn password_login(
     let Some(ctx) = context(&state, &headers, None).await? else {
         return Ok(crate::errors::not_found());
     };
+    let policy = crate::legal::Policy::of(&ctx.wiki.settings);
+    let agreed = form.agree == "1";
     let next = safe_next(Some(form.next.as_str()));
     let username = form.username.trim().to_lowercase();
     let ip = crate::net::client_ip(&headers, peer, state.config.trust_proxy);
@@ -174,6 +233,10 @@ pub async fn password_login(
 
     if username.is_empty() || form.password.is_empty() {
         return again(StatusCode::BAD_REQUEST, "error_missing");
+    }
+    // Before the password is checked, so a refusal says nothing about it.
+    if policy.consent && !agreed {
+        return again(StatusCode::BAD_REQUEST, "error_agree");
     }
     if form.password.chars().count() > password::MAX_LEN {
         return again(StatusCode::UNAUTHORIZED, "error_password");
@@ -215,6 +278,9 @@ pub async fn password_login(
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok());
     let session_id = session::create(&state, row.id, Some(ip), user_agent).await?;
+    if agreed {
+        crate::legal::accept(&state.db, row.id, policy.version).await?;
+    }
     crate::audit::record_or_log(
         &state.db,
         crate::audit::Entry {
