@@ -215,7 +215,9 @@ pub async fn callback(
     let user_agent = headers
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok());
-    let session_id = match session::create(&state, user_id, Some(addr.ip()), user_agent).await {
+    // The reader's address, not the proxy's, as the password sign-in records.
+    let ip = crate::net::client_ip(&headers, addr, state.config.trust_proxy);
+    let session_id = match session::create(&state, user_id, Some(ip), user_agent).await {
         Ok(id) => id,
         Err(err) => {
             tracing::error!(error = %err, "session create failed after a provider login");
