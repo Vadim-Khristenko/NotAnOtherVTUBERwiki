@@ -230,6 +230,8 @@ pub async fn admin_page(
             terms_href => ctx.link("/terms"),
             privacy_href => ctx.link("/privacy"),
             done => pages::message_key(query.done.as_deref(), &[""]),
+            is_owner => ctx.actor.effective_role() == Some(crate::perm::WikiRole::Owner),
+            owners_only => ctx.wiki.settings.get("protected_pages").and_then(Value::as_str) == Some("owner"),
         },
     )
 }
@@ -306,6 +308,59 @@ pub async fn admin_announce(
     )
     .await;
     Ok(pages::see_other("/admin/legal?done=announced"))
+}
+
+#[derive(Deserialize, Default)]
+pub struct ProtectForm {
+    #[serde(default)]
+    level: String,
+}
+
+/// POST /admin/legal/protect: who edits the wiki's own pages (see
+/// `pages::system_floor`), admins or owners only. An owner's choice, so an
+/// admin can neither make it nor undo it.
+pub async fn admin_protect(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    Form(form): Form<ProtectForm>,
+) -> Result<Response, AppError> {
+    let ctx = or_respond!(crate::admin::gate(&state, &headers, user.as_ref()).await);
+    if ctx.actor.effective_role() != Some(crate::perm::WikiRole::Owner) {
+        return Ok(pages::see_other("/admin/legal?done=owner_only"));
+    }
+    let level = if form.level == "owner" {
+        "owner"
+    } else {
+        "admin"
+    };
+    let mut settings = ctx.wiki.settings.clone();
+    if !settings.is_object() {
+        settings = json!({});
+    }
+    if let Some(object) = settings.as_object_mut() {
+        object.insert("protected_pages".to_string(), json!(level));
+    }
+    sqlx::query!(
+        "UPDATE wikis SET settings = $2 WHERE id = $1",
+        ctx.wiki.id,
+        settings
+    )
+    .execute(&state.db)
+    .await?;
+    crate::audit::record_or_log(
+        &state.db,
+        crate::audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action: "wiki.system_pages",
+            entity_type: "wiki",
+            entity_id: Some(ctx.wiki.id),
+            meta: json!({ "level": level }),
+        },
+    )
+    .await;
+    Ok(pages::see_other("/admin/legal?done=protected"))
 }
 
 // ---------------------------------------------------------------------------

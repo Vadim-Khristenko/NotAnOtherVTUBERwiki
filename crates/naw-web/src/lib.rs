@@ -209,6 +209,7 @@ fn routes(state: AppState) -> Router {
             get(legal::admin_page).post(legal::admin_save),
         )
         .route("/admin/legal/announce", post(legal::admin_announce))
+        .route("/admin/legal/protect", post(legal::admin_protect))
         .route("/admin/user/{name}/delete", post(legal::admin_delete))
         .route("/legal/ack", post(legal::ack))
         .route("/settings/delete", post(legal::self_delete))

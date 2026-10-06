@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT p.id, p.title, p.is_locked, p.edit_level, p.updated_at,\n               p.translation_source_locale, p.translation_source_revision_id,\n               r.id AS revision_id, r.body_md, r.summary\n        FROM pages p\n        JOIN revisions r ON r.id = p.current_revision_id\n        WHERE p.wiki_id = $1\n          AND p.namespace = ($4::text)::page_namespace\n          AND p.slug = $2\n          AND COALESCE(p.locale, '') = COALESCE($3, '')\n          AND p.deleted_at IS NULL\n        ",
+  "query": "\n        SELECT p.id, p.title, p.is_locked, p.edit_level, p.updated_at,\n               p.translation_source_locale, p.translation_source_revision_id,\n               r.id AS revision_id, r.body_md, r.summary, w.settings AS wiki_settings\n        FROM pages p\n        JOIN revisions r ON r.id = p.current_revision_id\n        JOIN wikis w ON w.id = p.wiki_id\n        WHERE p.wiki_id = $1\n          AND p.namespace = ($4::text)::page_namespace\n          AND p.slug = $2\n          AND COALESCE(p.locale, '') = COALESCE($3, '')\n          AND p.deleted_at IS NULL\n        ",
   "describe": {
     "columns": [
       {
@@ -112,6 +112,17 @@
             "name": "summary"
           }
         }
+      },
+      {
+        "ordinal": 10,
+        "name": "wiki_settings",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "wikis",
+            "name": "settings"
+          }
+        }
       }
     ],
     "parameters": {
@@ -132,8 +143,9 @@
       true,
       false,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "d6a8d7fc8a9fcb0bfae38103daa8a68a19244ee932aeeae001ba59f3b5a58348"
+  "hash": "eaf06d753794b59bf8be0283d951900f1d75cefc3734211050e059a9adaa6f62"
 }

@@ -856,7 +856,7 @@
     The wiki's documents. The texts are the pages /terms and /privacy, edited
     like any page; here is only what the engine does about them.
   #}
-  {% if done %}<p class="notice notice-ok" role="status">{{ t("legal.done_" ~ done) }}</p>{% endif %}
+  {% if done %}<p class="notice {% if done == 'owner_only' %}notice-warn{% else %}notice-ok{% endif %}" role="status">{{ t("legal.done_" ~ done) }}</p>{% endif %}
   <p class="field-note">{{ t("legal.admin_note") }} <a href="{{ terms_href }}">{{ t("legal.terms") }}</a> · <a href="{{ privacy_href }}">{{ t("legal.privacy") }}</a></p>
   <dl class="stat-grid">
     <div class="stat"><dt>{{ t("legal.admin_version") }}</dt><dd>{{ policy_version }}</dd></div>
@@ -868,6 +868,17 @@
     <label class="check"><input type="checkbox" name="self_delete" value="1" {% if policy_self_delete %}checked{% endif %} /> {{ t("legal.admin_self_delete") }}</label>
     <div class="form-actions"><button class="button-save" type="submit">{{ t("legal.admin_save") }}</button></div>
   </form>
+  <h2>{{ t("legal.admin_protect_title") }}</h2>
+  <p class="field-note">{{ t("legal.admin_protect_note") }}</p>
+  {% if is_owner %}
+  <form method="post" action="/admin/legal/protect" class="admin-form">
+    <label class="check"><input type="radio" name="level" value="admin" {% if not owners_only %}checked{% endif %} /> {{ t("legal.admin_protect_admin") }}</label>
+    <label class="check"><input type="radio" name="level" value="owner" {% if owners_only %}checked{% endif %} /> {{ t("legal.admin_protect_owner") }}</label>
+    <div class="form-actions"><button class="button-save" type="submit">{{ t("legal.admin_save") }}</button></div>
+  </form>
+  {% else %}
+  <p>{% if owners_only %}{{ t("legal.admin_protect_owner") }}{% else %}{{ t("legal.admin_protect_admin") }}{% endif %}</p>
+  {% endif %}
   <h2>{{ t("legal.admin_announce_title") }}</h2>
   <p class="field-note">{{ t("legal.admin_announce_note") }}</p>
   <form method="post" action="/admin/legal/announce" class="admin-form">

@@ -233,6 +233,20 @@ async fn gate(
     if !pages::slug_is_valid(slug) || pages::split_path(slug).0 != "main" {
         return Ok(Err(crate::errors::not_found()));
     }
+    // The wiki's own pages are translated by those who may edit them.
+    if let Some(floor) = pages::system_floor(&ctx.wiki.settings, slug)
+        && ctx.actor.is_signed_in()
+        && !ctx.actor.can_edit_page(Some(floor))
+    {
+        return Ok(Err(pages::notice(
+            &ctx,
+            StatusCode::FORBIDDEN,
+            &ctx.t("error.not_allowed"),
+            &ctx.t("legal.system_page"),
+            &ctx.link(&format!("/{slug}")),
+            &ctx.t("error.back_to_wiki"),
+        )?));
+    }
     if !ctx.actor.can(Capability::PageCreate) {
         let target = format!(
             "/login?next={}",

@@ -348,6 +348,35 @@ pub(crate) fn reserved(path: &str, is_language: impl Fn(&str) -> bool) -> Option
 /// every page that uses it, so they start at curator even when unprotected.
 pub(crate) const TEMPLATE_EDIT_FLOOR: crate::perm::WikiRole = crate::perm::WikiRole::Curator;
 
+/// The pages that speak for the wiki: its terms, its privacy policy, its
+/// front page and About, in every language. Admins and up edit them, or only
+/// owners when an owner chose so (`settings.protected_pages = "owner"`). A
+/// page's own protection can only raise this, never lower it.
+pub(crate) fn system_floor(
+    settings: &serde_json::Value,
+    path: &str,
+) -> Option<crate::perm::WikiRole> {
+    let ("main", slug) = split_path(path) else {
+        return None;
+    };
+    let home = settings
+        .get("home_slug")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("home");
+    if !matches!(slug, "terms" | "privacy" | "about") && slug != home {
+        return None;
+    }
+    Some(
+        match settings
+            .get("protected_pages")
+            .and_then(serde_json::Value::as_str)
+        {
+            Some("owner") => crate::perm::WikiRole::Owner,
+            _ => crate::perm::WikiRole::Admin,
+        },
+    )
+}
+
 pub(crate) fn bad_request(message: &str) -> Response {
     (StatusCode::UNPROCESSABLE_ENTITY, message.to_string()).into_response()
 }
@@ -685,9 +714,10 @@ pub(crate) async fn find_page(
         r#"
         SELECT p.id, p.title, p.is_locked, p.edit_level, p.updated_at,
                p.translation_source_locale, p.translation_source_revision_id,
-               r.id AS revision_id, r.body_md, r.summary
+               r.id AS revision_id, r.body_md, r.summary, w.settings AS wiki_settings
         FROM pages p
         JOIN revisions r ON r.id = p.current_revision_id
+        JOIN wikis w ON w.id = p.wiki_id
         WHERE p.wiki_id = $1
           AND p.namespace = ($4::text)::page_namespace
           AND p.slug = $2
@@ -706,7 +736,9 @@ pub(crate) async fn find_page(
         id: row.id,
         title: row.title,
         locked: row.is_locked,
-        protection: protection_of(row.is_locked, row.edit_level.as_deref()).max(floor),
+        protection: protection_of(row.is_locked, row.edit_level.as_deref())
+            .max(floor)
+            .max(system_floor(&row.wiki_settings, path)),
         revision_id: row.revision_id,
         body_md: row.body_md,
         summary: row.summary,
@@ -1550,6 +1582,16 @@ pub async fn create_page(
             &ctx.link("/new"),
             Capability::PageCreate,
             &ctx.t("template.no_create"),
+        );
+    }
+    if let Some(floor) = system_floor(&ctx.wiki.settings, &slug)
+        && !ctx.actor.can_edit_page(Some(floor))
+    {
+        return refuse(
+            &ctx,
+            &ctx.link("/new"),
+            Capability::PageCreate,
+            &ctx.t("legal.system_page"),
         );
     }
     let mut draft = match validate(&ctx.limits, &form.title, &form.summary, &form.body_md) {
@@ -2414,6 +2456,36 @@ pub async fn manifest_icon_512(State(state): State<AppState>) -> Result<Response
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_wikis_own_pages_need_an_admin_or_an_owner() {
+        use crate::perm::WikiRole;
+        let plain = serde_json::json!({});
+        for slug in ["terms", "privacy", "about", "home"] {
+            assert_eq!(system_floor(&plain, slug), Some(WikiRole::Admin), "{slug}");
+        }
+        assert_eq!(system_floor(&plain, "filian"), None);
+        assert_eq!(
+            system_floor(&plain, "template:terms"),
+            None,
+            "only articles"
+        );
+        let moved = serde_json::json!({ "home_slug": "start" });
+        assert_eq!(
+            system_floor(&moved, "start"),
+            Some(WikiRole::Admin),
+            "the front page follows the setting"
+        );
+        assert_eq!(system_floor(&moved, "home"), None);
+        let owners = serde_json::json!({ "protected_pages": "owner" });
+        assert_eq!(system_floor(&owners, "privacy"), Some(WikiRole::Owner));
+        let junk = serde_json::json!({ "protected_pages": "nobody" });
+        assert_eq!(
+            system_floor(&junk, "privacy"),
+            Some(WikiRole::Admin),
+            "anything else means admins"
+        );
+    }
 
     #[test]
     fn slugs_accept_plain_names() {
