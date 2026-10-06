@@ -1251,7 +1251,14 @@ const AUDIT_GROUPS: [(&str, &[&str]); 6] = [
     ("pages", &["page.", "revision.", "profile."]),
     (
         "people",
-        &["admin.", "membership.", "user.", "cli.", "grant."],
+        &[
+            "admin.",
+            "membership.",
+            "user.",
+            "cli.",
+            "grant.",
+            "ipblock.",
+        ],
     ),
     ("sign_in", &["auth."]),
     ("files", &["media.", "emotes."]),
@@ -1977,6 +1984,7 @@ fn variants_of(kind: crate::errors::Kind) -> &'static [&'static str] {
             "expired",
             "upstream",
             "closed",
+            "address_blocked",
             "suspended",
         ],
         _ => &[],

@@ -165,11 +165,13 @@ pub async fn callback(
         Flow::Link => flow.user_id,
         Flow::Login => None,
     };
+    let may_register = crate::ipblock::may_register(&state, &headers, addr).await;
     let outcome = match super::store::finish_login(
         &state,
         &identity,
         link_user_id,
         state.config.auth.auto_link_verified_email,
+        may_register,
     )
     .await
     {
@@ -264,7 +266,7 @@ pub async fn dev_login(
         handle: "dev".to_string(),
         raw: serde_json::json!({"provider": "dev"}),
     };
-    let outcome = match super::store::finish_login(&state, &identity, None, false).await {
+    let outcome = match super::store::finish_login(&state, &identity, None, false, true).await {
         Ok(outcome) => outcome,
         Err(err) => {
             return render::auth_error(&err);

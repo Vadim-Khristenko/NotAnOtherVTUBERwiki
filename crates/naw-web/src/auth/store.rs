@@ -93,6 +93,7 @@ pub async fn finish_login(
     identity: &Identity,
     link_user_id: Option<Uuid>,
     auto_link_allowed: bool,
+    may_register: bool,
 ) -> Result<Outcome, AuthError> {
     let mut tx = state
         .db
@@ -189,6 +190,15 @@ pub async fn finish_login(
             "sign-in refused: registration is closed and the identity has no account"
         );
         return Err(AuthError::RegistrationClosed);
+    }
+    // An address the wiki blocks may sign in to an account it has, but not
+    // make a new one (see ipblock.rs).
+    if !may_register && identity.provider != super::types::ProviderId::Dev {
+        tracing::info!(
+            provider = identity.provider.as_str(),
+            "sign-in refused: a new account from a blocked address"
+        );
+        return Err(AuthError::AddressBlocked);
     }
     // An unverified email is not written to `users.email`, where it would
     // block its real owner.

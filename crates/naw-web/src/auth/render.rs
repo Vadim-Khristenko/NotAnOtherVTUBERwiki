@@ -23,6 +23,7 @@ pub fn auth_error(err: &AuthError) -> Response {
         }
         // Not 401: signing in again changes nothing, only an admin can help.
         AuthError::RegistrationClosed => (StatusCode::FORBIDDEN, "closed"),
+        AuthError::AddressBlocked => (StatusCode::FORBIDDEN, "address_blocked"),
         AuthError::Suspended => (StatusCode::FORBIDDEN, "suspended"),
     };
     // No body: upstream detail must never reach the page.

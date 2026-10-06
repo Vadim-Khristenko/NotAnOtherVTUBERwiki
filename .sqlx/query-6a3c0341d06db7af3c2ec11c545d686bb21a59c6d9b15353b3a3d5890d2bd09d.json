@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT wiki_id, network::text AS \"network!\", expires_at FROM ip_blocks\n           WHERE expires_at IS NULL OR expires_at > now()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "wiki_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ip_blocks",
+            "name": "wiki_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "network!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ip_blocks",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null,
+      true
+    ]
+  },
+  "hash": "6a3c0341d06db7af3c2ec11c545d686bb21a59c6d9b15353b3a3d5890d2bd09d"
+}

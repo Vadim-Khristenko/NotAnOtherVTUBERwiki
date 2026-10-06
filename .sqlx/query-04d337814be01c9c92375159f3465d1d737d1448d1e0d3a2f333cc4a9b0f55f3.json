@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ip_blocks (id, wiki_id, network, reason, created_by, expires_at)\n         VALUES ($1, $2, $3::text::cidr, $4, $5, $6)\n         ON CONFLICT (wiki_id, network) DO UPDATE\n         SET reason = EXCLUDED.reason, created_by = EXCLUDED.created_by,\n             created_at = now(), expires_at = EXCLUDED.expires_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "04d337814be01c9c92375159f3465d1d737d1448d1e0d3a2f333cc4a9b0f55f3"
+}

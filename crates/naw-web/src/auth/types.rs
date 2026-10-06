@@ -76,6 +76,8 @@ pub enum AuthError {
     Upstream(String),
     /// The sign-in would create an account and registration is closed.
     RegistrationClosed,
+    /// The sign-in would create an account from an address the wiki blocks.
+    AddressBlocked,
     /// The account is under an install-wide ban.
     Suspended,
 }
@@ -101,6 +103,10 @@ impl IntoResponse for AuthError {
             AuthError::RegistrationClosed => (
                 StatusCode::FORBIDDEN,
                 "accounts on this wiki are created by its admins",
+            ),
+            AuthError::AddressBlocked => (
+                StatusCode::FORBIDDEN,
+                "new accounts cannot be made from this address",
             ),
             AuthError::Suspended => (StatusCode::FORBIDDEN, "this account is suspended"),
         };

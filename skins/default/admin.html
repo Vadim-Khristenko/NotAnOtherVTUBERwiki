@@ -46,6 +46,7 @@
       {% if can_panel %}
       <p class="admin-nav-group">{{ t("admin.group_people") }}</p>
       {{ nav_item("/admin/users", "users", "users", t("admin.accounts")) }}
+      {{ nav_item("/admin/blocks", "blocks", "shield-lock", t("ipblock.title")) }}
       <p class="admin-nav-group">{{ t("admin.group_look") }}</p>
       {{ nav_item("/admin/languages", "languages", "language", t("admin.languages")) }}
       {{ nav_item("/admin/chrome", "chrome", "menu-2", t("admin.chrome")) }}
@@ -847,6 +848,55 @@
   </table>
   {% else %}
   <p class="muted-cell">{{ t("admin.emotes_none") }}</p>
+  {% endif %}
+
+{% elif section == "blocks" %}
+  {#
+    Address blocks: read, never write. The reason is for the admins; a blocked
+    reader is told only that their address is blocked and until when.
+  #}
+  {% if done %}<p class="notice {% if done in ['unreadable', 'too_wide', 'local'] %}notice-warn{% else %}notice-ok{% endif %}" role="status">{{ t("ipblock.done_" ~ done) }}</p>{% endif %}
+  <p class="field-note">{{ t("ipblock.note") }}</p>
+  <p class="field-note">{{ t("ipblock.your_address", address=my_address) }}</p>
+  <form method="post" action="/admin/blocks/add" class="admin-form">
+    <label class="field">{{ t("ipblock.add") }}
+      <input class="field-input" name="network" required maxlength="64" placeholder="203.0.113.7" autocomplete="off" spellcheck="false" />
+      <span class="field-note">{{ t("ipblock.add_note") }}</span>
+    </label>
+    <label class="field">{{ t("ipblock.reason") }}
+      <input class="field-input" name="reason" maxlength="500" autocomplete="off" />
+      <span class="field-note">{{ t("ipblock.reason_note") }}</span>
+    </label>
+    <label class="field">{{ t("ipblock.duration") }}
+      <select class="field-input" name="duration">
+        {% for d in durations %}<option value="{{ d }}" {% if d == "forever" %}selected{% endif %}>{{ t("ipblock.duration_" ~ d) }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="form-actions"><button class="button-save" type="submit">{{ t("ipblock.submit") }}</button></div>
+  </form>
+  {% if blocks %}
+  <table class="admin-table">
+    <thead><tr>
+      <th>{{ t("ipblock.network") }}</th><th>{{ t("ipblock.reason") }}</th><th>{{ t("ipblock.by") }}</th>
+      <th>{{ t("ipblock.since") }}</th><th>{{ t("ipblock.until") }}</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for b in blocks %}
+      <tr>
+        <td><code>{{ b.network }}</code></td>
+        <td data-label="{{ t('ipblock.reason') }}">{{ b.reason or "-" }}</td>
+        <td class="muted-cell" data-label="{{ t('ipblock.by') }}">{% if b.by %}<a href="/admin/user/{{ b.by }}">{{ b.by }}</a>{% else %}-{% endif %}</td>
+        <td class="muted-cell" data-label="{{ t('ipblock.since') }}">{{ b.since }}</td>
+        <td class="muted-cell" data-label="{{ t('ipblock.until') }}">{% if b.expired %}{{ t("ipblock.expired") }}{% else %}{{ b.until or t("ipblock.forever") }}{% endif %}</td>
+        <td class="admin-row-actions action-cell">
+          <form method="post" action="/admin/blocks/{{ b.id }}/remove"><button class="button-preview" type="submit">{{ t("ipblock.lift") }}</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted-cell">{{ t("ipblock.none") }}</p>
   {% endif %}
 
 {% elif section == "accounts" %}

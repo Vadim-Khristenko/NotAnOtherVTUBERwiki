@@ -1,0 +1,35 @@
+# English interface messages: address blocks.
+#
+# Keys here are asked for as ipblock.<key>. The file name is the prefix.
+
+refused = "Editing from your address is blocked on this wiki. You can still read everything. If you think that is a mistake, write to the wiki's admins."
+refused_until = "Editing from your address is blocked on this wiki until {until}. You can still read everything. If you think that is a mistake, write to the wiki's admins."
+
+title = "Address blocks"
+note = "A blocked address can read the wiki but not edit, upload, report or make an account. Moderators and above are never held by a block, curators and below are. The reason is seen only by admins."
+your_address = "Your address right now: {address}"
+add = "Address or range"
+add_note = "One address, such as 203.0.113.7, or a range, such as 203.0.113.0/24. At most a /16 for IPv4 and a /32 for IPv6."
+reason = "Reason"
+reason_note = "For the admins: what happened, a link to the edits."
+duration = "For"
+duration_day = "A day"
+duration_week = "A week"
+duration_month = "A month"
+duration_year = "A year"
+duration_forever = "Until lifted"
+submit = "Block"
+network = "Address"
+by = "By"
+since = "Since"
+until = "Until"
+forever = "until lifted"
+expired = "ended"
+lift = "Lift"
+none = "No address is blocked."
+
+done_added = "The address is blocked."
+done_removed = "The block is lifted."
+done_unreadable = "That is not an address or a range."
+done_too_wide = "That range is too wide. Block at most a /16 for IPv4 and a /32 for IPv6."
+done_local = "That is a local or private address. Readers never arrive from one, so blocking it would hold back no one or everyone."

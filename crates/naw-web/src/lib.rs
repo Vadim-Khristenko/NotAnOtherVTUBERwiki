@@ -36,6 +36,7 @@ mod file_actions;
 mod files;
 mod history;
 pub mod indexing;
+mod ipblock;
 mod landing;
 mod lang;
 mod locale_path;
@@ -199,6 +200,9 @@ fn routes(state: AppState) -> Router {
         .route("/admin/pages/{action}", post(admin::page_action))
         .route("/admin/audit", get(admin::audit_log))
         .route("/admin/monitoring", get(monitoring::page))
+        .route("/admin/blocks", get(ipblock::admin_page))
+        .route("/admin/blocks/add", post(ipblock::add))
+        .route("/admin/blocks/{id}/remove", post(ipblock::remove))
         .route("/admin/review", get(review::queue))
         .route("/admin/review/{id}", get(review::show))
         .route("/admin/review/{id}/accept", post(review::accept))
@@ -360,6 +364,12 @@ fn routes(state: AppState) -> Router {
                 ))
                 // Inside the error layer, so the refusal is a themed page.
                 .layer(axum::middleware::from_fn(csrf::layer))
+                // Inside the session, to know who is asking, and the error layer,
+                // so a blocked address is told in a page.
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    ipblock::layer,
+                ))
                 .layer(axum::middleware::from_fn_with_state(
                     state.clone(),
                     lang::layer,

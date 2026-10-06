@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ip_blocks WHERE id = $1 AND wiki_id = $2\n           RETURNING network::text AS \"network!\", reason",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "network!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ip_blocks",
+            "name": "reason"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      false
+    ]
+  },
+  "hash": "bd5f65d8cc88e52a4caad36c2630260ace05495f05eae7cc60d09527542e077f"
+}
