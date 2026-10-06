@@ -122,6 +122,18 @@ fn owner(ip: IpAddr) -> IpAddr {
 struct Bucket {
     tokens: f64,
     last: Instant,
+    /// The last request was turned away.
+    limited: bool,
+}
+
+/// A request turned away.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Refused {
+    /// Seconds until the next request would pass.
+    pub retry_after: u64,
+    /// The first refusal since this bucket last let one through, which is
+    /// the one worth a log line; a flood logs once, not per request.
+    pub first: bool,
 }
 
 /// Buckets kept before idle ones are swept.
@@ -139,15 +151,14 @@ pub struct Limiter {
 }
 
 impl Limiter {
-    /// Takes one request from the bucket of `ip` for `class`. `Err` carries
-    /// the seconds until the next request would pass.
+    /// Takes one request from the bucket of `ip` for `class`.
     pub fn check(
         &self,
         class: Class,
         ip: IpAddr,
         per_minute: i64,
         now: Instant,
-    ) -> Result<(), u64> {
+    ) -> Result<(), Refused> {
         let capacity = per_minute.max(1) as f64;
         let per_sec = capacity / 60.0;
         let Ok(mut buckets) = self.buckets.lock() else {
@@ -167,15 +178,22 @@ impl Limiter {
         let bucket = buckets.entry((class, owner(ip))).or_insert(Bucket {
             tokens: capacity,
             last: now,
+            limited: false,
         });
         let elapsed = now.saturating_duration_since(bucket.last).as_secs_f64();
         bucket.tokens = (bucket.tokens + elapsed * per_sec).min(capacity);
         bucket.last = now;
         if bucket.tokens >= 1.0 {
             bucket.tokens -= 1.0;
+            bucket.limited = false;
             Ok(())
         } else {
-            Err(((1.0 - bucket.tokens) / per_sec).ceil().max(1.0) as u64)
+            let first = !bucket.limited;
+            bucket.limited = true;
+            Err(Refused {
+                retry_after: ((1.0 - bucket.tokens) / per_sec).ceil().max(1.0) as u64,
+                first,
+            })
         }
     }
 }
@@ -199,8 +217,10 @@ pub async fn layer(State(guard): State<Guard>, req: Request<Body>, next: Next) -
     let per_minute = class.per_minute(naw_core::limits::install());
     match guard.limiter.check(class, ip, per_minute, Instant::now()) {
         Ok(()) => next.run(req).await,
-        Err(retry_after) => {
-            tracing::info!(?class, %ip, retry_after, "rate limited");
+        Err(Refused { retry_after, first }) => {
+            if first {
+                tracing::info!(?class, %ip, retry_after, "rate limited");
+            }
             let request_id = req.extensions().get::<RequestId>().map(|r| r.0.clone());
             crate::errors::rate_limited(
                 &guard.app,
@@ -267,17 +287,17 @@ mod tests {
                 "request {n}"
             );
         }
-        let retry = limiter.check(Class::Write, who, 30, start).unwrap_err();
-        assert_eq!(retry, 2, "one form refills every two seconds");
+        let refused = limiter.check(Class::Write, who, 30, start).unwrap_err();
+        assert_eq!(refused.retry_after, 2, "one form refills every two seconds");
+        assert!(refused.first, "the first refusal is reported");
+        let again = limiter.check(Class::Write, who, 30, start).unwrap_err();
+        assert!(!again.first, "a flood is reported once");
+        let later = start + Duration::from_secs(2);
+        assert!(limiter.check(Class::Write, who, 30, later).is_ok());
+        let after_pass = limiter.check(Class::Write, who, 30, later).unwrap_err();
         assert!(
-            limiter
-                .check(Class::Write, who, 30, start + Duration::from_secs(2))
-                .is_ok()
-        );
-        assert!(
-            limiter
-                .check(Class::Write, who, 30, start + Duration::from_secs(2))
-                .is_err()
+            after_pass.first,
+            "a new flood after a pass is reported again"
         );
     }
 
