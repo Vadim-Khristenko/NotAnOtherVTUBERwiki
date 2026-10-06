@@ -48,13 +48,28 @@ impl Telegram {
 struct Claims {
     sub: String,
     /// The numeric Telegram user id, which is also the id of the private
-    /// chat with them. `sub` is a different, opaque string.
+    /// chat with them. `sub` is a different, opaque string. Telegram has sent
+    /// it as a number and, since October 2026, as a string of digits; either
+    /// reads, and anything else counts as absent rather than failing the
+    /// whole sign-in.
+    #[serde(default, deserialize_with = "number_or_digits")]
     id: Option<i64>,
     name: Option<String>,
     preferred_username: Option<String>,
     picture: Option<String>,
     /// When the provider echoes a nonce it must match ours.
     nonce: Option<String>,
+}
+
+/// `123` or `"123"` as a number; anything else as `None`.
+fn number_or_digits<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<i64>, D::Error> {
+    Ok(match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Number(n) => n.as_i64(),
+        serde_json::Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    })
 }
 
 #[async_trait]
@@ -187,6 +202,22 @@ mod tests {
                 http: &http,
             })
             .await
+    }
+
+    #[test]
+    fn the_user_id_reads_as_a_number_or_as_digits() {
+        let claims = |id: &str| -> Claims {
+            serde_json::from_str(&format!(r#"{{"sub":"s"{id}}}"#)).expect("claims parse")
+        };
+        assert_eq!(claims(r#","id":2006932399"#).id, Some(2006932399));
+        assert_eq!(
+            claims(r#","id":"2006932399""#).id,
+            Some(2006932399),
+            "the October 2026 shape"
+        );
+        assert_eq!(claims(r#","id":"not a number""#).id, None);
+        assert_eq!(claims(r#","id":null"#).id, None);
+        assert_eq!(claims("").id, None);
     }
 
     #[test]
