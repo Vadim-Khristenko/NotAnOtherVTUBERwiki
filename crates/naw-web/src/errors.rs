@@ -291,10 +291,10 @@ fn render_bare(
     kind: Kind,
     status: StatusCode,
     request_id: Option<&str>,
+    lang: &str,
 ) -> Response {
     let skin = state.skin.current();
     let name = template_for(&skin.env, kind);
-    let lang = naw_core::i18n::FALLBACK;
     let t = |key: &str| skin.messages.render(lang, key, &[]);
     let rendered = skin.env.get_template(&name).and_then(|template| {
         template.render(minijinja::context! {
@@ -410,8 +410,68 @@ pub async fn layer(State(state): State<AppState>, req: Request, next: Next) -> R
                 &overrides,
             )
         }
-        _ => render_bare(&state, kind, status, request_id.as_deref()),
+        _ => render_bare(
+            &state,
+            kind,
+            status,
+            request_id.as_deref(),
+            naw_core::i18n::FALLBACK,
+        ),
     }
+}
+
+/// The page for a request the rate limit turned away. It touches neither the
+/// database nor the session, so turning a flood away stays cheap; the
+/// language comes from the address, the cookie or the browser.
+pub(crate) fn rate_limited(
+    state: &AppState,
+    method: &Method,
+    headers: &HeaderMap,
+    request_id: Option<&str>,
+    retry_after_secs: u64,
+) -> Response {
+    let status = StatusCode::TOO_MANY_REQUESTS;
+    let mut response = if method == Method::HEAD || !wants_html(headers) {
+        (status, status.canonical_reason().unwrap_or("error")).into_response()
+    } else {
+        let skin = state.skin.current();
+        let lang = bare_language(headers, &|code| skin.messages.has(code));
+        render_bare(state, Kind::RateLimited, status, request_id, &lang)
+    };
+    let headers = response.headers_mut();
+    headers.insert(header::RETRY_AFTER, HeaderValue::from(retry_after_secs));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+/// The reader's language without a wiki: the address prefix, then the
+/// cookie, then Accept-Language, then the fallback.
+fn bare_language(headers: &HeaderMap, available: &dyn Fn(&str) -> bool) -> String {
+    let from_path = headers
+        .get(crate::locale_path::LOCALE_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_ascii_lowercase);
+    let from_cookie = || {
+        headers
+            .get_all(header::COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .flat_map(|line| line.split(';'))
+            .filter_map(|pair| pair.trim().split_once('='))
+            .find(|(name, _)| *name == crate::resolve::LANG_COOKIE)
+            .map(|(_, value)| value.trim().to_ascii_lowercase())
+    };
+    let from_browser = || {
+        headers
+            .get(header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|accept| naw_core::i18n::negotiate_with(accept, available))
+    };
+    from_path
+        .filter(|code| available(code))
+        .or_else(|| from_cookie().filter(|code| available(code)))
+        .or_else(from_browser)
+        .unwrap_or_else(|| naw_core::i18n::FALLBACK.to_string())
 }
 
 /// Marks a response with a kind: `refuse(...).marked(Kind::AuthDisabled)`.
@@ -506,6 +566,45 @@ mod tests {
         }
         assert!(Kind::Invalid.shows_detail());
         assert!(Kind::Forbidden.shows_detail());
+    }
+
+    #[test]
+    fn a_page_without_a_wiki_still_speaks_the_readers_language() {
+        let known = |code: &str| matches!(code, "en" | "ru");
+        let mut headers = HeaderMap::new();
+        assert_eq!(bare_language(&headers, &known), "en", "nothing to go on");
+        headers.insert(
+            header::ACCEPT_LANGUAGE,
+            HeaderValue::from_static("ru-RU,ru;q=0.9,en;q=0.8"),
+        );
+        assert_eq!(bare_language(&headers, &known), "ru", "the browser");
+        headers.insert(
+            header::COOKIE,
+            HeaderValue::from_static("theme=dark; naw_lang=en"),
+        );
+        assert_eq!(
+            bare_language(&headers, &known),
+            "en",
+            "the cookie beats the browser"
+        );
+        headers.insert(
+            crate::locale_path::LOCALE_HEADER,
+            HeaderValue::from_static("ru"),
+        );
+        assert_eq!(
+            bare_language(&headers, &known),
+            "ru",
+            "the address beats both"
+        );
+        headers.insert(
+            crate::locale_path::LOCALE_HEADER,
+            HeaderValue::from_static("xx"),
+        );
+        assert_eq!(
+            bare_language(&headers, &known),
+            "en",
+            "an unknown prefix is skipped"
+        );
     }
 
     #[test]

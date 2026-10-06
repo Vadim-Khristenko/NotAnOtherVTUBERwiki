@@ -51,6 +51,7 @@ mod perm;
 mod policy;
 mod profile;
 mod protect;
+mod ratelimit;
 mod recovery;
 mod relay;
 mod reports;
@@ -338,6 +339,15 @@ fn routes(state: AppState) -> Router {
                 .layer(axum::middleware::from_fn(csp::layer))
                 // Outermost after the panic guard, so every response gets an id.
                 .layer(axum::middleware::from_fn(observe::layer))
+                // Before the session and the error pages, so a request turned away
+                // costs no database work; inside observe, so it is still counted.
+                .layer(axum::middleware::from_fn_with_state(
+                    ratelimit::Guard {
+                        app: state.clone(),
+                        limiter: Default::default(),
+                    },
+                    ratelimit::layer,
+                ))
                 .layer(axum::middleware::from_fn_with_state(
                     state.clone(),
                     auth::session::layer,

@@ -190,6 +190,15 @@ limits! {
     upload_bytes_per_day: i64 = 2 * GIB, 16 * MIB, 1024 * GIB, Lower;
     /// Longest note on a file version or a hiding reason, in characters.
     file_note_chars: usize = 300, 20, 2000, Wiki;
+
+    /// Pages one address may open in a minute.
+    rate_read_per_minute: i64 = 600, 60, 100000, Install;
+    /// Searches, histories, diffs and old revisions one address may open in a minute.
+    rate_heavy_per_minute: i64 = 60, 10, 10000, Install;
+    /// Previews, draft saves and suggestions one address may ask for in a minute.
+    rate_typing_per_minute: i64 = 240, 20, 10000, Install;
+    /// Other forms one address may send in a minute.
+    rate_write_per_minute: i64 = 30, 5, 10000, Install;
 }
 
 static INSTALL: std::sync::OnceLock<Limits> = std::sync::OnceLock::new();

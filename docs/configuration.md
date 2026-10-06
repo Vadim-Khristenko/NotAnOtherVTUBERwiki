@@ -79,6 +79,18 @@ Wiki settings, Limits. The scope column says how:
 | `uploads_per_day` | 300 | 1 to 100000 | lower | Uploads one person may make in a day, versions included |
 | `upload_bytes_per_day` | 2 GiB | 16 MiB to 1024 GiB | lower | Bytes one person may upload in a day |
 | `file_note_chars` | 300 | 20 to 2000 | wiki | Longest note on a file version or hiding reason |
+| `rate_read_per_minute` | 600 | 60 to 100000 | install | Pages one address may open in a minute |
+| `rate_heavy_per_minute` | 60 | 10 to 10000 | install | Searches, histories, diffs and old revisions one address may open in a minute |
+| `rate_typing_per_minute` | 240 | 20 to 10000 | install | Previews, draft saves and suggestions one address may ask for in a minute |
+| `rate_write_per_minute` | 30 | 5 to 10000 | install | Other forms one address may send in a minute |
+
+The four `rate_` limits count per client address, and per /64 network for
+IPv6, since one machine is usually given a whole /64. Each is a bucket that
+holds a minute's worth and refills evenly, so a short burst passes and a steady
+flood does not. A request over the limit gets a 429 page with `Retry-After`.
+Static files, images, health checks and the Discord endpoint are not counted.
+Behind a reverse proxy, turn `trust_proxy` on, or every reader shares the
+proxy's address and one limit.
 
 Bounds that keep the engine safe are not limits on purpose and cannot be
 configured: the largest image dimensions, redirects followed when fetching
