@@ -15,8 +15,8 @@ link_back = "Back to settings"
 link_by_hand = "The button does not open Telegram? Send the bot this message:"
 
 # The settings card
-settings_note = "Link @{bot} to get a password reset link in Telegram when you forget your password, and to hear about new sign-ins."
-settings_link = "Link Telegram"
+settings_note = "Connect @{bot} to get a password reset link in Telegram when you forget your password, and to hear about new sign-ins."
+settings_link = "Connect the Telegram bot"
 settings_login_hint = "Or sign in with Telegram once and allow the bot to write to you: the chat links itself."
 settings_linked = "Linked to @{bot}."
 settings_alerts = "Tell me about new sign-ins and password changes"

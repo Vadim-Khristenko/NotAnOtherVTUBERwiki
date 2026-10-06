@@ -15,8 +15,8 @@ link_back = "Назад к настройкам"
 link_by_hand = "Кнопка не открывает Telegram? Отправьте боту это сообщение:"
 
 # The settings card
-settings_note = "Привяжите @{bot}, чтобы получать в Telegram ссылку для сброса, если забудете пароль, и узнавать о новых входах."
-settings_link = "Привязать Telegram"
+settings_note = "Подключите @{bot}, чтобы получать в Telegram ссылку для сброса, если забудете пароль, и узнавать о новых входах."
+settings_link = "Подключить Telegram-бота"
 settings_login_hint = "Или один раз войдите через Telegram и разрешите боту писать вам: чат привяжется сам."
 settings_linked = "Привязан к @{bot}."
 settings_alerts = "Сообщать о новых входах и смене пароля"

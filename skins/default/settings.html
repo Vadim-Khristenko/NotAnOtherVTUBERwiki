@@ -109,7 +109,8 @@
   {# The wiki's bot: password recovery, sign-in alerts and, if wanted, the
      notifications. Only when the install has a bot. #}
   <section class="settings-card" aria-labelledby="s-telegram-h" id="s-telegram">
-    <h2 id="s-telegram-h"><svg class="icon" aria-hidden="true"><use href="#i-bell" /></svg>Telegram</h2>
+    <h2 id="s-telegram-h"><svg class="icon" aria-hidden="true"><use href="#i-bell" /></svg>{{ t("settings.bot_telegram") }}</h2>
+    <p class="field-note">{{ t("settings.bot_lead") }}</p>
     {% if telegram.linked %}
     <p>{{ t("telegram.settings_linked", bot=telegram.bot) }}{% if telegram.tg_username %} <code>@{{ telegram.tg_username }}</code>{% endif %}
       <span class="muted-cell">{{ t("settings.identity_since", date=telegram.since) }}</span></p>
@@ -137,7 +138,8 @@
   {# The wiki's Discord bot: /reset, alerts and, if wanted, notifications by
      direct message. The switches are the same ones as for Telegram. #}
   <section class="settings-card" aria-labelledby="s-discord-h" id="s-discord">
-    <h2 id="s-discord-h"><svg class="icon" aria-hidden="true"><use href="#i-message-circle" /></svg>Discord</h2>
+    <h2 id="s-discord-h"><svg class="icon" aria-hidden="true"><use href="#i-message-circle" /></svg>{{ t("settings.bot_discord") }}</h2>
+    <p class="field-note">{{ t("settings.bot_lead") }}</p>
     {% if discord.linked %}
     <p>{{ t("discord.settings_linked") }}{% if discord.username %} <code>@{{ discord.username }}</code>{% endif %}
       <span class="muted-cell">{{ t("settings.identity_since", date=discord.since) }}</span></p>
@@ -175,6 +177,7 @@
 
   <section class="settings-card" aria-labelledby="s-identities">
     <h2 id="s-identities"><svg class="icon" aria-hidden="true"><use href="#i-users" /></svg>{{ t("settings.identities") }}</h2>
+    <p class="field-note">{{ t("settings.identities_note") }}</p>
     {% if identities %}
     <ul class="settings-list">
       {% for i in identities %}

@@ -26,8 +26,12 @@ email_note = "Used for sign-in links and nothing else. It is never shown to othe
 
 identities = "Ways to sign in"
 identities_none = "No sign-in provider is linked to this account."
+identities_note = "Accounts you can sign in to the wiki with. They send you nothing: for messages, connect a bot above."
+bot_telegram = "Telegram bot"
+bot_discord = "Discord bot"
+bot_lead = "The bot sends you messages: password resets, sign-in warnings, notifications. You do not sign in with it; that is what Ways to sign in are for."
 identity_since = "since {date}"
-link_with = "Link {provider}"
+link_with = "Sign in with {provider} too"
 
 sessions = "Signed in on"
 session_seen = "active {when}"
