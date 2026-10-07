@@ -4,12 +4,13 @@ English version. Russian translation: [SECURITY.md](../docs/ru/SECURITY.md)
 
 ## Supported versions
 
-Nothing is supported yet, because nothing is released. This policy applies to the
-repository as it stands today.
+There is no tagged release yet. The `dev` branch runs the public beta at
+beta.filian.wiki, and fixes land there first. This policy applies to the repository as
+it stands today.
 
 | Version | Supported |
 |---------|-----------|
-| pre-alpha (`dev` branch) | Security issues are accepted and fixed, but there is no release to patch |
+| open beta (`dev` branch) | Security issues are accepted, fixed and deployed to the running beta |
 | Any future release | Supported for 12 months after the next minor release |
 
 Once there are releases, the table above will list real version numbers.

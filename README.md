@@ -20,10 +20,11 @@ the community around Filian.*
 
 ---
 
-## Status: pre-alpha
+## Status: open beta
 
-Nothing is shipped yet. This repository currently holds the design, the schema and the
-decisions.
+The engine runs FilianWIKI, in an open beta at [beta.filian.wiki](https://beta.filian.wiki):
+anyone can sign in with Discord or Telegram and start editing. There is no tagged release
+yet; the `dev` branch is what runs there.
 
 - **[docs/ROADMAP.md](docs/ROADMAP.md)**: what we are building, in what order, and what
   has to be true before a phase is done.

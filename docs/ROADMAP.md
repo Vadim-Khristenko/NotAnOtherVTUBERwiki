@@ -9,21 +9,28 @@ If you want to know why the technology is what it is, read [STACK.md](STACK.md).
 
 ## Where we are
 
-**Closed alpha.** There is no public release yet. What exists, as of 2026-09-28:
+**Open beta.** There is no stable release yet. What exists, as of 2026-10-07:
 
 - A design that has survived one full review, a database schema, and the decisions written
   down with their reasons. This is still the most valuable part.
-- A running engine, in a closed alpha at `alpha.filian.wiki`. Accounts are handed out by
-  hand; `filian.wiki` explains how to ask for one. Pages render and serve from cache,
-  history, diffs, restore and search work, and one wiki carries articles in several
-  languages (`/ru/about`).
+- A running engine, in an open beta at `beta.filian.wiki` (the closed alpha's address
+  redirects there). Anyone can join by signing in with Discord or Telegram. Pages render
+  and serve from cache, history, diffs, restore and search work, and one wiki carries
+  articles in several languages (`/ru/about`).
 - Sign-in with a username and password, and through GitHub, Discord and Telegram OIDC.
-  Registration can be closed, so providers only sign in people who already have an
-  account. A browser without JavaScript (or in iPhone Lockdown Mode) can sign in through
-  another device with a one-time code. A forgotten password comes back through the
-  wiki's Telegram or Discord bot, which also warns about new sign-ins. A chat links with
-  `/link` and a one-time code from the settings, and each bot speaks the reader's
-  language. Email verification is not built yet.
+  Registration can be open or closed. A browser without JavaScript (or in iPhone Lockdown
+  Mode) can sign in through another device with a one-time code. A forgotten password
+  comes back through the wiki's Telegram or Discord bot, which also warns about new
+  sign-ins. A chat links with `/link` and a one-time code from the settings, and each bot
+  speaks the reader's language. Email verification is not built yet.
+- The wiki's documents: the Terms of use and the Privacy policy are ordinary pages that
+  only admins edit, signing in takes a ticked box accepting them, and when they change in
+  substance readers are told once. An account can be deleted by its owner, which removes
+  the account and profile while edits stay in history; admins can also hide the person's
+  files or take back their text.
+- Abuse control: a rate limit per address and kind of request, and address blocks, as on
+  Wikipedia: a blocked address reads the wiki but cannot write to it, while moderators and
+  above are never held.
 - An address without a language opens the article in the reader's language when that
   version exists, chosen from their pick, their account or the browser.
 - An editor with syntax highlighting, word-processor formatting toggles, a preview that can
@@ -139,10 +146,11 @@ The skeleton everything else hangs on.
 - [ ] Authentication, mostly landed. Sessions, the identity store, sign-in with
       GitHub, Discord and Telegram OIDC, and password login with Argon2id all
       work, with throttling and admin-issued temporary passwords. Registration
-      can be open or closed. A forgotten password is reset through the wiki's
-      Telegram bot: the chat links from the settings, or by itself on a Telegram
-      sign-in that allows the bot to write. The bot also warns about new sign-ins
-      and password changes and can pass on notifications. Email verification and
+      can be open or closed, and signing in can require accepting the wiki's
+      documents. A forgotten password is reset through the wiki's Telegram or
+      Discord bot: the chat links from the settings with `/link`, or by itself on
+      a sign-in through that provider. The bots also warn about new sign-ins and
+      password changes and can pass on notifications. Email verification and
       reset by email do not exist yet.
       **Deviation from this plan, on purpose:** sessions live in the Postgres
       `sessions` table, not in Valkey. The cookie carries a random UUID and the
@@ -346,7 +354,8 @@ Make editing pleasant, without ever putting it on the reader path.
 - Timeline and relationship charts via mermaid
 
 **Done when:** FilianWIKI is live at `filian.wiki` and looks like it belongs to that
-community rather than to us. The landing is live there; the wiki itself is in closed alpha.
+community rather than to us. The landing is live there; the wiki itself is in an open beta
+at `beta.filian.wiki`.
 
 ---
 
@@ -358,7 +367,11 @@ The things that decide whether anyone finds the wiki.
       article's first picture. Generated share images are still to do
 - [x] `sitemap.xml` with every language of every article, `robots.txt`, canonical URLs on
       the wiki's own domain, `hreflang`, and `noindex` on every page that is a tool
-- Antispam: registration CAPTCHA, external link limits, new user heuristics
+- Antispam: registration CAPTCHA, external link limits, new user heuristics. Address
+  blocks (read, never write) and a rate limit per address are in
+- [x] The wiki's documents: Terms of use and Privacy policy only admins edit, consent at
+      sign-in, versions with a one-time notice on change, and account deletion in three
+      steps (account and profile, also files, also text)
 - [x] Notifications on the site: edits to watched pages, the review of your own edits and
       answers to your reports, behind a bell with an unread count
 - Digest email
@@ -374,16 +387,19 @@ The things that decide whether anyone finds the wiki.
 
 ## Phase 9 · Hardening and deploy
 
-- Rate limiting, per route and per token
-- CSRF protection on every state changing form
+- [x] Rate limiting per address and kind of request (page reads, heavy reads, typing,
+      forms), with a themed 429 page; per token comes with the API
+- [x] CSRF protection on every state changing form
 - Content Security Policy with no `unsafe-inline`, SRI on every first party bundle
 - The invalidation graph from Phase 2, wired to the cache
 - Compose stack, frp tunnel, Caddy on the VPS
 - Backup automation with retention
-- `/metrics` endpoint, dashboards in an optional profile
+- `/metrics` endpoint, dashboards in an optional profile. An admin monitoring page with
+  percentiles, load peaks, errors and bot alerts exists; the endpoint for outside tools
+  does not
 - k6 suite and the benchmark document with methodology
-- [ ] Deploy FilianWIKI. The closed alpha runs behind the frp tunnel; the public launch
-      waits for open registration.
+- [x] Deploy FilianWIKI. The open beta runs at `beta.filian.wiki` behind the frp tunnel,
+      with server logs kept 30 days. Automated backups are still to do.
 
 **Done when:** the thing survives being on the public internet.
 

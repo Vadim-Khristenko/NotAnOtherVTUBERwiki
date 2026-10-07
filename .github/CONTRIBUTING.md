@@ -12,15 +12,16 @@ English version. Russian translation: [CONTRIBUTING.md](../docs/ru/CONTRIBUTING.
 
 ## Where the project is right now
 
-Pre-alpha. There is no running code yet, only design. That changes what contributing
-looks like:
+Open beta. The engine runs, and FilianWIKI is open at
+[beta.filian.wiki](https://beta.filian.wiki). That changes what contributing looks like:
 
-- **Design and review are the highest value work today.** If you can poke holes in
-  [docs/ROADMAP.md](../docs/ROADMAP.md) or the stack in [docs/STACK.md](../docs/STACK.md),
-  that is more useful right now than a pull request.
-- Code contributions are welcome, but the scaffold does not exist yet. Ask before writing
-  a large amount of it, or you may be building against a plan that is about to change.
-- Translations, art, and issue triage are all useful immediately.
+- **Using the wiki is the highest value work today.** Write and fix articles, and report
+  what breaks, with the Report link on any page or an issue here.
+- Code contributions are welcome. Ask before writing a large amount of it, or you may be
+  building against a plan that is about to change; [docs/ROADMAP.md](../docs/ROADMAP.md)
+  says what comes next.
+- Design review of [docs/ROADMAP.md](../docs/ROADMAP.md) and [docs/STACK.md](../docs/STACK.md),
+  translations, art, and issue triage are all useful immediately.
 
 ---
 
