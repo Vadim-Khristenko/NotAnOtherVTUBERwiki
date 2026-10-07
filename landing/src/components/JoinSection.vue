@@ -1,8 +1,9 @@
 <script setup lang="ts">
-/* Anyone can join. The split-flap board says who we are short of, Filian
-   leans out of her frame toward the button, and the application is a
-   postcard that writes itself. It is an email in a fixed shape: this page
-   collects nothing. */
+/* Anyone can join: the beta is open, and the button goes straight to the
+   wiki's sign-in. The split-flap board says who we are short of, Filian
+   leans out of her frame toward the button, and for ideas, bugs or help
+   beyond articles there is a postcard that writes itself. It is an email in
+   a fixed shape: this page collects nothing. */
 import { computed, ref, watch } from "vue";
 import { t, tList } from "../i18n";
 import { useSeen, useScrollProgress, useFormation, reducedMotion, toast, confetti, vMagnetic } from "../lib/motion";
@@ -16,8 +17,9 @@ const cardSeen = useSeen(card, 0.35);
 const progress = useScrollProgress(root);
 useFormation(root, "heart");
 
-const TEMPLATE = "Username that you wanna claim: \nYour age group: \nWho are you?: \nWhy Vadim should approve your registration: ";
-const MAIL = "mailto:vadim+calpha@filian.wiki?subject=Closed%20alpha%20application&body=Username%20that%20you%20wanna%20claim%3A%20%0AYour%20age%20group%3A%20%0AWho%20are%20you%3F%3A%20%0AWhy%20Vadim%20should%20approve%20your%20registration%3A%20%0A";
+const TEMPLATE = "My username on the wiki: \nWho are you?: \nWhat I would like to help with: \nIdea or bug: ";
+const SIGN_IN = "https://beta.filian.wiki/login";
+const MAIL = `mailto:vadim@filian.wiki?subject=${encodeURIComponent("FilianWIKI beta")}&body=${encodeURIComponent(TEMPLATE + "\n")}`;
 const typed = ref(TEMPLATE);
 const typing = ref(false);
 watch(cardSeen, (v) => {
@@ -53,7 +55,7 @@ const lean = computed(() => (reducedMotion() ? 0 : (progress.value - 0.5) * 2));
         <p class="board-label">{{ t("join.board") }}</p>
         <SplitFlap :words="tList('join.words')" :cols="20" :rows="2" />
         <p class="how" v-html="t('join.how')"></p>
-        <a v-magnetic class="slab" :href="MAIL">{{ t("join.write") }}</a>
+        <a v-magnetic class="slab" :href="SIGN_IN">{{ t("join.enter") }}</a>
       </div>
     </div>
 
@@ -74,7 +76,7 @@ const lean = computed(() => (reducedMotion() ? 0 : (progress.value - 0.5) * 2));
             <text x="46" y="42" text-anchor="middle">FILIAN</text><text x="46" y="56" text-anchor="middle">WIKI</text>
             <path d="M92 25 q 16 -10 32 0 t 32 0 t 32 0 t 32 0 M92 45 q 16 -10 32 0 t 32 0 t 32 0 t 32 0 M92 65 q 16 -10 32 0 t 32 0 t 32 0 t 32 0" />
           </svg>
-          <p class="to">To: Vadim<br /><span>vadim+calpha@filian.wiki</span></p>
+          <p class="to">To: Vadim<br /><span>vadim@filian.wiki</span></p>
         </div>
       </div>
       <dl class="notes">

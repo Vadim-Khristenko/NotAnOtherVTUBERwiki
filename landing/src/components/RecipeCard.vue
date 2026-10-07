@@ -12,7 +12,8 @@ const steps: Step[] = [
   { key: "one", state: "done" },
   { key: "two", state: "done" },
   { key: "three", state: "done" },
-  { key: "four", state: "now" },
+  { key: "four", state: "done" },
+  { key: "beta", state: "now" },
   { key: "five", state: "next" },
   { key: "six", state: "then" },
 ];

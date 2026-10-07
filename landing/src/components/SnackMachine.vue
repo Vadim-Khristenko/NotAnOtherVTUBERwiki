@@ -16,12 +16,12 @@ import { useFormation, useSeen, reducedMotion } from "../lib/motion";
 
 type Slot = { code: string; key: string; icon: string; href: string; picture?: string };
 const slots: Slot[] = [
-  { code: "A1", key: "character", icon: "character", href: "https://alpha.filian.wiki/filian" },
-  { code: "A2", key: "lore", icon: "lore", href: "https://alpha.filian.wiki/lore", picture: "/assets/art/tile-lore.webp" },
-  { code: "A3", key: "glossary", icon: "glossary", href: "https://alpha.filian.wiki/glossary" },
-  { code: "B1", key: "schedule", icon: "schedule", href: "https://alpha.filian.wiki/schedule", picture: "/assets/art/tile-schedule.webp" },
-  { code: "B2", key: "clips", icon: "clips", href: "https://alpha.filian.wiki/clips" },
-  { code: "B3", key: "fan_art", icon: "fan-art", href: "https://alpha.filian.wiki/fan-art" },
+  { code: "A1", key: "character", icon: "character", href: "https://beta.filian.wiki/filian" },
+  { code: "A2", key: "lore", icon: "lore", href: "https://beta.filian.wiki/lore", picture: "/assets/art/tile-lore.webp" },
+  { code: "A3", key: "glossary", icon: "glossary", href: "https://beta.filian.wiki/glossary" },
+  { code: "B1", key: "schedule", icon: "schedule", href: "https://beta.filian.wiki/schedule", picture: "/assets/art/tile-schedule.webp" },
+  { code: "B2", key: "clips", icon: "clips", href: "https://beta.filian.wiki/clips" },
+  { code: "B3", key: "fan_art", icon: "fan-art", href: "https://beta.filian.wiki/fan-art" },
 ];
 const root = ref<HTMLElement | null>(null);
 const seen = useSeen(root, 0.15);
