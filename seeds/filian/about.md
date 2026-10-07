@@ -14,16 +14,11 @@ Fan wikis usually live on big hosted platforms, full of ads and slow on a phone.
 
 ## How to take part
 
-The wiki is in a **closed alpha**: accounts are made by hand while we test it. To join, write to **vadim@filian.wiki** with the subject "closed alpha" and say:
+The wiki is in an **open beta**: anyone can join. Press **Sign in**, tick the box accepting the [[terms|Terms of use]] and the [[privacy|Privacy policy]], and continue with Discord or Telegram. Your account is made on the spot.
 
-1. the username you would like,
-2. your age group,
-3. who you are,
-4. why you want to join.
+Then pick an article, press **Edit**, and cite the VOD or the post you got it from. If a page is protected, **View source** lets you suggest a change. See the [community rules](/community) first.
 
-We are looking for people who write articles, people who hunt bugs, translators, and anyone with ideas.
-
-Already in? Pick an article, press **Edit**, and cite the VOD or the post you got it from. If a page is protected, **View source** lets you suggest a change. See the [community rules](/community) first.
+It is still a beta, so some things may break. If you find a bug or have an idea, use **Report** on any page or write to **vadim@filian.wiki**. We are especially glad to see people who write articles, people who hunt bugs, and translators.
 
 ## Thanks
 

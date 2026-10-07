@@ -10,7 +10,7 @@ continue_with = "Continue with {provider}"
 no_methods = "No way to sign in is set up on this wiki yet."
 
 closed_title = "Accounts are invite only for now"
-closed_body = "This wiki is in a closed alpha. Signing in works for people who already have an account; new accounts are created by its admins."
+closed_body = "Registration on this wiki is closed for now. Signing in works for people who already have an account; new accounts are created by its admins."
 closed_apply = "How to ask for an account"
 
 dev_enabled = "Development sign-in is on for this instance."
