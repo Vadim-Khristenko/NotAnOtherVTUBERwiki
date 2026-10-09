@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT svg FROM diagrams WHERE hash = $1 AND theme = $2 AND status = 'ready'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "svg",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "diagrams",
+            "name": "svg"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "24d0a7d74efc280c6da8bd3e74ebbe01713c37abfe5af77cc0b1261d0bc4bc32"
+}

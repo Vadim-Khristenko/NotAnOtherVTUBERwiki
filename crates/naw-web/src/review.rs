@@ -372,6 +372,7 @@ pub async fn show(
     let expanded = crate::templates::expand(&state, &ctx, &path, &rev.body_md).await?;
     let rendered = naw_markdown::render_body(&expanded.text);
     let preview = crate::emotes::expand(&state, ctx.wiki.id, rendered.html).await?;
+    let preview = crate::diagrams::expand(&state, &ctx, preview, false).await?;
     let computed = crate::diff::diff_bodies(rev.base_body.as_deref().unwrap_or(""), &rev.body_md);
     let rows: Vec<minijinja::Value> = computed
         .rows

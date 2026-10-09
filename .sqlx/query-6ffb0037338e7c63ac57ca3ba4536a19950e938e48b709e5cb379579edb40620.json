@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE diagrams SET status = 'pending', error = $3, attempts = attempts - 1\n                 WHERE hash = $1 AND theme = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ffb0037338e7c63ac57ca3ba4536a19950e938e48b709e5cb379579edb40620"
+}

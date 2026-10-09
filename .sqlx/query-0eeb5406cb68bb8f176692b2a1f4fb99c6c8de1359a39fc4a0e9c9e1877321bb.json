@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE diagrams SET status = 'ready', svg = $3, width = $4, height = $5,\n                     error = NULL, rendered_at = now()\n                 WHERE hash = $1 AND theme = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0eeb5406cb68bb8f176692b2a1f4fb99c6c8de1359a39fc4a0e9c9e1877321bb"
+}

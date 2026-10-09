@@ -25,6 +25,7 @@ mod chrome;
 mod complete;
 mod csp;
 mod csrf;
+mod diagrams;
 mod diff;
 mod discord;
 mod display_name;
@@ -69,11 +70,13 @@ mod templates;
 mod translate;
 
 /// Starts the work that runs beside the server: the metrics writer and the
-/// alerts, and the Telegram bot when a token is set.
+/// alerts, the Telegram bot when a token is set, and the diagram runner when
+/// a worker is.
 pub fn start_background(state: AppState) {
     metrics::start(state.clone());
     telegram::start(state.clone());
     discord::start(state.clone());
+    diagrams::start(state.clone());
     tokio::spawn(bots::forward_loop(state));
 }
 
@@ -267,6 +270,7 @@ fn routes(state: AppState) -> Router {
             )),
         )
         .route("/media/import", post(media::import_url))
+        .route("/media/diagrams/{file}", get(diagrams::serve))
         .route("/media/{prefix}/{file}", get(media::serve))
         .route("/user/{name}", get(profile::show))
         .route(

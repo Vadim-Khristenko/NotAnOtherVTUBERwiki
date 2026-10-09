@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO diagrams (hash, theme, lang, source)\n         SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[])\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "feb3061abac48d1bd0c4c11067dde9804ff8fbfe7915b904cf35dd4217aa2da7"
+}

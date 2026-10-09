@@ -48,6 +48,10 @@ pub struct Config {
     /// fails or stalls, as `socks5://host:port` or `http://host:port`.
     #[serde(default)]
     pub fetch_proxy: Option<String>,
+    /// The optional worker that draws diagrams, as `http://host:port`. Unset,
+    /// diagrams stay as their source text.
+    #[serde(default)]
+    pub worker_url: Option<String>,
     /// Defaults for account changes; the admin panel can override each value.
     #[serde(default)]
     pub accounts: AccountPolicy,
@@ -172,6 +176,7 @@ impl Default for Config {
             avatar_max_bytes: default_avatar_max_bytes(),
             emote_budget_bytes: default_emote_budget_bytes(),
             fetch_proxy: None,
+            worker_url: None,
             auth: AuthConfig::default(),
             limits: crate::limits::Limits::default(),
         }
@@ -481,6 +486,7 @@ impl fmt::Debug for Config {
             .field("avatar_max_bytes", &self.avatar_max_bytes)
             .field("emote_budget_bytes", &self.emote_budget_bytes)
             .field("fetch_proxy", &self.fetch_proxy.as_ref().map(|_| "set"))
+            .field("worker_url", &self.worker_url)
             .field("auth", &self.auth)
             .finish()
     }
@@ -605,6 +611,17 @@ impl Config {
             } else {
                 Some(check_fetch_proxy(raw)?)
             };
+        }
+        if let Ok(raw) = std::env::var("NAW_WORKER_URL") {
+            let raw = raw.trim();
+            cfg.worker_url = (!raw.is_empty()).then(|| raw.to_string());
+        }
+        if let Some(url) = &cfg.worker_url
+            && !(url.starts_with("http://") || url.starts_with("https://"))
+        {
+            return Err(AppError::Config(format!(
+                "worker_url must start with http:// or https://, got {url:?}"
+            )));
         }
         cfg.limits = cfg.limits.clone().clamped();
         cfg.limits

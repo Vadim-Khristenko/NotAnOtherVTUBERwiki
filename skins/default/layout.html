@@ -665,6 +665,19 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
 .content figure.media-player { margin: var(--s4) 0; }
 .content figure.media-player audio, .content figure.media-player video { display: block; width: 100%; max-width: 100%; }
 .content figure.media-player figcaption { font-size: 0.85rem; color: var(--muted); margin-top: var(--s1); }
+/* A diagram is drawn twice, once per theme; the page shows the one that
+   matches. The images are pictures, so they cannot read the page's theme. */
+.content figure.diagram { margin: var(--s4) 0; overflow-x: auto; }
+.content figure.diagram img { display: block; border-radius: 0; margin: 0 auto; }
+.content figure.diagram .diagram-dark { display: none; }
+html[data-theme="dark"] .content figure.diagram .diagram-light { display: none; }
+html[data-theme="dark"] .content figure.diagram .diagram-dark { display: block; }
+@media (prefers-color-scheme: dark) {
+  html[data-theme="auto"] .content figure.diagram .diagram-light { display: none; }
+  html[data-theme="auto"] .content figure.diagram .diagram-dark { display: block; }
+}
+.content .diagram-source { margin-top: var(--s2); font-size: 0.85rem; }
+.content .diagram-source summary { color: var(--muted); cursor: pointer; }
 .content a.file-link { display: inline-block; }
 /* ---------------------------------------------------------------------------
  * Landing

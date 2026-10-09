@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE diagrams SET status = 'pending'\n         WHERE status = 'rendering' AND claimed_at < now() - make_interval(secs => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4ebdd225f50575131f29336377a72cc0048799e7faf00dcbeaf17b2050b47634"
+}

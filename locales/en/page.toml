@@ -20,3 +20,7 @@ protect_refused = "That protection is above your role, or the page is already pr
 missing_title = "This page does not exist yet"
 missing_body = "Nobody has written an article at /{slug} yet. You can start it now."
 missing_create = "Create the page"
+
+# A diagram drawn from a ```mermaid or ```dot block, and its folded source.
+diagram_alt = "Diagram"
+diagram_source = "Diagram source"

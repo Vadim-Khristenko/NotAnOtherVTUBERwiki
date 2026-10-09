@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE diagrams SET status = 'failed', error = $3 WHERE hash = $1 AND theme = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3ed26068112500baf4cc1d976c328a2ed35d20372f423bdeb24a84e42bc7971e"
+}

@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH next AS MATERIALIZED (\n               SELECT hash, theme FROM diagrams WHERE status = 'pending'\n               ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)\n           UPDATE diagrams d SET status = 'rendering', claimed_at = now(), attempts = d.attempts + 1\n           FROM next\n           WHERE d.hash = next.hash AND d.theme = next.theme\n           RETURNING d.hash, d.theme, d.lang, d.source, d.attempts",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "diagrams",
+            "name": "hash"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "theme",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "diagrams",
+            "name": "theme"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "lang",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "diagrams",
+            "name": "lang"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "diagrams",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "diagrams",
+            "name": "attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5bcc8ad963287c20a7186de9b6b75c124c9f48d0960382735e5d239ad524c0d4"
+}
