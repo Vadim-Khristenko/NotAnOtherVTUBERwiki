@@ -95,3 +95,42 @@ proxy's address and one limit.
 Bounds that keep the engine safe are not limits on purpose and cannot be
 configured: the largest image dimensions, redirects followed when fetching
 an image, the work a diff may do, and how long sign-in state lives.
+
+## The worker and diagrams
+
+A page may draw a diagram from a fenced block:
+
+````markdown
+```mermaid
+timeline
+  2021 : Twitch partner
+  2022 : One million followers
+```
+
+```dot
+digraph { Filian -> Snackers }
+```
+````
+
+`mermaid` takes any [mermaid](https://mermaid.js.org) diagram; `dot` (or
+`graphviz`) takes a [Graphviz](https://graphviz.org) graph. The drawing is
+made once, in the background, by the optional worker in `worker/`, and served
+as an image, so it shows with JavaScript off. Each diagram is drawn twice, for
+the light and the dark theme. Until its drawing is ready, and if it cannot be
+drawn, the page shows the block's text; under a drawing the text stays one
+click away.
+
+The worker is a Bun process. It needs Chrome or Chromium for mermaid
+(`CHROME_PATH` when it is not in a usual place) and nothing else for Graphviz.
+It listens on `127.0.0.1:8081` by default (`WORKER_HOST`, `WORKER_PORT`) and
+has no authentication, so keep it off the public network. Point the engine at
+it with:
+
+```toml
+worker_url = "http://127.0.0.1:8081"
+```
+
+or `NAW_WORKER_URL`. Without it, diagrams stay as their text and nothing is
+queued. The engine rebuilds every drawing from an allowlist of SVG elements
+before storing it, and serves it with a policy that forbids scripts, so the
+worker is never trusted with the reader's safety.

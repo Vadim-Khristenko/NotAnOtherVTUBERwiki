@@ -48,6 +48,9 @@ If you want to know why the technology is what it is, read [STACK.md](STACK.md).
 - Images can come from a link: the wiki downloads and keeps them, and outside images in
   an article are copied on save. Outside fetches never reach a private address and fall
   back to a proxy when a route is throttled.
+- Diagrams in Markdown: a ```mermaid or ```dot block is drawn in the background by the
+  optional worker and shown as a picture, in the light or the dark theme, with its text
+  one click away. Until the drawing is ready, or without a worker, the text shows.
 - Templates with one code for every language: a translation of a template carries only
   its documentation and field labels, so no language can run a different template. Fields
   can be passed as a strict YAML block and declared in a `<params>` schema, from which the
@@ -267,8 +270,10 @@ The feature that puts us ahead of every self hosted wiki.
 - Rust sanitises every worker output before it is cached
 - A 3 KB client loader that imports only the bundles a page actually uses
 - Draft, publish and rollback, with audit entries
-- **Diagrams in Markdown**: mermaid, graphviz and PlantUML rendered server side to inline
-  SVG, so they work with JavaScript disabled
+- [x] **Diagrams in Markdown**: mermaid and graphviz drawn server side, so they work with
+  JavaScript disabled. The worker draws them in the background through a queue in
+  PostgreSQL; the engine rebuilds every SVG from an allowlist and serves it as an image
+  under a policy that forbids scripts, rather than inlining it. PlantUML is not in yet
 - Image thumbnails and WebP or AVIF conversion
 - Scheduled jobs for digests, cache warm and reindex
 

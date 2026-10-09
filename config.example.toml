@@ -22,6 +22,10 @@ seed_dir = "seeds"
 # the process working directory.
 storage_root = "./uploads"
 
+# The optional worker (worker/, run with Bun) that draws ```mermaid and
+# ```dot blocks. Unset: diagrams stay as their text. See docs/configuration.md.
+# worker_url = "http://127.0.0.1:8081"
+
 # ---------------------------------------------------------------------------
 # Auth. Off until credentials exist; a provider turns on when both of its
 # environment variables are set (NAW_GITHUB_CLIENT_ID / _SECRET and so on).
