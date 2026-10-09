@@ -1,11 +1,10 @@
 FROM oven/bun:1.4.2
 WORKDIR /app
-# The lockfile glob tolerates its absence: there are no dependencies yet, but
-# the moment Vue, rolldown or mermaid arrive (PLAN sections 2.4 and 5) this
-# image has to install them, and a missing `bun install` would fail confusingly
-# at runtime instead of at build time.
-COPY package.json bun.lock* ./
-RUN bun install --production
+# Chromium lays out mermaid diagrams; fonts give its text real metrics.
+RUN apt-get update  && apt-get install -y --no-install-recommends chromium fonts-dejavu-core  && rm -rf /var/lib/apt/lists/*
+ENV CHROME_PATH=/usr/bin/chromium
+COPY package.json bun.lock ./
+RUN bun install --production --frozen-lockfile
 COPY src ./src
 EXPOSE 8081
 CMD ["bun", "run", "src/index.ts"]

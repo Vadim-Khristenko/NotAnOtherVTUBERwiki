@@ -8,5 +8,9 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@viz-js/viz": "3.30.0",
+    "mermaid": "12.0.0"
   }
 }

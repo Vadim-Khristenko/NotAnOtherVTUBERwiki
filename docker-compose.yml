@@ -72,23 +72,21 @@ services:
     networks:
       - nawwk
 
-  # Requires worker/Dockerfile, which is created in Task 8. The profile keeps
-  # this service out of every command unless the profile is enabled.
+  # The worker draws diagrams. The profile keeps it out of every command
+  # unless the profile is enabled; point the engine at it with
+  # NAW_WORKER_URL=http://127.0.0.1:8081.
   worker:
     build: ./worker
     container_name: nawwk-worker
     restart: unless-stopped
     environment:
-      # Must match what worker/src/index.ts actually reads. It was PORT, which
-      # the worker never looks at, so the value was inert and only appeared to
-      # work because 8081 is also the built-in default.
+      # Names worker/src/index.ts reads. Inside the container it has to listen
+      # beyond loopback; the port is published on the host's loopback only,
+      # since the worker has no authentication.
+      WORKER_HOST: "0.0.0.0"
       WORKER_PORT: "8081"
-      VALKEY_URL: redis://valkey:6379
     ports:
-      - "8081:8081"
-    depends_on:
-      valkey:
-        condition: service_healthy
+      - "127.0.0.1:8081:8081"
     profiles:
       - worker
     networks:
