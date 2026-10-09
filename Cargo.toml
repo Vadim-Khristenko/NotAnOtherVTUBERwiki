@@ -108,6 +108,8 @@ pulldown-cmark = { version = "0.13.4", default-features = false, features = [
     "html",
 ] }
 ammonia = "4.1.4"
+# SVG from the worker is rebuilt from an allowlist, see naw-core svg.rs.
+quick-xml = "0.42.0"
 
 # --- internal crates
 naw-core = { path = "crates/naw-core" }

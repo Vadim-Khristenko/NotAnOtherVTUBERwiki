@@ -13,4 +13,5 @@ pub mod logging;
 pub mod search;
 pub mod skin;
 pub mod state;
+pub mod svg;
 pub mod templates;
