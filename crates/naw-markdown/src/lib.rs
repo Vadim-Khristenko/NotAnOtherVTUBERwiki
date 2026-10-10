@@ -26,6 +26,9 @@ use scan::{Closers, Counts};
 ///   `:::details Title` and `:::pullquote` blocks end at `:::`.
 /// - `:::infobox Title` is a side card: `Key = value` lines are its rows (a row
 ///   with no value is left out), anything else is Markdown in order.
+/// - `:::timeline Title` is a vertical timeline: `when | what` lines start an
+///   event (`! when | what` marks a key one), the lines under it describe it,
+///   and `## Label` starts an era.
 /// - The first lone `[[toc]]` becomes a table of contents; footnotes collect
 ///   at the end in reference order.
 /// - Fenced `mermaid`, `dot`, `graphviz`, `plantuml` and `math` keep their
@@ -177,6 +180,7 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
     pulldown_cmark::html::push_html(&mut dirty, parser);
     // A paragraph that held only category links is left empty.
     let dirty = drop_empty_paragraphs(&dirty);
+    let dirty = restore_timeline_pieces(&dirty, state);
     let dirty = restore_custom_blocks(&dirty, blocks, depth, state);
     let dirty = postprocess_diagrams(&dirty);
     // Runs on HTML, so inner formatting survives inside the wrappers.
@@ -541,6 +545,7 @@ enum BlockKind {
     Details,
     Pullquote,
     Infobox,
+    Timeline,
     CollapsibleQuote,
 }
 
@@ -558,6 +563,8 @@ struct BlockState {
     tag: String,
     /// Blocks the document may still open; past it, fences stay text.
     left: usize,
+    /// HTML for timeline markers, see [`emit_timeline`].
+    pieces: Vec<String>,
 }
 
 impl BlockState {
@@ -569,6 +576,7 @@ impl BlockState {
         Self {
             tag: format!("NAWBLOCK{hex}x"),
             left: BLOCK_MAX,
+            pieces: Vec::new(),
         }
     }
 
@@ -594,6 +602,11 @@ fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec
             Some((BlockKind::Details, rest.trim().to_string()))
         } else if trimmed == ":::pullquote" || trimmed.starts_with(":::pullquote ") {
             Some((BlockKind::Pullquote, String::new()))
+        } else if let Some(rest) = trimmed
+            .strip_prefix(":::timeline")
+            .filter(|_| trimmed == ":::timeline" || trimmed.starts_with(":::timeline "))
+        {
+            Some((BlockKind::Timeline, rest.trim().to_string()))
         } else {
             trimmed
                 .strip_prefix(":::infobox")
@@ -618,6 +631,12 @@ fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec
                 out.push(escape_fence(lines[i]));
                 out.extend(lines[i + 1..j].iter().map(|line| line.to_string()));
                 out.push(escape_fence(lines[j]));
+                i = j + 1;
+                continue;
+            }
+            if kind == BlockKind::Timeline {
+                out.extend(emit_timeline(&title, &lines[i + 1..j], state));
+                state.left -= 1;
                 i = j + 1;
                 continue;
             }
@@ -764,7 +783,204 @@ fn render_block(block: &CustomBlock, depth: usize, state: &mut BlockState) -> St
             details("quote", format!("<blockquote>\n{body}\n</blockquote>"))
         }
         BlockKind::Infobox => unreachable!("rendered by render_infobox"),
+        BlockKind::Timeline => unreachable!("laid out by emit_timeline"),
     }
+}
+
+/// Events in one timeline; past it the lines stay part of the last event.
+const TIMELINE_EVENTS_MAX: usize = 500;
+
+/// A timeline line that starts an event: `when | what`, or `! when | what`
+/// for a key event. `when` is short and plain, so a table row or a sentence
+/// with a pipe in it does not read as one.
+fn timeline_event(line: &str) -> Option<(bool, &str, &str)> {
+    if line.starts_with([' ', '\t']) {
+        return None;
+    }
+    let (key, rest) = match line.strip_prefix('!') {
+        Some(rest) if rest.starts_with(' ') => (true, rest.trim_start()),
+        _ => (false, line),
+    };
+    // `2026 |` with nothing after the pipe is an event with no title.
+    let (when, what) = rest
+        .split_once(" | ")
+        .or_else(|| rest.trim_end().strip_suffix(" |").map(|when| (when, "")))?;
+    let when = when.trim();
+    let plain = !when.is_empty()
+        && when.chars().count() <= 40
+        && !when.starts_with(['#', '>', '-', '*', '|', '+', '`']);
+    plain.then(|| (key, when, what.trim()))
+}
+
+/// Lays a timeline out as Markdown for the main pass, with marker paragraphs
+/// where its HTML goes, so footnotes, links and formatting inside it work as
+/// anywhere else in the page. Lines before the first event are an
+/// introduction, `## Label` marks an era, and the lines under an event
+/// describe it. A timeline with nothing in it leaves nothing.
+fn emit_timeline(title: &str, body: &[&str], state: &mut BlockState) -> Vec<String> {
+    enum Item<'a> {
+        Era(&'a str),
+        Event {
+            key: bool,
+            when: &'a str,
+            what: &'a str,
+            body: Vec<&'a str>,
+        },
+    }
+    let mut intro: Vec<&str> = Vec::new();
+    let mut items: Vec<Item> = Vec::new();
+    let mut events = 0;
+    let mut in_fence = false;
+    for &line in body {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+        }
+        if !in_fence {
+            if let Some(label) = line.strip_prefix("## ") {
+                items.push(Item::Era(label.trim()));
+                continue;
+            }
+            if events < TIMELINE_EVENTS_MAX
+                && let Some((key, when, what)) = timeline_event(line)
+            {
+                items.push(Item::Event {
+                    key,
+                    when,
+                    what,
+                    body: Vec::new(),
+                });
+                events += 1;
+                continue;
+            }
+        }
+        match items.last_mut() {
+            Some(Item::Event { body, .. }) => body.push(line),
+            // Text under an era label and before any event joins the intro.
+            _ => intro.push(line),
+        }
+    }
+    let title = title.trim();
+    let has_intro = intro.iter().any(|l| !l.trim().is_empty());
+    if events == 0 && title.is_empty() && !has_intro {
+        return Vec::new();
+    }
+    let mut out: Vec<String> = vec![String::new()];
+    let piece = |state: &mut BlockState, html: String, out: &mut Vec<String>, text: &str| {
+        let marker = format!("{}T{}NAW", state.tag, state.pieces.len());
+        state.pieces.push(html);
+        out.push(if text.is_empty() {
+            marker
+        } else {
+            format!("{marker} {text}")
+        });
+        out.push(String::new());
+    };
+    let mut open = String::from("<div class=\"timeline\">");
+    if !title.is_empty() {
+        open.push_str("<p class=\"timeline-title\">");
+        open.push_str(&naw_core::html::escape(title));
+        open.push_str("</p>");
+    }
+    if has_intro {
+        open.push_str("<div class=\"timeline-intro\">");
+        piece(state, open, &mut out, "");
+        out.extend(intro.iter().map(|l| l.to_string()));
+        out.push(String::new());
+        piece(
+            state,
+            "</div><ol class=\"timeline-list\">".into(),
+            &mut out,
+            "",
+        );
+    } else {
+        open.push_str("<ol class=\"timeline-list\">");
+        piece(state, open, &mut out, "");
+    }
+    for item in items {
+        match item {
+            Item::Era(label) => piece(
+                state,
+                format!(
+                    "<li class=\"timeline-era\"><span>{}</span></li>",
+                    naw_core::html::escape(label)
+                ),
+                &mut out,
+                "",
+            ),
+            Item::Event {
+                key,
+                when,
+                what,
+                body,
+            } => {
+                let li = if key {
+                    "<li class=\"timeline-event timeline-key\">"
+                } else {
+                    "<li class=\"timeline-event\">"
+                };
+                piece(
+                    state,
+                    format!("{li}<p class=\"timeline-when\">"),
+                    &mut out,
+                    when,
+                );
+                if what.is_empty() {
+                    piece(state, "<div class=\"timeline-card\">".into(), &mut out, "");
+                } else {
+                    piece(
+                        state,
+                        "<div class=\"timeline-card\"><p class=\"timeline-what\">".into(),
+                        &mut out,
+                        what,
+                    );
+                }
+                out.extend(body.iter().map(|l| l.to_string()));
+                out.push(String::new());
+                piece(state, "</div></li>".into(), &mut out, "");
+            }
+        }
+    }
+    piece(state, "</ol></div>".into(), &mut out, "");
+    out
+}
+
+/// Puts the HTML pieces of timelines in place of their marker paragraphs. A
+/// bare marker paragraph becomes its piece; a marker that starts a paragraph
+/// becomes the piece's opening tag, and the paragraph's text stays inside it.
+fn restore_timeline_pieces(html: &str, state: &BlockState) -> String {
+    if state.pieces.is_empty() {
+        return html.to_string();
+    }
+    let open = format!("<p>{}T", state.tag);
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(pos) = rest.find(&open) {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + open.len()..];
+        let digits = after.bytes().take_while(u8::is_ascii_digit).count();
+        let piece = after[digits..]
+            .strip_prefix("NAW")
+            .and_then(|_| after[..digits].parse::<usize>().ok())
+            .and_then(|idx| state.pieces.get(idx));
+        let tail = &after[digits + 3.min(after.len() - digits)..];
+        match piece {
+            Some(piece) if tail.starts_with("</p>") => {
+                out.push_str(piece);
+                rest = &tail[4..];
+            }
+            Some(piece) if tail.starts_with(' ') => {
+                out.push_str(piece);
+                rest = &tail[1..];
+            }
+            _ => {
+                out.push_str(&open);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `Key = value`: a short plain key, then the value. `None` for any other line.
@@ -1997,7 +2213,7 @@ fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 22;
+pub const RENDERER_VERSION: i32 = 23;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -2362,6 +2578,65 @@ mod tests {
         let html = render_html("See [[home|Home page]].\n");
         assert!(html.contains("href=\"home\""), "{html}");
         assert!(html.contains(">Home page</a>"), "{html}");
+    }
+
+    #[test]
+    fn a_timeline_has_eras_events_and_key_events() {
+        let html = render_html(
+            ":::timeline Filian's story\nHow it went.\n\n## 2021\n2021-04-17 | First stream\nOn **Twitch**.[^a]\n\n! 2025-12-09 | [[lore|Last stream]]\n2026 | \n2027 |\n:::\n\n[^a]: Source.\n",
+        )
+        .replace('\n', "");
+        assert!(
+            html.contains("<div class=\"timeline\"><p class=\"timeline-title\">Filian's story</p>"),
+            "{html}"
+        );
+        assert!(
+            html.contains("<div class=\"timeline-intro\"><p>How it went.</p>"),
+            "{html}"
+        );
+        assert!(
+            html.contains("<li class=\"timeline-era\"><span>2021</span></li>"),
+            "{html}"
+        );
+        assert!(html.contains("<li class=\"timeline-event\"><p class=\"timeline-when\">2021-04-17</p><div class=\"timeline-card\"><p class=\"timeline-what\">First stream</p>"), "{html}");
+        assert!(html.contains("<strong>Twitch</strong>"), "{html}");
+        assert!(
+            html.contains("<li class=\"timeline-event timeline-key\">"),
+            "{html}"
+        );
+        assert!(html.contains("<a href=\"lore\""), "{html}");
+        // a footnote inside an event still links to the list at the end
+        assert!(
+            html.contains("<sup class=\"footnote-reference\" id=\"fnref-a\"><a href=\"#fn-a\""),
+            "{html}"
+        );
+        assert!(html.contains("<div class=\"footnotes\">"), "{html}");
+        // an event with no title keeps its date
+        assert!(
+            html.contains("<p class=\"timeline-when\">2026</p><div class=\"timeline-card\"></div>"),
+            "{html}"
+        );
+        // so does one written with nothing after the pipe
+        assert!(
+            html.contains("<p class=\"timeline-when\">2027</p>"),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn timeline_lines_with_a_pipe_in_prose_stay_prose() {
+        let html = render_html(
+            ":::timeline\n- a | b\nA long sentence that is not a date at all because it is long | x\n:::\n",
+        );
+        assert!(!html.contains("timeline-event"), "{html}");
+        let empty = render_html(":::timeline\n:::\n\nAfter.");
+        assert!(!empty.contains("timeline"), "{empty}");
+    }
+
+    #[test]
+    fn timeline_titles_are_text() {
+        let html = render_html(":::timeline <b>x</b>\n2020 | <script>y</script>\n:::\n");
+        assert!(!html.contains("<b>") && !html.contains("<script"), "{html}");
     }
 
     #[test]

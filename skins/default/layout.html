@@ -680,6 +680,40 @@ html[data-theme="dark"] .content figure.diagram .diagram-dark { display: block; 
 .content .diagram-source { margin-top: var(--s2); font-size: 0.85rem; }
 .content .diagram-source summary { color: var(--muted); cursor: pointer; }
 
+/* :::timeline. Dates on the left, a line with a dot per event, a card per
+   event; a key event glows, an era sits on the line as a pill. One column on
+   a phone. --tl-axis is where the line runs. */
+.content .timeline { --tl-when: 6.75rem; --tl-gap: 2rem; --tl-axis: calc(var(--tl-when) + var(--tl-gap) / 2); margin: var(--s5) 0; }
+.content .timeline-title { margin: 0 0 var(--s2); font-size: 1.15rem; font-weight: 700; letter-spacing: 0.01em; }
+.content .timeline-intro { color: var(--ink-soft); margin-bottom: var(--s3); }
+.content .timeline-intro > :last-child { margin-bottom: 0; }
+.content .timeline-list { position: relative; list-style: none; margin: 0; padding: var(--s1) 0; }
+.content .timeline-list::before { content: ""; position: absolute; left: calc(var(--tl-axis) - 1px); top: 0.5rem; bottom: 0.5rem; width: 2px; border-radius: 2px; background: linear-gradient(to bottom, var(--accent), var(--accent-2, var(--accent)) 70%, transparent); opacity: 0.6; }
+.content .timeline-event { position: relative; display: grid; grid-template-columns: var(--tl-when) 1fr; column-gap: var(--tl-gap); margin: 0; padding: var(--s1) 0; }
+.content .timeline-event::before { content: ""; position: absolute; left: calc(var(--tl-axis) - 6px); top: 1.05rem; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 2px solid var(--accent); box-sizing: border-box; z-index: 1; transition: transform var(--fast, 120ms) var(--ease, ease); }
+.content .timeline-event:hover::before { transform: scale(1.25); }
+.content .timeline-key::before { width: 16px; height: 16px; left: calc(var(--tl-axis) - 8px); top: 0.9rem; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft), 0 0 16px var(--accent); }
+.content .timeline-when { margin: 0; padding-top: 0.7rem; text-align: right; font-size: 0.88rem; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--accent); line-height: 1.35; }
+.content .timeline-card { min-width: 0; padding: 0.65rem 0.95rem; border: 1px solid var(--line); border-radius: var(--radius, 10px); background: var(--surface); transition: border-color var(--fast, 120ms) var(--ease, ease), transform var(--fast, 120ms) var(--ease, ease); }
+.content .timeline-card:not(:has(*)) { display: none; }
+.content .timeline-event:hover .timeline-card { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); transform: translateX(3px); }
+.content .timeline-key .timeline-card { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: linear-gradient(135deg, var(--accent-soft), var(--surface) 65%); }
+.content .timeline-card p { margin: 0.3rem 0; }
+.content .timeline-card .timeline-what { margin: 0 0 0.15rem; font-weight: 650; }
+.content .timeline-card > :last-child { margin-bottom: 0; }
+.content .timeline-card > :first-child { margin-top: 0; }
+.content .timeline-era { position: relative; margin: var(--s3) 0 var(--s1); padding-left: calc(var(--tl-axis) - 1.25rem); }
+.content .timeline-era span { position: relative; z-index: 1; display: inline-block; padding: 0.2rem 0.85rem; border-radius: 999px; background: var(--accent); color: var(--accent-ink, #fff); font-size: 0.78rem; font-weight: 750; letter-spacing: 0.07em; text-transform: uppercase; box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent); }
+@media (max-width: 560px) {
+  .content .timeline { --tl-axis: 0.5rem; }
+  .content .timeline-event { grid-template-columns: 1fr; padding-left: 1.6rem; }
+  .content .timeline-when { padding-top: 0; text-align: left; margin-bottom: 0.25rem; }
+  .content .timeline-event::before { top: 0.35rem; }
+  .content .timeline-key::before { top: 0.2rem; }
+  .content .timeline-era { padding-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .content .timeline-card, .content .timeline-event::before { transition: none; } }
+
 /* The picture viewer (scripts/viewer.js). The picture sits in the middle of
    the stage and moves by transform only, so zoom and pan stay smooth. */
 .content img.viewer-zoomable { cursor: zoom-in; }
