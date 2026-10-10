@@ -50,6 +50,7 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
     let (without_blocks, blocks) = extract_custom_blocks(markdown, state);
     // pulldown-cmark hardwires `__` to `<strong>`.
     let mapped = map_double_underscore_to_italic(&without_blocks);
+    let mapped = escape_wikilink_pipes_in_table_rows(&mapped);
 
     // pulldown-cmark cannot refuse raw HTML, so its events are dropped here,
     // except a bare `<br>`. ammonia is the second line of defence.
@@ -96,6 +97,12 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
                 title,
                 id,
             }) => {
+                // A table row escapes the pipe in `[[target|text]]`, and the
+                // parser keeps the backslash on the target.
+                let dest_url: pulldown_cmark::CowStr = match dest_url.strip_suffix('\\') {
+                    Some(trimmed) => trimmed.to_string().into(),
+                    None => dest_url,
+                };
                 let dest_url = match categories::link_target(&dest_url) {
                     Some(key) => {
                         bare_category_link =
@@ -852,6 +859,55 @@ fn render_infobox(block: &CustomBlock, depth: usize, state: &mut BlockState) -> 
         }
     }
     out.push_str("</aside>");
+    out
+}
+
+/// In a table row a bare `|` ends the cell, so `[[target|text]]` would be cut
+/// in two. Inside `[[...]]` on a row that starts with `|`, the pipe is
+/// escaped; the link handler drops the backslash the parser keeps.
+fn escape_wikilink_pipes_in_table_rows(markdown: &str) -> String {
+    if !markdown.contains("[[") {
+        return markdown.to_string();
+    }
+    let mut out = String::with_capacity(markdown.len());
+    let mut in_fence = false;
+    for line in markdown.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            out.push_str(line);
+            continue;
+        }
+        if in_fence || !trimmed.starts_with('|') || !line.contains("[[") {
+            out.push_str(line);
+            continue;
+        }
+        let mut depth = 0usize;
+        let mut prev = ' ';
+        let mut chars = line.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '[' && chars.peek() == Some(&'[') {
+                chars.next();
+                depth += 1;
+                out.push_str("[[");
+                prev = '[';
+                continue;
+            }
+            if c == ']' && depth > 0 && chars.peek() == Some(&']') {
+                chars.next();
+                depth -= 1;
+                out.push_str("]]");
+                prev = ']';
+                continue;
+            }
+            if c == '|' && depth > 0 && prev != '\\' {
+                out.push_str("\\|");
+            } else {
+                out.push(c);
+            }
+            prev = c;
+        }
+    }
     out
 }
 
@@ -1941,7 +1997,7 @@ fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 21;
+pub const RENDERER_VERSION: i32 = 22;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -2306,6 +2362,21 @@ mod tests {
         let html = render_html("See [[home|Home page]].\n");
         assert!(html.contains("href=\"home\""), "{html}");
         assert!(html.contains(">Home page</a>"), "{html}");
+    }
+
+    #[test]
+    fn a_wikilink_with_text_keeps_its_table_cell() {
+        let html = render_html(
+            "| Phase | Dates |\n|---|---|\n| [[arg-phase-0|Phase 0]] | 2025 |\n| [[a\\|B]] and **bold** | x |\n",
+        );
+        assert!(html.contains("<td><a href=\"arg-phase-0\""), "{html}");
+        assert!(html.contains(">Phase 0</a></td><td>2025</td>"), "{html}");
+        assert!(html.contains("<a href=\"a\""), "{html}");
+        assert!(html.contains("<strong>bold</strong>"), "{html}");
+        assert!(!html.contains("%5C"), "{html}");
+        // outside a table nothing changes, and a fenced row is left alone
+        let code = render_html("```\n| [[a|b]] |\n```\n");
+        assert!(code.contains("| [[a|b]] |"), "{code}");
     }
 
     #[test]
