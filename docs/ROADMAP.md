@@ -51,6 +51,11 @@ If you want to know why the technology is what it is, read [STACK.md](STACK.md).
 - Diagrams in Markdown: a ```mermaid or ```dot block is drawn in the background by the
   optional worker and shown as a picture, in the light or the dark theme, with its text
   one click away. Until the drawing is ready, or without a worker, the text shows.
+- A picture viewer: a click on a picture or a diagram opens it over the page, to zoom, pan,
+  rotate and go full screen, with a link to the file's page. Without JavaScript the click
+  opens the file.
+- A `:::timeline` block: dated events in ordinary Markdown, with eras and key events, drawn
+  as a vertical timeline. Footnotes and links inside it work as anywhere else.
 - Templates with one code for every language: a translation of a template carries only
   its documentation and field labels, so no language can run a different template. Fields
   can be passed as a strict YAML block and declared in a `<params>` schema, from which the
@@ -356,7 +361,7 @@ Make editing pleasant, without ever putting it on the reader path.
       file is downloaded once into local storage under a 1 GB budget, and `:name:` in
       an article shows it. `/emotes` lists them all.
 - Snacker of the Month widget, admin configurable
-- Timeline and relationship charts via mermaid
+- [x] Timelines (a `:::timeline` block) and relationship charts via mermaid
 
 **Done when:** FilianWIKI is live at `filian.wiki` and looks like it belongs to that
 community rather than to us. The landing is live there; the wiki itself is in an open beta
