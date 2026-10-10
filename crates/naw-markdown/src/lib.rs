@@ -201,7 +201,18 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
     // `id` and `class` keep anchors and author styling; `tabindex` keeps
     // spoilers keyboard operable; `open` keeps collapsible quotes working.
     ammonia::Builder::default()
-        .add_generic_attributes(["id", "class", "tabindex", "style", "title", "lang", "dir"])
+        .add_generic_attributes([
+            "id",
+            "class",
+            "tabindex",
+            "style",
+            "title",
+            "lang",
+            "dir",
+            "role",
+            "aria-label",
+            "aria-hidden",
+        ])
         .add_tag_attributes("td", ["colspan", "rowspan", "align"])
         .add_tag_attributes("th", ["colspan", "rowspan", "align", "scope"])
         .attribute_filter(|_, attribute, value| {
@@ -213,7 +224,15 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
         })
         .add_tag_attributes("details", ["open"])
         .add_tag_attributes("img", ["loading", "decoding"])
-        .add_tags(["audio", "video"])
+        .add_tags(["audio", "video", "section", "progress", "meter"])
+        .add_tag_attributes("ol", ["start", "reversed", "type"])
+        .add_tag_attributes("li", ["value"])
+        .add_tag_attributes("time", ["datetime"])
+        .add_tag_attributes("data", ["value"])
+        .add_tag_attributes("col", ["span"])
+        .add_tag_attributes("colgroup", ["span"])
+        .add_tag_attributes("progress", ["value", "max"])
+        .add_tag_attributes("meter", ["value", "min", "max", "low", "high", "optimum"])
         .add_tag_attributes("audio", ["controls", "preload", "src"])
         .add_tag_attributes("video", ["controls", "preload", "src"])
         .clean(&anchored)
@@ -369,6 +388,8 @@ fn is_allowed_raw_html(html: &str) -> bool {
 pub const AUTHOR_TAGS: &[&str] = &[
     "a",
     "abbr",
+    "article",
+    "aside",
     "b",
     "bdi",
     "blockquote",
@@ -376,6 +397,9 @@ pub const AUTHOR_TAGS: &[&str] = &[
     "caption",
     "cite",
     "code",
+    "col",
+    "colgroup",
+    "data",
     "dd",
     "del",
     "details",
@@ -385,19 +409,30 @@ pub const AUTHOR_TAGS: &[&str] = &[
     "em",
     "figcaption",
     "figure",
+    "footer",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
     "hr",
     "i",
     "ins",
     "kbd",
     "li",
     "mark",
+    "meter",
     "ol",
     "p",
+    "progress",
     "q",
     "rp",
     "rt",
     "ruby",
     "s",
+    "samp",
+    "section",
     "small",
     "span",
     "strong",
@@ -410,56 +445,152 @@ pub const AUTHOR_TAGS: &[&str] = &[
     "tfoot",
     "th",
     "thead",
+    "time",
     "tr",
     "u",
     "ul",
+    "var",
+    "wbr",
 ];
 
-/// The CSS a `style` attribute may carry: looks, not layout tricks. Nothing
+/// The CSS a `style` attribute may carry: looks, and layout inside the element
+/// (flex, grid, columns), so a template can build a card or a gallery. Nothing
 /// that positions, layers, transforms, animates, loads a file or changes what
-/// a click does.
+/// a click does. Theme variables pass, so `var(--accent)` follows the skin.
 pub const STYLE_PROPERTIES: &[&str] = &[
+    "accent-color",
+    "background",
+    "background-clip",
     "background-color",
+    "background-image",
+    "background-position",
+    "background-repeat",
+    "background-size",
+    "color",
+    "opacity",
     "border",
     "border-bottom",
+    "border-bottom-color",
+    "border-bottom-left-radius",
+    "border-bottom-right-radius",
+    "border-bottom-style",
+    "border-bottom-width",
+    "border-collapse",
     "border-color",
     "border-left",
+    "border-left-color",
+    "border-left-style",
+    "border-left-width",
     "border-radius",
     "border-right",
+    "border-right-color",
+    "border-right-style",
+    "border-right-width",
+    "border-spacing",
     "border-style",
     "border-top",
+    "border-top-color",
+    "border-top-left-radius",
+    "border-top-right-radius",
+    "border-top-style",
+    "border-top-width",
     "border-width",
     "box-shadow",
+    "outline",
+    "outline-color",
+    "outline-offset",
+    "outline-style",
+    "outline-width",
+    "aspect-ratio",
+    "box-sizing",
     "clear",
-    "color",
+    "display",
     "float",
-    "font-family",
-    "font-size",
-    "font-style",
-    "font-variant",
-    "font-weight",
-    "letter-spacing",
-    "line-height",
+    "height",
     "margin",
     "margin-bottom",
     "margin-left",
     "margin-right",
     "margin-top",
+    "max-height",
     "max-width",
-    "opacity",
+    "min-height",
+    "min-width",
+    "object-fit",
+    "object-position",
+    "overflow",
+    "overflow-x",
+    "overflow-y",
     "padding",
     "padding-bottom",
     "padding-left",
     "padding-right",
     "padding-top",
+    "vertical-align",
+    "width",
+    "align-content",
+    "align-items",
+    "align-self",
+    "column-gap",
+    "flex",
+    "flex-basis",
+    "flex-direction",
+    "flex-flow",
+    "flex-grow",
+    "flex-shrink",
+    "flex-wrap",
+    "gap",
+    "grid-area",
+    "grid-auto-columns",
+    "grid-auto-flow",
+    "grid-auto-rows",
+    "grid-column",
+    "grid-row",
+    "grid-template-areas",
+    "grid-template-columns",
+    "grid-template-rows",
+    "justify-content",
+    "justify-items",
+    "justify-self",
+    "order",
+    "place-content",
+    "place-items",
+    "place-self",
+    "row-gap",
+    "column-count",
+    "column-rule",
+    "column-width",
+    "columns",
+    "font-family",
+    "font-size",
+    "font-stretch",
+    "font-style",
+    "font-variant",
+    "font-weight",
+    "hyphens",
+    "letter-spacing",
+    "line-height",
+    "overflow-wrap",
     "text-align",
     "text-decoration",
+    "text-decoration-color",
+    "text-decoration-style",
+    "text-decoration-thickness",
+    "text-indent",
+    "text-overflow",
     "text-shadow",
     "text-transform",
-    "vertical-align",
+    "text-underline-offset",
     "white-space",
-    "width",
     "word-break",
+    "word-spacing",
+    "writing-mode",
+    "caption-side",
+    "empty-cells",
+    "list-style",
+    "list-style-position",
+    "list-style-type",
+    "table-layout",
 ];
 
 /// A `style` attribute with only the allowed declarations left, or `None`
@@ -2255,7 +2386,7 @@ fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 25;
+pub const RENDERER_VERSION: i32 = 26;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -2402,6 +2533,61 @@ mod tests {
             clean_style("font-size: 1.2em"),
             Some("font-size: 1.2em".into())
         );
+    }
+
+    #[test]
+    fn templates_can_lay_out_with_flex_grid_and_gradients() {
+        let kept = clean_style(
+            "display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; \
+             background: linear-gradient(90deg, var(--accent), transparent); aspect-ratio: 16 / 9",
+        )
+        .unwrap();
+        for part in [
+            "display: grid",
+            "grid-template-columns: repeat(3, 1fr)",
+            "gap: 0.5rem",
+            "background: linear-gradient(90deg, var(--accent), transparent)",
+            "aspect-ratio: 16 / 9",
+        ] {
+            assert!(kept.contains(part), "{part} missing from {kept}");
+        }
+        // the shorthand would slip past the font size cap, so it is not allowed
+        assert_eq!(clean_style("font: 200px serif"), None);
+        for bad in [
+            "position: fixed",
+            "inset: 0",
+            "transform: translateY(-100px)",
+            "animation: spin 1s",
+            "background-image: url(//x.example/p.png)",
+        ] {
+            assert_eq!(clean_style(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn templates_can_use_structure_and_indicator_tags() {
+        let html = render_html(
+            "<section class=\"card\" role=\"note\" aria-label=\"Stats\"><header><h3>Stats</h3></header>\
+             <progress value=\"70\" max=\"100\">70%</progress><meter value=\"3\" min=\"0\" max=\"5\">3</meter>\
+             <time datetime=\"2025-12-09\">9 December</time><ol start=\"3\" reversed><li value=\"5\">x</li></ol>\
+             <footer>end</footer></section>",
+        );
+        for part in [
+            "<section class=\"card\" role=\"note\" aria-label=\"Stats\">",
+            "<header>",
+            "<h3",
+            "<progress value=\"70\" max=\"100\">",
+            "<meter value=\"3\" min=\"0\" max=\"5\">",
+            "<time datetime=\"2025-12-09\">",
+            "<ol start=\"3\" reversed=\"\">",
+            "<li value=\"5\">",
+            "<footer>",
+        ] {
+            assert!(html.contains(part), "{part} missing from {html}");
+        }
+        // a picture from elsewhere would tell its host who read the page
+        let html = render_html("<img src=\"https://tracker.example/p.gif\">");
+        assert!(!html.contains("tracker"), "{html}");
     }
 
     #[test]

@@ -133,17 +133,48 @@ a byte order mark are all fine.
 
 ## HTML and styles
 
-A page or a template may write HTML from a fixed list of tags: `div`,
-`span`, `p`, `small`, `sup`, `sub`, `b`, `i`, `u`, `s`, `mark`, `abbr`,
-`code`, `kbd`, `br`, `hr`, tables (`table`, `caption`, `thead`, `tbody`,
-`tfoot`, `tr`, `th`, `td`), lists (`ul`, `ol`, `li`, `dl`, `dt`, `dd`),
-`blockquote`, `q`, `cite`, `details`, `summary`, `figure`, `figcaption`,
-`ruby`, `rt`, `rp`, `del`, `ins`, `bdi` and `a`. A fragment with any other
-tag (a script, a style sheet, a frame, a form, SVG) is dropped whole.
+A page or a template may write HTML from a fixed list of tags:
+
+- structure: `div`, `span`, `section`, `article`, `aside`, `header`,
+  `footer`, `p`, `h2` to `h6`, `hr`, `br`, `wbr`;
+- text: `b`, `strong`, `i`, `em`, `u`, `s`, `del`, `ins`, `mark`,
+  `small`, `sup`, `sub`, `abbr`, `cite`, `q`, `code`, `kbd`, `samp`,
+  `var`, `time`, `data`, `bdi`, `ruby`, `rt`, `rp`, `a`;
+- lists and tables: `ul`, `ol`, `li`, `dl`, `dt`, `dd`, `table`,
+  `caption`, `colgroup`, `col`, `thead`, `tbody`, `tfoot`, `tr`,
+  `th`, `td`;
+- blocks: `blockquote`, `details`, `summary`, `figure`, `figcaption`;
+- indicators: `progress` and `meter`.
+
+A fragment with any other tag (a script, a style sheet, a frame, a form, SVG,
+an `img`) is dropped whole. Pictures come from the wiki's own files, written
+`![Alt](image:name.png)`, so a page never loads anything from elsewhere.
 
 Attributes are cleaned: event handlers and `javascript:` links never survive.
-`style` keeps looks only: colors, borders and their radius, shadows, fonts
-within reason (up to 3em, 300% or 48px), text alignment and decoration,
-padding and margins (no negative margins), `width`, `max-width`, `float`,
-`clear`, `opacity`. Anything that positions, layers, transforms, animates or
-loads a file (`url()`) is removed with its declaration.
+Every tag may have `class`, `id`, `style`, `title`, `lang`, `dir`, `role`,
+`aria-label` and `aria-hidden`; lists, `time`, `data`, `col` and the
+indicators keep their own (`start`, `reversed`, `value`, `datetime`,
+`max`, `span` and so on).
+
+`style` keeps looks and layout inside the element:
+
+- colours and backgrounds, gradients included (`linear-gradient(...)`);
+- borders, their radius and colours per side, outlines and shadows;
+- sizes and boxes: `width`, `height`, their `min-` and `max-`,
+  `aspect-ratio`, `padding`, `margin` (never negative), `overflow`,
+  `display`, `float`;
+- flex and grid: `display: flex` or `grid`, `gap`, `grid-template-columns`,
+  `justify-content`, `align-items` and the rest of the family;
+- text: fonts (up to 3em, 300% or 48px), weights, alignment, decoration,
+  spacing, wrapping, columns;
+- lists and tables: markers, borders, layout.
+
+Anything that positions, layers, transforms, animates or loads a file
+(`url()`) is removed with its declaration. The skin's colours are variables:
+`color: var(--accent)` follows the reader's theme, light or dark.
+
+The skin also draws a few classes, so a template looks at home without
+styles of its own: `wiki-card` (a framed box), `wiki-grid` (cards in a
+grid that wraps on a phone), `wiki-badge` (a small pill), `wiki-stat` (a
+big number over a label: `<div class="wiki-stat"><strong>140</strong><span>pages</span></div>`)
+and `wiki-muted` (secondary text).

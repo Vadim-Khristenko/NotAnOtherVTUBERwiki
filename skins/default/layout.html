@@ -716,6 +716,20 @@ html[data-theme="dark"] .content figure.diagram .diagram-dark { display: block; 
   .content .timeline-key::before { top: calc(var(--s2) + 0.6rem); }
 }
 
+/* Building blocks for templates and modules: a page writes
+   <div class="wiki-grid"><div class="wiki-card">...</div></div> and the skin
+   draws it, in its own colours. */
+.content .wiki-card { padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--radius, 10px); background: var(--surface-sunken); }
+.content .wiki-card > :first-child { margin-top: 0; }
+.content .wiki-card > :last-child { margin-bottom: 0; }
+.content .wiki-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--s3); margin: var(--s4) 0; }
+.content .wiki-badge { display: inline-block; padding: 0.05rem 0.55rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 0.8rem; font-weight: 700; line-height: 1.6; white-space: nowrap; }
+.content .wiki-muted { color: var(--muted); }
+.content .wiki-stat { display: flex; flex-direction: column; gap: 0.1rem; }
+.content .wiki-stat strong, .content .wiki-stat b { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; color: var(--ink); font-variant-numeric: tabular-nums; }
+.content .wiki-stat span { font-size: 0.85rem; color: var(--muted); }
+.content progress, .content meter { width: 100%; max-width: 20rem; height: 0.75rem; accent-color: var(--accent); vertical-align: middle; }
+
 /* The picture viewer (scripts/viewer.js). The picture sits in the middle of
    the stage and moves by transform only, so zoom and pan stay smooth. */
 .content img.viewer-zoomable { cursor: zoom-in; }
