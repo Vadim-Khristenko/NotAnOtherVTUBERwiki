@@ -592,9 +592,29 @@ fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     let mut blocks: Vec<CustomBlock> = Vec::new();
     let mut closers_left = true;
+    // The code fence the line is inside: its character and length. A block
+    // shown as an example in a code fence stays text.
+    let mut code: Option<(char, usize)> = None;
     let mut i = 0;
     while i < lines.len() {
         let trimmed = lines[i].trim_start();
+        if let Some(run) = code_fence_run(trimmed) {
+            match code {
+                None => code = Some(run),
+                Some((c, n)) if run.0 == c && run.1 >= n && trimmed.trim_end().len() == run.1 => {
+                    code = None;
+                }
+                Some(_) => {}
+            }
+            out.push(lines[i].to_string());
+            i += 1;
+            continue;
+        }
+        if code.is_some() {
+            out.push(lines[i].to_string());
+            i += 1;
+            continue;
+        }
         let fence = if let Some(rest) = trimmed
             .strip_prefix(":::details")
             .filter(|_| trimmed == ":::details" || trimmed.starts_with(":::details "))
@@ -685,6 +705,14 @@ fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec
         i += 1;
     }
     (out.join("\n"), blocks)
+}
+
+/// The run of backticks or tildes a code fence line starts with, three or
+/// more: `("`", 4)` for a four-backtick fence.
+fn code_fence_run(trimmed: &str) -> Option<(char, usize)> {
+    let c = trimmed.chars().next().filter(|c| *c == '`' || *c == '~')?;
+    let n = trimmed.chars().take_while(|x| *x == c).count();
+    (n >= 3).then_some((c, n))
 }
 
 /// A fence kept as text with its colon escaped, so a bare `:::` does not
@@ -2213,7 +2241,7 @@ fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 23;
+pub const RENDERER_VERSION: i32 = 24;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -2637,6 +2665,24 @@ mod tests {
     fn timeline_titles_are_text() {
         let html = render_html(":::timeline <b>x</b>\n2020 | <script>y</script>\n:::\n");
         assert!(!html.contains("<b>") && !html.contains("<script"), "{html}");
+    }
+
+    #[test]
+    fn blocks_shown_in_a_code_fence_stay_text() {
+        let md = "```markdown\n:::details Spoilers\nText.\n:::\n\n:::timeline T\n2021 | First\n:::\n```\n\n\
+                  ````markdown\n```mermaid\ngraph LR\n```\n:::infobox X\nA = b\n:::\n````\n\n\
+                  :::details Real\nShown.\n:::\n";
+        let html = render_html(md);
+        assert!(!html.contains("NAWBLOCK"), "{html}");
+        assert!(html.contains(":::details Spoilers"), "{html}");
+        assert!(html.contains(":::timeline T"), "{html}");
+        assert!(html.contains(":::infobox X"), "{html}");
+        assert!(!html.contains("class=\"timeline\""), "{html}");
+        // a real block after the code still works
+        assert!(
+            html.contains("<details class=\"details\"><summary>Real</summary>"),
+            "{html}"
+        );
     }
 
     #[test]
