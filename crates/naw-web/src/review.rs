@@ -345,8 +345,7 @@ impl Pending {
 
     /// The reviewer may edit the page at its protection level.
     fn reviewer_may_edit(&self, ctx: &Ctx) -> bool {
-        let floor = matches!(self.namespace.as_str(), "template" | "page_template")
-            .then_some(pages::TEMPLATE_EDIT_FLOOR);
+        let floor = pages::namespace_floor(&self.namespace);
         ctx.actor
             .can_edit_page(pages::protection_of(self.locked, self.edit_level.as_deref()).max(floor))
     }

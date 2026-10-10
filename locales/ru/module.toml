@@ -1,0 +1,11 @@
+# Russian interface messages: module.
+#
+# Keys here are asked for as module.<key>. The file name is the prefix.
+# Показываются там, где страница вызывает модуль (:::Module:Name:function).
+
+error = "Модуль {module}, функция {function}: {reason}"
+missing = "модуля с именем {module} нет"
+no_code = "на странице модуля нет блока ```js с его кодом"
+too_long = "код модуля длиннее 64 КБ"
+too_many_calls = "страница может вызвать модули не больше 20 раз"
+no_create = "Создавать модули могут только админы: их код выполняется на сервере."

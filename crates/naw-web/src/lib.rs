@@ -44,6 +44,7 @@ mod legal;
 mod locale_path;
 mod media;
 mod metrics;
+mod modules;
 mod monitoring;
 mod moving;
 mod net;

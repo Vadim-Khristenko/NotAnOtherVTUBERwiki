@@ -53,7 +53,7 @@ const GROUPS: [(&str, &[(&str, &str)]); 3] = [
 // `all_pages_shown`, `files_shown`, `system_list_shown`, `big_edit_bytes`.
 
 /// The namespaces All pages can list, as the database spells them.
-const LISTED_NAMESPACES: [&str; 4] = ["main", "category", "template", "page_template"];
+const LISTED_NAMESPACES: [&str; 5] = ["main", "category", "template", "page_template", "module"];
 
 /// What a special page may be asked for in its query.
 #[derive(Debug, Default)]

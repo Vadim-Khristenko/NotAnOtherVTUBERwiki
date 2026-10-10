@@ -1,0 +1,11 @@
+# English interface messages: module.
+#
+# Keys here are asked for as module.<key>. The file name is the prefix.
+# Shown where a page calls a module (:::Module:Name:function).
+
+error = "Module {module}, function {function}: {reason}"
+missing = "there is no module named {module}"
+no_code = "the module page has no ```js block with its code"
+too_long = "the module's code is longer than 64 KB"
+too_many_calls = "a page may call modules 20 times at most"
+no_create = "Only admins may create modules, since their code runs on the server."

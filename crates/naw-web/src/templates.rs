@@ -30,7 +30,10 @@ pub(crate) async fn expand(
     path: &str,
     body: &str,
 ) -> Result<Expanded, AppError> {
-    expand_in(&state.db, &Wiki::of(ctx), &notes(ctx), path, body).await
+    let mut expanded = expand_in(&state.db, &Wiki::of(ctx), &notes(ctx), path, body).await?;
+    // Modules run after templates, so a template may call one too.
+    expanded.text = crate::modules::expand(state, ctx, path, expanded.text).await?;
+    Ok(expanded)
 }
 
 /// The failure notes in the reader's language, and the page language.

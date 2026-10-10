@@ -257,6 +257,7 @@ pub(crate) fn path_of(namespace: &str, slug: &str) -> Option<String> {
         "main" => Some(slug.to_string()),
         "template" => Some(format!("{TEMPLATE_PREFIX}{slug}")),
         "page_template" => Some(format!("{PAGE_TEMPLATE_PREFIX}{slug}")),
+        "module" => Some(format!("{}{slug}", crate::modules::PREFIX)),
         "file" => Some(format!("file:{slug}")),
         "category" => Some(format!("{}{slug}", crate::categories::PREFIX)),
         _ => None,
@@ -272,6 +273,9 @@ pub(crate) fn split_path(path: &str) -> (&'static str, &str) {
     }
     if let Some(slug) = path.strip_prefix(PAGE_TEMPLATE_PREFIX) {
         return ("page_template", slug);
+    }
+    if let Some(slug) = path.strip_prefix(crate::modules::PREFIX) {
+        return ("module", slug);
     }
     if let Some((_, name)) = crate::files::split(path) {
         return ("file", name);
@@ -347,6 +351,17 @@ pub(crate) fn reserved(path: &str, is_language: impl Fn(&str) -> bool) -> Option
 /// The lowest role that edits a template. One bad edit to a template breaks
 /// every page that uses it, so they start at curator even when unprotected.
 pub(crate) const TEMPLATE_EDIT_FLOOR: crate::perm::WikiRole = crate::perm::WikiRole::Curator;
+
+/// Who may edit a namespace at all, whatever the page's own protection:
+/// templates are curators' work, modules run code on the server and are
+/// admins'.
+pub(crate) fn namespace_floor(namespace: &str) -> Option<crate::perm::WikiRole> {
+    match namespace {
+        "template" | "page_template" => Some(TEMPLATE_EDIT_FLOOR),
+        "module" => Some(crate::perm::WikiRole::Admin),
+        _ => None,
+    }
+}
 
 /// The pages that speak for the wiki: its terms, its privacy policy, its
 /// front page and About, in every language. Admins and up edit them, or only
@@ -736,7 +751,7 @@ pub(crate) async fn find_page(
     )
     .fetch_optional(db)
     .await?;
-    let floor = matches!(namespace, "template" | "page_template").then_some(TEMPLATE_EDIT_FLOOR);
+    let floor = namespace_floor(namespace);
     Ok(row.map(|row| FoundPage {
         id: row.id,
         title: row.title,
@@ -1579,14 +1594,18 @@ pub async fn create_page(
     {
         return Ok(crate::errors::not_found());
     }
-    if matches!(namespace, "template" | "page_template")
-        && !ctx.actor.can_edit_page(Some(TEMPLATE_EDIT_FLOOR))
+    if let Some(floor) = namespace_floor(namespace)
+        && !ctx.actor.can_edit_page(Some(floor))
     {
         return refuse(
             &ctx,
             &ctx.link("/new"),
             Capability::PageCreate,
-            &ctx.t("template.no_create"),
+            &ctx.t(if namespace == "module" {
+                "module.no_create"
+            } else {
+                "template.no_create"
+            }),
         );
     }
     if let Some(floor) = system_floor(&ctx.wiki.settings, &slug)

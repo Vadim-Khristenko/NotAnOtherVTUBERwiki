@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                     (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main'\n                       AND deleted_at IS NULL AND current_revision_id IS NOT NULL) AS \"articles!\",\n                     (SELECT count(*) FROM pages WHERE wiki_id = $1 AND deleted_at IS NULL\n                       AND current_revision_id IS NOT NULL) AS \"pages!\",\n                     (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id\n                       WHERE p.wiki_id = $1) AS \"edits!\",\n                     (SELECT count(*) FROM media WHERE wiki_id = $1) AS \"files!\",\n                     (SELECT count(DISTINCT r.author_id) FROM revisions r JOIN pages p ON p.id = r.page_id\n                       WHERE p.wiki_id = $1) AS \"editors!\",\n                     (SELECT count(DISTINCT r.author_id) FROM revisions r JOIN pages p ON p.id = r.page_id\n                       WHERE p.wiki_id = $1 AND r.created_at > now() - interval '30 days') AS \"active_editors!\",\n                     (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id\n                       WHERE p.wiki_id = $1 AND r.created_at > now() - interval '30 days') AS \"edits_month!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "articles!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "pages!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "edits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "files!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "editors!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "active_editors!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "edits_month!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ce4d9eaa4b2568ee489e73eef24bf168b0703c3cc52ab023bfbb58c0637bdd75"
+}
