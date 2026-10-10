@@ -131,6 +131,11 @@ worker_url = "http://127.0.0.1:8081"
 ```
 
 or `NAW_WORKER_URL`. Without it, diagrams stay as their text and nothing is
-queued. The engine rebuilds every drawing from an allowlist of SVG elements
+queued.
+
+The same worker makes smaller copies of uploaded pictures. A JPEG, PNG or
+WebP picture wider than 480 pixels gets a `srcset` of WebP copies at 480,
+960 and 1600 pixels, so a phone loads a small file. A copy is made the first
+time a browser asks for it; until then that request is sent to the original. The engine rebuilds every drawing from an allowlist of SVG elements
 before storing it, and serves it with a policy that forbids scripts, so the
 worker is never trusted with the reader's safety.

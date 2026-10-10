@@ -279,7 +279,8 @@ The feature that puts us ahead of every self hosted wiki.
   JavaScript disabled. The worker draws them in the background through a queue in
   PostgreSQL; the engine rebuilds every SVG from an allowlist and serves it as an image
   under a policy that forbids scripts, rather than inlining it. PlantUML is not in yet
-- Image thumbnails and WebP or AVIF conversion
+- [x] Image thumbnails: WebP copies at three widths, drawn by the worker on first request, in
+  a `srcset`. AVIF is not in yet
 - Scheduled jobs for digests, cache warm and reindex
 
 **Done when:** an admin can write an interactive infobox in the browser, publish it, and
