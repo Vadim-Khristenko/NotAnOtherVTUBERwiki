@@ -4,7 +4,8 @@
 // The engine calls it from background jobs only, with a timeout, and
 // sanitizes every answer. It holds no database credentials and no secrets.
 
-import { DiagramError, mermaidReady, render, SOURCE_MAX, type Lang, type Theme } from "./diagram";
+import { DiagramError, mermaidReady, render, type Lang, type Theme } from "./diagram";
+import { IMAGE_MAX, ImageError, shrink } from "./image";
 
 // The engine relies on Bun features past 1.4.0, so refuse to boot older.
 if (!Bun.semver.satisfies(Bun.version, ">=1.4.2")) {
@@ -22,7 +23,8 @@ const THEMES: readonly Theme[] = ["light", "dark"];
 Bun.serve({
   port,
   hostname,
-  maxRequestBodySize: SOURCE_MAX * 8,
+  // Pictures are the largest bodies; each route checks its own limit too.
+  maxRequestBodySize: IMAGE_MAX + 1024 * 1024,
   async fetch(req) {
     const url = new URL(req.url);
     if (url.pathname === "/health") {
@@ -30,6 +32,9 @@ Bun.serve({
     }
     if (url.pathname === "/render/diagram" && req.method === "POST") {
       return renderDiagram(req);
+    }
+    if (url.pathname === "/render/image" && req.method === "POST") {
+      return renderImage(req, Number(url.searchParams.get("width")));
     }
     return new Response("not found", { status: 404 });
   },
@@ -56,6 +61,20 @@ async function renderDiagram(req: Request): Promise<Response> {
     }
     console.error("diagram render failed", err);
     return Response.json({ error: "the worker could not draw it" }, { status: 500 });
+  }
+}
+
+async function renderImage(req: Request, width: number): Promise<Response> {
+  try {
+    const bytes = new Uint8Array(await req.arrayBuffer());
+    const out = await shrink(bytes, width);
+    return new Response(out, { headers: { "content-type": "image/webp" } });
+  } catch (err) {
+    if (err instanceof ImageError) {
+      return new Response(err.message, { status: 422 });
+    }
+    console.error("image shrink failed", err);
+    return new Response("the worker could not shrink it", { status: 500 });
   }
 }
 
