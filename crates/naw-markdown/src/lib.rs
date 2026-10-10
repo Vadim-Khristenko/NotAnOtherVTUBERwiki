@@ -50,7 +50,7 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
 
     let options = parser_options();
 
-    let (without_blocks, blocks) = extract_custom_blocks(markdown, state);
+    let without_blocks = extract_custom_blocks(markdown, state, 0);
     // pulldown-cmark hardwires `__` to `<strong>`.
     let mapped = map_double_underscore_to_italic(&without_blocks);
     let mapped = escape_wikilink_pipes_in_table_rows(&mapped);
@@ -180,8 +180,7 @@ fn render_html_with_depth(markdown: &str, depth: usize, state: &mut BlockState) 
     pulldown_cmark::html::push_html(&mut dirty, parser);
     // A paragraph that held only category links is left empty.
     let dirty = drop_empty_paragraphs(&dirty);
-    let dirty = restore_timeline_pieces(&dirty, state);
-    let dirty = restore_custom_blocks(&dirty, blocks, depth, state);
+    let dirty = restore_block_pieces(&dirty, state);
     let dirty = postprocess_diagrams(&dirty);
     // Runs on HTML, so inner formatting survives inside the wrappers.
     let mut dirty = postprocess_inline_spans(&dirty);
@@ -532,14 +531,6 @@ fn small_font(value: &str) -> bool {
         .is_ok_and(|n| n > 0.0 && n <= limit)
 }
 
-/// A `:::details`, `:::pullquote` or `>!` block, replaced by a placeholder
-/// paragraph while Markdown runs.
-struct CustomBlock {
-    kind: BlockKind,
-    title: String,
-    body: String,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BlockKind {
     Details,
@@ -552,18 +543,20 @@ enum BlockKind {
 /// Rows in one infobox; past it the lines stay Markdown.
 const INFOBOX_ROWS_MAX: usize = 100;
 
-/// Custom blocks per document, nesting included. Each renders through the
-/// whole pipeline, so the count is bounded.
+/// Custom blocks per document, nesting included.
 const BLOCK_MAX: usize = 256;
+
+/// How deep blocks may sit inside blocks; deeper fences stay text.
+const BLOCK_DEPTH_MAX: usize = 8;
 
 /// Shared by every nesting level of one render.
 struct BlockState {
     /// `NAWBLOCK` plus a hash of the document, which the document cannot contain,
-    /// so an author can never type a placeholder.
+    /// so an author can never type a marker.
     tag: String,
     /// Blocks the document may still open; past it, fences stay text.
     left: usize,
-    /// HTML for timeline markers, see [`emit_timeline`].
+    /// The HTML each marker stands for, see [`restore_block_pieces`].
     pieces: Vec<String>,
 }
 
@@ -580,17 +573,29 @@ impl BlockState {
         }
     }
 
-    fn placeholder(&self, idx: usize) -> String {
-        format!("{}{idx}NAW", self.tag)
+    /// A marker paragraph that becomes `html`. With `text`, the marker opens
+    /// the paragraph instead: `html` must end in an opening `<p ...>`, and
+    /// the text, rendered as Markdown, stays inside it.
+    fn piece(&mut self, html: String, text: &str, out: &mut Vec<String>) {
+        let marker = format!("{}T{}NAW", self.tag, self.pieces.len());
+        self.pieces.push(html);
+        out.push(if text.is_empty() {
+            marker
+        } else {
+            format!("{marker} {text}")
+        });
+        out.push(String::new());
     }
 }
 
-/// Pulls custom blocks out of the Markdown so the parser never sees their
-/// markers. Unclosed fences stay literal.
-fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec<CustomBlock>) {
+/// Lays custom blocks out for the main Markdown pass: their text stays in
+/// the document, and marker paragraphs stand where their HTML goes. So
+/// footnotes, links and headings inside a block work as anywhere else, and
+/// a footnote in a card is numbered with the rest of the page. Unclosed
+/// fences, and fences inside code, stay literal.
+fn extract_custom_blocks(markdown: &str, state: &mut BlockState, depth: usize) -> String {
     let lines: Vec<&str> = markdown.split('\n').collect();
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
-    let mut blocks: Vec<CustomBlock> = Vec::new();
     let mut closers_left = true;
     // The code fence the line is inside: its character and length. A block
     // shown as an example in a code fence stays text.
@@ -647,33 +652,26 @@ fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec
                 i += 1;
                 continue;
             };
-            if state.left == 0 {
+            if state.left == 0 || depth >= BLOCK_DEPTH_MAX {
                 out.push(escape_fence(lines[i]));
                 out.extend(lines[i + 1..j].iter().map(|line| line.to_string()));
                 out.push(escape_fence(lines[j]));
                 i = j + 1;
                 continue;
             }
-            if kind == BlockKind::Timeline {
-                out.extend(emit_timeline(&title, &lines[i + 1..j], state));
-                state.left -= 1;
-                i = j + 1;
-                continue;
-            }
-            let idx = blocks.len();
-            blocks.push(CustomBlock {
-                kind,
-                title,
-                body: lines[i + 1..j].join("\n"),
-            });
             state.left -= 1;
             out.push(String::new());
-            out.push(state.placeholder(idx));
-            out.push(String::new());
+            let body = &lines[i + 1..j];
+            match kind {
+                BlockKind::Timeline => out.extend(emit_timeline(&title, body, state)),
+                BlockKind::Infobox => out.extend(emit_infobox(&title, body, state, depth)),
+                _ => out.extend(emit_wrapped(kind, &title, &body.join("\n"), state, depth)),
+            }
             i = j + 1;
             continue;
         }
         if state.left > 0
+            && depth < BLOCK_DEPTH_MAX
             && let Some(summary) = parse_collapsible_opener(lines[i])
         {
             let mut body: Vec<String> = Vec::new();
@@ -688,23 +686,151 @@ fn extract_custom_blocks(markdown: &str, state: &mut BlockState) -> (String, Vec
                 }
                 j += 1;
             }
-            let idx = blocks.len();
-            blocks.push(CustomBlock {
-                kind: BlockKind::CollapsibleQuote,
-                title: summary,
-                body: body.join("\n"),
-            });
             state.left -= 1;
             out.push(String::new());
-            out.push(state.placeholder(idx));
-            out.push(String::new());
+            out.extend(emit_wrapped(
+                BlockKind::CollapsibleQuote,
+                &summary,
+                &body.join("\n"),
+                state,
+                depth,
+            ));
             i = j;
             continue;
         }
         out.push(lines[i].to_string());
         i += 1;
     }
-    (out.join("\n"), blocks)
+    out.join("\n")
+}
+
+/// A block that wraps its body: details, a pullquote, a collapsible quote.
+/// The body is laid out again, so blocks inside it work too.
+fn emit_wrapped(
+    kind: BlockKind,
+    title: &str,
+    body: &str,
+    state: &mut BlockState,
+    depth: usize,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let summary = naw_core::html::escape(title);
+    let empty = body.trim().is_empty();
+    let (open, close) = match kind {
+        BlockKind::Details | BlockKind::CollapsibleQuote if empty => {
+            let class = if kind == BlockKind::Details {
+                "details"
+            } else {
+                "quote"
+            };
+            state.piece(
+                format!("<details class=\"{class}\"><summary>{summary}</summary></details>"),
+                "",
+                &mut out,
+            );
+            return out;
+        }
+        BlockKind::Details => (
+            format!("<details class=\"details\"><summary>{summary}</summary>"),
+            "</details>",
+        ),
+        BlockKind::CollapsibleQuote => (
+            format!("<details class=\"quote\"><summary>{summary}</summary><blockquote>"),
+            "</blockquote></details>",
+        ),
+        BlockKind::Pullquote => (
+            "<figure class=\"pullquote\"><blockquote>".to_string(),
+            "</blockquote></figure>",
+        ),
+        BlockKind::Infobox | BlockKind::Timeline => unreachable!("laid out by their own emitters"),
+    };
+    state.piece(open, "", &mut out);
+    if !empty {
+        out.push(extract_custom_blocks(body, state, depth + 1));
+        out.push(String::new());
+    }
+    state.piece(close.to_string(), "", &mut out);
+    out
+}
+
+/// A side card: runs of `Key = value` rows become a definition list, and
+/// any other lines stay Markdown where they stand. A card with no title, no
+/// filled row and no text leaves nothing: a page begun from a template has
+/// every field empty.
+fn emit_infobox(title: &str, body: &[&str], state: &mut BlockState, depth: usize) -> Vec<String> {
+    enum Part<'a> {
+        Rows(Vec<(&'a str, &'a str)>),
+        Prose(Vec<&'a str>),
+    }
+    let mut parts: Vec<Part> = Vec::new();
+    let mut row_count = 0;
+    let mut in_fence = false;
+    for &line in body {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+        }
+        let row = infobox_row(line).filter(|_| !in_fence && row_count < INFOBOX_ROWS_MAX);
+        match (row, parts.last_mut()) {
+            // An empty value leaves the row out, so optional fields vanish.
+            (Some((_, "")), _) => {}
+            (Some(row), Some(Part::Rows(rows))) => {
+                rows.push(row);
+                row_count += 1;
+            }
+            (Some(row), _) => {
+                parts.push(Part::Rows(vec![row]));
+                row_count += 1;
+            }
+            (None, Some(Part::Prose(lines))) => lines.push(line),
+            (None, _) => parts.push(Part::Prose(vec![line])),
+        }
+    }
+    let title = title.trim();
+    let has_content = !title.is_empty()
+        || parts.iter().any(|part| match part {
+            Part::Rows(rows) => !rows.is_empty(),
+            Part::Prose(lines) => lines.iter().any(|l| !l.trim().is_empty()),
+        });
+    let mut out = Vec::new();
+    if !has_content {
+        return out;
+    }
+    let mut open = String::from("<aside class=\"infobox\">");
+    if !title.is_empty() {
+        open.push_str("<p class=\"infobox-title\">");
+        open.push_str(&naw_core::html::escape(title));
+        open.push_str("</p>");
+    }
+    state.piece(open, "", &mut out);
+    for part in parts {
+        match part {
+            Part::Prose(lines) => {
+                let text = lines.join("\n");
+                if !text.trim().is_empty() {
+                    out.push(extract_custom_blocks(&text, state, depth + 1));
+                    out.push(String::new());
+                }
+            }
+            Part::Rows(rows) => {
+                state.piece("<dl class=\"infobox-rows\">".into(), "", &mut out);
+                for (key, value) in rows {
+                    state.piece(
+                        format!(
+                            "<div><dt>{}</dt><dd><p class=\"infobox-value\">",
+                            naw_core::html::escape(key)
+                        ),
+                        value,
+                        &mut out,
+                    );
+                    state.piece("</dd></div>".into(), "", &mut out);
+                }
+                state.piece("</dl>".into(), "", &mut out);
+            }
+        }
+    }
+    state.piece("</aside>".into(), "", &mut out);
+    out
 }
 
 /// The run of backticks or tildes a code fence line starts with, three or
@@ -746,73 +872,6 @@ fn strip_quote_prefix(line: &str) -> Option<&str> {
         return None;
     }
     Some(rest.strip_prefix(' ').unwrap_or(rest))
-}
-
-/// Swaps placeholders for rendered blocks in one pass. Titles stay escaped
-/// text, and each block is used once.
-fn restore_custom_blocks(
-    html: &str,
-    blocks: Vec<CustomBlock>,
-    depth: usize,
-    state: &mut BlockState,
-) -> String {
-    // Only the paragraph form, so a placeholder in a code span never matches.
-    let open = format!("<p>{}", state.tag);
-    let mut slots: Vec<Option<CustomBlock>> = blocks.into_iter().map(Some).collect();
-    let mut out = String::with_capacity(html.len());
-    let mut rest = html;
-    while let Some(pos) = rest.find(&open) {
-        out.push_str(&rest[..pos]);
-        let after = &rest[pos + open.len()..];
-        let digits = after.bytes().take_while(u8::is_ascii_digit).count();
-        let block = after[digits..]
-            .strip_prefix("NAW</p>")
-            .and_then(|_| after[..digits].parse::<usize>().ok())
-            .and_then(|idx| slots.get_mut(idx)?.take());
-        match block {
-            Some(block) => {
-                out.push_str(&render_block(&block, depth, state));
-                rest = &after[digits + "NAW</p>".len()..];
-            }
-            None => {
-                out.push_str(&open);
-                rest = after;
-            }
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
-fn render_block(block: &CustomBlock, depth: usize, state: &mut BlockState) -> String {
-    if block.kind == BlockKind::Infobox {
-        return render_infobox(block, depth, state);
-    }
-    let body = if block.body.trim().is_empty() {
-        String::new()
-    } else {
-        render_html_with_depth(&block.body, depth + 1, state)
-    };
-    let details = |class: &str, inner: String| {
-        let summary = naw_core::html::escape(&block.title);
-        if inner.is_empty() {
-            format!("<details class=\"{class}\"><summary>{summary}</summary></details>")
-        } else {
-            format!("<details class=\"{class}\"><summary>{summary}</summary>\n{inner}\n</details>")
-        }
-    };
-    match block.kind {
-        BlockKind::Details => details("details", body),
-        BlockKind::Pullquote => {
-            format!("<figure class=\"pullquote\"><blockquote>\n{body}\n</blockquote></figure>")
-        }
-        BlockKind::CollapsibleQuote if body.is_empty() => details("quote", body),
-        BlockKind::CollapsibleQuote => {
-            details("quote", format!("<blockquote>\n{body}\n</blockquote>"))
-        }
-        BlockKind::Infobox => unreachable!("rendered by render_infobox"),
-        BlockKind::Timeline => unreachable!("laid out by emit_timeline"),
-    }
 }
 
 /// Events in one timeline; past it the lines stay part of the last event.
@@ -973,10 +1032,10 @@ fn emit_timeline(title: &str, body: &[&str], state: &mut BlockState) -> Vec<Stri
     out
 }
 
-/// Puts the HTML pieces of timelines in place of their marker paragraphs. A
+/// Puts the HTML pieces of blocks in place of their marker paragraphs. A
 /// bare marker paragraph becomes its piece; a marker that starts a paragraph
 /// becomes the piece's opening tag, and the paragraph's text stays inside it.
-fn restore_timeline_pieces(html: &str, state: &BlockState) -> String {
+fn restore_block_pieces(html: &str, state: &BlockState) -> String {
     if state.pieces.is_empty() {
         return html.to_string();
     }
@@ -1008,6 +1067,42 @@ fn restore_timeline_pieces(html: &str, state: &BlockState) -> String {
         }
     }
     out.push_str(rest);
+    unwrap_infobox_values(&out)
+}
+
+/// An infobox value is one paragraph, laid out that way for the main pass;
+/// in the card its paragraph would only add a margin, so `<dd>` holds the
+/// text itself.
+fn unwrap_infobox_values(html: &str) -> String {
+    const OPEN: &str = "<dd><p class=\"infobox-value\">";
+    if !html.contains(OPEN) {
+        return html.to_string();
+    }
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = rest.find(OPEN) {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + OPEN.len()..];
+        let Some(close) = after.find("</p>") else {
+            out.push_str(&rest[at..]);
+            rest = "";
+            break;
+        };
+        let tail = after[close + 4..].trim_start_matches('\n');
+        match tail.strip_prefix("</dd>") {
+            Some(after_dd) => {
+                out.push_str("<dd>");
+                out.push_str(&after[..close]);
+                out.push_str("</dd>");
+                rest = after_dd;
+            }
+            None => {
+                out.push_str(OPEN);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
     out
 }
 
@@ -1023,87 +1118,6 @@ fn infobox_row(line: &str) -> Option<(&str, &str)> {
         && !key.starts_with(['#', '!', '>', '-', '*', '|', '+'])
         && !key.contains(['[', ']', '(', ')', '`', '*', '_', '<']);
     plain.then(|| (key, value.trim()))
-}
-
-/// A side card: runs of rows become a definition list, and any other lines
-/// render as Markdown where they stand.
-fn render_infobox(block: &CustomBlock, depth: usize, state: &mut BlockState) -> String {
-    enum Part<'a> {
-        Rows(Vec<(&'a str, &'a str)>),
-        Prose(Vec<&'a str>),
-    }
-    let mut parts: Vec<Part> = Vec::new();
-    let mut row_count = 0;
-    let mut in_fence = false;
-    for line in block.body.split('\n') {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            in_fence = !in_fence;
-        }
-        let row = infobox_row(line).filter(|_| !in_fence && row_count < INFOBOX_ROWS_MAX);
-        match (row, parts.last_mut()) {
-            // An empty value leaves the row out, so optional fields vanish.
-            (Some((_, "")), _) => {}
-            (Some(row), Some(Part::Rows(rows))) => {
-                rows.push(row);
-                row_count += 1;
-            }
-            (Some(row), _) => {
-                parts.push(Part::Rows(vec![row]));
-                row_count += 1;
-            }
-            (None, Some(Part::Prose(lines))) => lines.push(line),
-            (None, _) => parts.push(Part::Prose(vec![line])),
-        }
-    }
-
-    // A card with no title, no filled row and no text shows nothing, not an
-    // empty frame: a page begun from a template has every field empty.
-    let has_content = !block.title.trim().is_empty()
-        || parts.iter().any(|part| match part {
-            Part::Rows(rows) => !rows.is_empty(),
-            Part::Prose(lines) => lines.iter().any(|l| !l.trim().is_empty()),
-        });
-    if !has_content {
-        return String::new();
-    }
-    let mut out = String::from("<aside class=\"infobox\">");
-    if !block.title.trim().is_empty() {
-        out.push_str("<p class=\"infobox-title\">");
-        out.push_str(&naw_core::html::escape(block.title.trim()));
-        out.push_str("</p>");
-    }
-    for part in parts {
-        match part {
-            Part::Prose(lines) => {
-                let text = lines.join("\n");
-                if !text.trim().is_empty() {
-                    out.push_str(&render_html_with_depth(&text, depth + 1, state));
-                }
-            }
-            Part::Rows(rows) => {
-                out.push_str("<dl class=\"infobox-rows\">");
-                for (key, value) in rows {
-                    let html = render_html_with_depth(value, depth + 1, state);
-                    let html = html.trim();
-                    // One paragraph is the usual value; its wrapper would add a margin.
-                    let inner = html
-                        .strip_prefix("<p>")
-                        .and_then(|rest| rest.strip_suffix("</p>"))
-                        .filter(|inner| !inner.contains("<p>"))
-                        .unwrap_or(html);
-                    out.push_str("<div><dt>");
-                    out.push_str(&naw_core::html::escape(key));
-                    out.push_str("</dt><dd>");
-                    out.push_str(inner);
-                    out.push_str("</dd></div>");
-                }
-                out.push_str("</dl>");
-            }
-        }
-    }
-    out.push_str("</aside>");
-    out
 }
 
 /// In a table row a bare `|` ends the cell, so `[[target|text]]` would be cut
@@ -2241,7 +2255,7 @@ fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 24;
+pub const RENDERER_VERSION: i32 = 25;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -2665,6 +2679,44 @@ mod tests {
     fn timeline_titles_are_text() {
         let html = render_html(":::timeline <b>x</b>\n2020 | <script>y</script>\n:::\n");
         assert!(!html.contains("<b>") && !html.contains("<script"), "{html}");
+    }
+
+    #[test]
+    fn footnotes_inside_blocks_are_numbered_with_the_page() {
+        let html = render_html(
+            "First.[^a]\n\n:::details More\nIn details.[^b]\n\n>! A quote\n> Quoted.[^c]\n:::\n\n\
+             :::infobox Card\nDebut = 2021[^d]\n:::\n\n:::pullquote\nSaid.[^e]\n:::\n\n\
+             [^a]: A.\n[^b]: B.\n[^c]: C.\n[^d]: D.\n[^e]: E.\n",
+        );
+        assert!(!html.contains("[^"), "{html}");
+        assert!(!html.contains("NAWBLOCK"), "{html}");
+        for (label, n) in [("a", 1), ("b", 2), ("c", 3), ("d", 4), ("e", 5)] {
+            assert!(
+                html.contains(&format!(
+                    "<a href=\"#fn-{label}\" rel=\"noopener noreferrer\">{n}</a>"
+                )),
+                "{label} -> {n}: {html}"
+            );
+        }
+        assert!(
+            html.contains("<details class=\"details\"><summary>More</summary>"),
+            "{html}"
+        );
+        assert!(
+            html.contains("<details class=\"quote\"><summary>A quote</summary><blockquote>"),
+            "{html}"
+        );
+        assert!(html.contains("<dt>Debut</dt><dd>2021<sup"), "{html}");
+        assert!(
+            html.contains("<figure class=\"pullquote\"><blockquote>"),
+            "{html}"
+        );
+        // one list of notes, at the end
+        assert_eq!(
+            html.matches("<div class=\"footnotes\">").count(),
+            1,
+            "{html}"
+        );
     }
 
     #[test]
