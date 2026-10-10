@@ -215,9 +215,11 @@ The part that makes it a wiki rather than a blog.
 - [x] One template code for every language: the main version holds it, a translation
       brings only its documentation and `<labels>`, read by `{{#label:key|Default}}`.
       A translation with code, or a main version that calls itself, is refused on save
-- [x] HTML from a fixed list of tags in pages and templates, with `style` limited to looks
-      (colors, borders, shadows, fonts within reason, spacing); scripts, frames, forms and
-      positioning are dropped
+- [x] HTML from a fixed list of tags in pages and templates, among them section, header,
+      footer, headings, time, progress and meter, and `style` for looks and layout inside
+      the element: flex, grid, gradients, sizes, columns. Scripts, frames, forms,
+      positioning and transforms are dropped. The skin draws card, grid, badge and stat
+      classes for templates to use
 - [x] Paths the engine uses itself (`admin`, `account`, `search`, `drafts` and so on)
       and language codes refused as page addresses, with the author's text kept
 - [x] Reports: mistakes, complaints and suggested changes, a moderators' queue, and the
@@ -268,7 +270,10 @@ see all fifty update without a deploy and without a full cache flush.
 
 The feature that puts us ahead of every self hosted wiki.
 
-- `Module:` namespace, with Vue SFC and plain TypeScript flavours, immutable versions
+- [x] Server modules: a page at `module:name` holds JavaScript that `:::Module:Name:function`
+      runs before the page renders, with the wiki's live statistics, the page and the call's
+      arguments, in a sandboxed engine (boa) with no files, network or database. Admins edit
+      them. Still to come: Vue SFC components, immutable versions
 - The worker: SFC compilation, rolldown bundling, dual SSR and client bundles, SRI hashes
 - Worker protocol: JSON over a local socket, timeouts, crash isolation, no credentials
 - Plain TypeScript fallback in an embedded engine, for installs with no worker
@@ -378,8 +383,10 @@ The things that decide whether anyone finds the wiki.
       article's first picture. Generated share images are still to do
 - [x] `sitemap.xml` with every language of every article, `robots.txt`, canonical URLs on
       the wiki's own domain, `hreflang`, and `noindex` on every page that is a tool
-- Antispam: registration CAPTCHA, external link limits, new user heuristics. Address
-  blocks (read, never write) and a rate limit per address are in
+- Antispam: new accounts wait before their first edit and may add few outside links and
+  start few pages a day, until they are four days old with ten accepted edits; every number
+  is a wiki limit. Address blocks (read, never write) and a rate limit per address are in.
+  A registration CAPTCHA is not
 - [x] The wiki's documents: Terms of use and Privacy policy only admins edit, consent at
       sign-in, versions with a one-time notice on change, and account deletion in three
       steps (account and profile, also files, also text)
