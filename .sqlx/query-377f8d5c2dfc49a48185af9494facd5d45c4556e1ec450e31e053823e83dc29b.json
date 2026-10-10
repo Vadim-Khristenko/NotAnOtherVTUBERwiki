@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH next AS MATERIALIZED (\n               SELECT source_key, width FROM image_variants WHERE status = 'pending'\n               ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)\n           UPDATE image_variants v SET status = 'rendering', claimed_at = now(), attempts = v.attempts + 1\n           FROM next\n           WHERE v.source_key = next.source_key AND v.width = next.width\n           RETURNING v.source_key, v.width, v.attempts",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "image_variants",
+            "name": "source_key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "image_variants",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "image_variants",
+            "name": "attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "377f8d5c2dfc49a48185af9494facd5d45c4556e1ec450e31e053823e83dc29b"
+}

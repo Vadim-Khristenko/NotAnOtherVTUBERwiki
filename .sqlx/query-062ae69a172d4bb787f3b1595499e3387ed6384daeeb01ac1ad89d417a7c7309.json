@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE image_variants SET status = 'pending'\n         WHERE status = 'rendering' AND claimed_at < now() - make_interval(secs => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "062ae69a172d4bb787f3b1595499e3387ed6384daeeb01ac1ad89d417a7c7309"
+}

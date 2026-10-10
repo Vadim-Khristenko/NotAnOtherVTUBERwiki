@@ -67,6 +67,7 @@ mod source;
 mod system;
 mod telegram;
 mod templates;
+mod thumbs;
 mod translate;
 
 /// Starts the work that runs beside the server: the metrics writer and the
@@ -77,6 +78,7 @@ pub fn start_background(state: AppState) {
     telegram::start(state.clone());
     discord::start(state.clone());
     diagrams::start(state.clone());
+    thumbs::start(state.clone());
     tokio::spawn(bots::forward_loop(state));
 }
 
@@ -271,6 +273,7 @@ fn routes(state: AppState) -> Router {
         )
         .route("/media/import", post(media::import_url))
         .route("/media/diagrams/{file}", get(diagrams::serve))
+        .route("/media/thumbs/{file}", get(thumbs::serve))
         .route("/media/{prefix}/{file}", get(media::serve))
         .route("/user/{name}", get(profile::show))
         .route(

@@ -288,6 +288,7 @@ pub async fn revision(
     let rendered = naw_markdown::render_body(&expanded.text);
     let body_html = crate::emotes::expand(&state, ctx.wiki.id, rendered.html).await?;
     let body_html = crate::diagrams::expand(&state, &ctx, body_html, false).await?;
+    let body_html = crate::thumbs::expand(&state, body_html).await?;
     let html = pages::render_shell(
         &ctx,
         &pages::Shell {

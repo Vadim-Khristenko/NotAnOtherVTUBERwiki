@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE image_variants SET status = 'ready', bytes = $3, error = NULL, rendered_at = now()\n                 WHERE source_key = $1 AND width = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "770bd4e226f543d9e53f9f2366c1bf51567475079cb8bc6223dfaa41e4ceaadc"
+}
