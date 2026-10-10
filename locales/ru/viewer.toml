@@ -1,0 +1,16 @@
+# Russian interface messages: viewer.
+#
+# Keys here are asked for as viewer.<key>. The file name is the prefix.
+# Просмотрщик, который открывается по нажатию на картинку или диаграмму.
+
+label = "Просмотр изображения"
+zoom_in = "Приблизить"
+zoom_out = "Отдалить"
+reset = "Вписать в экран"
+rotate_left = "Повернуть влево"
+rotate_right = "Повернуть вправо"
+fullscreen = "На весь экран"
+open_file = "Страница файла"
+open_original = "Открыть оригинал"
+close = "Закрыть"
+hint = "Колёсико или щипок, чтобы приблизить, перетаскивание, чтобы двигать"

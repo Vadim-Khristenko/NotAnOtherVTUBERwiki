@@ -210,13 +210,16 @@ pub(crate) async fn expand(
         };
         out.push_str(&html[last..fence.start]);
         out.push_str("<figure class=\"diagram\">");
-        for (theme, drawing, label) in [("light", light, alt.as_str()), ("dark", dark, "")] {
+        // Each drawing links to its SVG, so without script a click still
+        // opens it at full size; the skin's viewer takes the click over.
+        // Only one theme shows, so both carry the same alt text.
+        for (theme, drawing) in [("light", light), ("dark", dark)] {
             out.push_str(&format!(
-                "<img class=\"diagram-{theme}\" src=\"/media/diagrams/{}-{theme}.svg\" width=\"{}\" height=\"{}\" alt=\"{}\" loading=\"lazy\" decoding=\"async\">",
-                fence.hash,
+                "<a class=\"diagram-open diagram-{theme}\" href=\"/media/diagrams/{hash}-{theme}.svg\"><img src=\"/media/diagrams/{hash}-{theme}.svg\" width=\"{}\" height=\"{}\" alt=\"{}\" loading=\"lazy\" decoding=\"async\"></a>",
                 drawing.width,
                 drawing.height,
-                naw_core::html::escape(label)
+                naw_core::html::escape(&alt),
+                hash = fence.hash,
             ));
         }
         out.push_str("<details class=\"diagram-source\"><summary>");

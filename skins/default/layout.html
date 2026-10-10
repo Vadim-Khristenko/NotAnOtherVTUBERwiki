@@ -669,6 +669,7 @@ span.math { font-family: var(--font-mono); background: var(--surface-sunken); pa
    matches. The images are pictures, so they cannot read the page's theme. */
 .content figure.diagram { margin: var(--s4) 0; overflow-x: auto; }
 .content figure.diagram img { display: block; border-radius: 0; margin: 0 auto; }
+.content figure.diagram .diagram-light { display: block; }
 .content figure.diagram .diagram-dark { display: none; }
 html[data-theme="dark"] .content figure.diagram .diagram-light { display: none; }
 html[data-theme="dark"] .content figure.diagram .diagram-dark { display: block; }
@@ -678,6 +679,34 @@ html[data-theme="dark"] .content figure.diagram .diagram-dark { display: block; 
 }
 .content .diagram-source { margin-top: var(--s2); font-size: 0.85rem; }
 .content .diagram-source summary { color: var(--muted); cursor: pointer; }
+
+/* The picture viewer (scripts/viewer.js). The picture sits in the middle of
+   the stage and moves by transform only, so zoom and pan stay smooth. */
+.content img.viewer-zoomable { cursor: zoom-in; }
+html.viewer-open { overflow: hidden; }
+.viewer { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: rgb(8 6 14 / 0.92); backdrop-filter: blur(6px); color: #f3f1f8; animation: viewer-in 140ms ease-out; }
+.viewer[hidden] { display: none; }
+.viewer-stage { position: relative; flex: 1; overflow: hidden; cursor: grab; touch-action: none; }
+.viewer-stage:active { cursor: grabbing; }
+.viewer-img { position: absolute; left: 50%; top: 50%; max-width: none; max-height: none; transform-origin: center; user-select: none; -webkit-user-drag: none; transition: transform 90ms ease-out; will-change: transform; }
+.viewer-bar { position: absolute; left: 50%; bottom: max(var(--s4), env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 6px; border-radius: 999px; background: rgb(24 20 34 / 0.86); border: 1px solid rgb(255 255 255 / 0.12); box-shadow: 0 10px 30px rgb(0 0 0 / 0.45); max-width: calc(100vw - 24px); overflow-x: auto; }
+.viewer-button { display: inline-flex; align-items: center; gap: 6px; min-width: 40px; height: 40px; padding: 0 10px; justify-content: center; border: 0; border-radius: 999px; background: transparent; color: inherit; font: inherit; font-size: 0.85rem; text-decoration: none; cursor: pointer; white-space: nowrap; }
+.viewer-button:hover, .viewer-button:focus-visible { background: rgb(255 255 255 / 0.12); color: #fff; }
+.viewer-button:focus-visible { outline: 2px solid var(--accent, #ff5fa2); outline-offset: 1px; }
+.viewer-button[hidden] { display: none; }
+.viewer-button .icon { width: 20px; height: 20px; }
+.viewer-close { background: rgb(255 255 255 / 0.08); }
+.viewer-zoom { min-width: 3.6em; text-align: center; font-variant-numeric: tabular-nums; font-size: 0.85rem; opacity: 0.85; }
+.viewer-sep { width: 1px; height: 22px; margin: 0 4px; background: rgb(255 255 255 / 0.16); }
+.viewer-caption { position: absolute; top: var(--s3); left: 50%; transform: translateX(-50%); max-width: min(90vw, 60rem); margin: 0; padding: 6px 14px; border-radius: 999px; background: rgb(24 20 34 / 0.7); font-size: 0.9rem; text-align: center; }
+.viewer-caption:empty { display: none; }
+@media (max-width: 560px) {
+  .viewer-file span, .viewer-zoom, .viewer-sep { display: none; }
+  .viewer-bar { gap: 0; padding: 4px; }
+  .viewer-button { min-width: 34px; height: 36px; padding: 0 7px; }
+}
+@media (prefers-reduced-motion: reduce) { .viewer, .viewer-img { animation: none; transition: none; } }
+@keyframes viewer-in { from { opacity: 0; } to { opacity: 1; } }
 .content a.file-link { display: inline-block; }
 /* ---------------------------------------------------------------------------
  * Landing
@@ -1334,6 +1363,30 @@ details[open] > summary .eb-chevron { transform: rotate(180deg); }
    with tables and needs the width. #}
 <main class="{% block main_class %}content{% endblock %}" id="content" data-img-missing="{{ t('file.unavailable') }}">{% block body %}{% endblock %}</main>
 {% include "_footer.html" %}
+{# The picture viewer (scripts/viewer.js). Rendered here so its words are
+   translated and its icons come from the sprite; inert until a click. #}
+<template id="viewer-template">
+<div class="viewer" role="dialog" aria-modal="true" aria-label="{{ t('viewer.label') }}" hidden>
+  <div class="viewer-stage" title="{{ t('viewer.hint') }}"><img class="viewer-img" alt="" draggable="false" /></div>
+  <div class="viewer-bar" role="toolbar" aria-label="{{ t('viewer.label') }}">
+    <button type="button" class="viewer-button" data-act="zoom-out" title="{{ t('viewer.zoom_out') }}" aria-label="{{ t('viewer.zoom_out') }}"><svg class="icon" aria-hidden="true"><use href="#i-zoom-out" /></svg></button>
+    <output class="viewer-zoom" aria-live="polite">100%</output>
+    <button type="button" class="viewer-button" data-act="zoom-in" title="{{ t('viewer.zoom_in') }}" aria-label="{{ t('viewer.zoom_in') }}"><svg class="icon" aria-hidden="true"><use href="#i-zoom-in" /></svg></button>
+    <button type="button" class="viewer-button" data-act="reset" title="{{ t('viewer.reset') }}" aria-label="{{ t('viewer.reset') }}"><svg class="icon" aria-hidden="true"><use href="#i-zoom-reset" /></svg></button>
+    <span class="viewer-sep" aria-hidden="true"></span>
+    <button type="button" class="viewer-button" data-act="rotate-left" title="{{ t('viewer.rotate_left') }}" aria-label="{{ t('viewer.rotate_left') }}"><svg class="icon" aria-hidden="true"><use href="#i-rotate" /></svg></button>
+    <button type="button" class="viewer-button" data-act="rotate-right" title="{{ t('viewer.rotate_right') }}" aria-label="{{ t('viewer.rotate_right') }}"><svg class="icon" aria-hidden="true"><use href="#i-rotate-clockwise" /></svg></button>
+    <button type="button" class="viewer-button" data-act="fullscreen" title="{{ t('viewer.fullscreen') }}" aria-label="{{ t('viewer.fullscreen') }}"><svg class="icon" aria-hidden="true"><use href="#i-maximize" /></svg></button>
+    <span class="viewer-sep" aria-hidden="true"></span>
+    <a class="viewer-button viewer-file" href="#" title="{{ t('viewer.open_file') }}"><svg class="icon" aria-hidden="true"><use href="#i-file-info" /></svg><span>{{ t('viewer.open_file') }}</span></a>
+    <a class="viewer-button viewer-original" href="#" target="_blank" rel="noopener" title="{{ t('viewer.open_original') }}" aria-label="{{ t('viewer.open_original') }}"><svg class="icon" aria-hidden="true"><use href="#i-external-link" /></svg></a>
+    <button type="button" class="viewer-button viewer-close" data-act="close" title="{{ t('viewer.close') }}" aria-label="{{ t('viewer.close') }}"><svg class="icon" aria-hidden="true"><use href="#i-x" /></svg></button>
+  </div>
+  <p class="viewer-caption"></p>
+</div>
+</template>
+{% set viewer_js = asset("scripts/viewer.js") %}
+{% if viewer_js %}<script defer src="{{ viewer_js }}" nonce="{{ csp_nonce() }}"></script>{% endif %}
 {# Emote files stay in the browser (see /emote-cache.js). The version comes
    from the server and changes after an emote sync, so readers keep their copy
    until there is something new. A picture that fails to load is fetched once

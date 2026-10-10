@@ -1,0 +1,16 @@
+# English interface messages: viewer.
+#
+# Keys here are asked for as viewer.<key>. The file name is the prefix.
+# The picture viewer that opens when a reader clicks an image or a diagram.
+
+label = "Picture viewer"
+zoom_in = "Zoom in"
+zoom_out = "Zoom out"
+reset = "Fit to screen"
+rotate_left = "Rotate left"
+rotate_right = "Rotate right"
+fullscreen = "Full screen"
+open_file = "File page"
+open_original = "Open the original"
+close = "Close"
+hint = "Scroll or pinch to zoom, drag to move"
