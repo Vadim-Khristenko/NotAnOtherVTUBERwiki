@@ -184,6 +184,17 @@ limits! {
     /// Open reports one person may have on one wiki.
     reports_open_per_person: i64 = 20, 1, 500, Wiki;
 
+    /// Days an account counts as new; 0 turns the rules for new accounts off.
+    newcomer_days: i64 = 4, 0, 365, Wiki;
+    /// Accepted edits after which an account is no longer new, if it is old enough too.
+    newcomer_edits: i64 = 10, 0, 10000, Wiki;
+    /// Minutes a new account waits before its first edit.
+    newcomer_first_edit_minutes: i64 = 5, 0, 1440, Wiki;
+    /// Outside links one edit by a new account may add.
+    newcomer_links_per_edit: i64 = 3, 0, 1000, Wiki;
+    /// Pages a new account may start in a day.
+    newcomer_new_pages_per_day: i64 = 3, 1, 1000, Wiki;
+
     /// Uploads one person may make in a day, versions included.
     uploads_per_day: i64 = 300, 1, 100000, Lower;
     /// Bytes one person may upload in a day.

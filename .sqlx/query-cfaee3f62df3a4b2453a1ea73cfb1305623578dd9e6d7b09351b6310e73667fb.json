@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             (EXTRACT(EPOCH FROM now() - u.created_at) / 60)::bigint AS \"age_minutes!\",\n             (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id\n               WHERE p.wiki_id = $1 AND r.author_id = $2 AND r.review_status = 'accepted') AS \"accepted_edits!\",\n             (SELECT count(*) FROM pages p\n               WHERE p.wiki_id = $1 AND p.created_at > now() - interval '1 day'\n                 AND (SELECT r.author_id FROM revisions r WHERE r.page_id = p.id\n                      ORDER BY r.created_at LIMIT 1) = $2) AS \"pages_today!\"\n           FROM users u WHERE u.id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "age_minutes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "accepted_edits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "pages_today!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "cfaee3f62df3a4b2453a1ea73cfb1305623578dd9e6d7b09351b6310e73667fb"
+}

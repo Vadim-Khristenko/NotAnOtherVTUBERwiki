@@ -76,6 +76,11 @@ Wiki settings, Limits. The scope column says how:
 | `report_burst` | 5 | 1 to 100 | wiki | Reports one person may send in a burst |
 | `report_burst_minutes` | 10 | 1 to 1440 | wiki | How long a burst lasts |
 | `reports_open_per_person` | 20 | 1 to 500 | wiki | Open reports one person may have |
+| `newcomer_days` | 4 | 0 to 365 | wiki | Days an account counts as new; 0 turns the rules for new accounts off |
+| `newcomer_edits` | 10 | 0 to 10000 | wiki | Accepted edits after which an account is no longer new, if it is old enough too |
+| `newcomer_first_edit_minutes` | 5 | 0 to 1440 | wiki | Minutes a new account waits before its first edit |
+| `newcomer_links_per_edit` | 3 | 0 to 1000 | wiki | Outside links one edit by a new account may add |
+| `newcomer_new_pages_per_day` | 3 | 1 to 1000 | wiki | Pages a new account may start in a day |
 | `uploads_per_day` | 300 | 1 to 100000 | lower | Uploads one person may make in a day, versions included |
 | `upload_bytes_per_day` | 2 GiB | 16 MiB to 1024 GiB | lower | Bytes one person may upload in a day |
 | `file_note_chars` | 300 | 20 to 2000 | wiki | Longest note on a file version or hiding reason |

@@ -1,0 +1,8 @@
+# English interface messages: newcomer.
+#
+# Keys here are asked for as newcomer.<key>. The file name is the prefix.
+# Shown when a rule for new accounts holds an edit back.
+
+first_edit_wait = "New accounts wait a few minutes before their first edit, to keep spam bots out. Please try again in {minutes} min; your text is still in the form."
+too_many_links = "This edit adds {count} outside links, and a new account may add {limit} per edit. Remove some, or ask a curator for help."
+too_many_pages = "A new account may start {limit} pages a day, and you have reached that. You can still edit existing pages, or try again tomorrow."

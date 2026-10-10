@@ -1610,6 +1610,17 @@ pub async fn create_page(
     {
         return new_form_again(&ctx, &form, &slug, &message, false);
     }
+    if let Some(message) = crate::newcomer::refusal(
+        &state,
+        &ctx,
+        crate::newcomer::Change::Create {
+            body: &draft.body_md,
+        },
+    )
+    .await?
+    {
+        return new_form_again(&ctx, &form, &slug, &message, false);
+    }
 
     // The unique index is the real guard; this answers the common case, and an
     // archived slug stays taken so a restore lands on its own address.
@@ -1923,6 +1934,18 @@ pub async fn save_page(
     if let ("template", bare) = split_path(&slug)
         && let Some(message) =
             template_refusal(&state, &ctx, bare, &target_locale, &draft.body_md).await?
+    {
+        return edit_form_again(&ctx, &form, &slug, &found.title, &message);
+    }
+    if let Some(message) = crate::newcomer::refusal(
+        &state,
+        &ctx,
+        crate::newcomer::Change::Edit {
+            old: &found.body_md,
+            body: &draft.body_md,
+        },
+    )
+    .await?
     {
         return edit_form_again(&ctx, &form, &slug, &found.title, &message);
     }

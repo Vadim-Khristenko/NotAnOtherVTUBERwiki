@@ -348,6 +348,19 @@ pub async fn create(
         Err(reason) => return Ok(pages::bad_request(reason)),
     };
     draft.body_md = crate::media::localize(&state, &ctx, draft.body_md).await;
+    // A translation carries its source's links; only new ones count.
+    if let Some(message) = crate::newcomer::refusal(
+        &state,
+        &ctx,
+        crate::newcomer::Change::Edit {
+            old: &source.body_md,
+            body: &draft.body_md,
+        },
+    )
+    .await?
+    {
+        return Ok(pages::bad_request(&message));
+    }
     // The posted base revision if it belongs to the source, else the current one.
     let matched = match pages::parse_uuid(&form.base_revision) {
         Some(id) => sqlx::query_scalar!(

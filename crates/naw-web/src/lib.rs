@@ -47,6 +47,7 @@ mod metrics;
 mod monitoring;
 mod moving;
 mod net;
+mod newcomer;
 mod notify;
 mod observe;
 mod pages;
