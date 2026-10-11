@@ -173,7 +173,7 @@ fn tabs_galleries_and_switches() {
     let out = md("__NOTOC__\n<tabber>\nTwitch=Hi on Twitch\n|-|\nYouTube=Hi on YouTube\n</tabber>");
     assert_eq!(
         out,
-        ":::details Twitch\n\nHi on Twitch\n\n:::\n\n:::details YouTube\n\nHi on YouTube\n\n:::\n"
+        ":::tabs\n\n## Twitch\n\nHi on Twitch\n\n## YouTube\n\nHi on YouTube\n\n:::\n"
     );
     let gallery = md("<gallery>\nFile:A.png|First\nB.jpg\n</gallery>");
     assert_eq!(gallery, "![First](image:a.png)\n![](image:b.jpg)\n");
@@ -236,7 +236,7 @@ fn templates_the_engine_cannot_spell_are_renamed_and_tags_built() {
     );
     assert_eq!(
         md("{{#tag:tabber|Solo=One{{!}}-{{!}}Duo=Two}}"),
-        ":::details Solo\n\nOne\n\n:::\n\n:::details Duo\n\nTwo\n\n:::\n"
+        ":::tabs\n\n## Solo\n\nOne\n\n## Duo\n\nTwo\n\n:::\n"
     );
 }
 

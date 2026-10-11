@@ -69,7 +69,7 @@ keeps the authors' names; say on the wiki where its imported pages came from.
 | `<ref>`, `<references />`, `{{Reflist}}` | Footnotes, numbered in order, named ones reused |
 | `{{Template\|a=b}}`, `{{#if:}}`, `{{#switch:}}` | Kept as they are: the engine's templates take the same calls |
 | FANDOM portable infoboxes (`<infobox>`) | A `:::infobox` block; picture parameters in the calls become file addresses |
-| `<tabber>` | A `:::details` block per tab |
+| `<tabber>`, `{{#tag:tabber}}` | A `:::tabs` block, a `## Name` line per tab |
 | `<nowiki>`, `<pre>`, `<syntaxhighlight>`, `<code>`, `<math>` | Escaped text, code blocks, code, math |
 | `{{#ev:youtube\|id}}` | A link to the video |
 | `__TOC__` | `[[toc]]` |

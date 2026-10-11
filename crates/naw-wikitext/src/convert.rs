@@ -340,15 +340,22 @@ impl Cx<'_> {
             match tag.name.as_str() {
                 "tabber" => {
                     self.report.ok("tabs");
-                    for tab in content.split("|-|") {
+                    let opener = self.put_block(":::tabs".to_string());
+                    out.push_str(&opener);
+                    for (n, tab) in content.split("|-|").enumerate() {
                         let (name, body) = tab.split_once('=').unwrap_or(("", tab));
-                        let name = name.trim();
-                        let opener = self.put_block(format!(":::details {}", plain(name)));
-                        out.push_str(&opener);
+                        let name = plain(name.trim());
+                        let name = if name.is_empty() {
+                            (n + 1).to_string()
+                        } else {
+                            name
+                        };
+                        let title = self.put_block(format!("## {name}"));
+                        out.push_str(&title);
                         out.push_str(body.trim());
-                        let closer = self.put_block(":::".to_string());
-                        out.push_str(&closer);
                     }
+                    let closer = self.put_block(":::".to_string());
+                    out.push_str(&closer);
                 }
                 "gallery" => {
                     self.report.ok("gallery");
