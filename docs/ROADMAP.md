@@ -207,7 +207,10 @@ The part that makes it a wiki rather than a blog.
       another format of the same kind) shows everywhere the file is used, and an older one
       can be brought back. Readers report a file like a page; moderators hide it, admins
       delete it with its stored copies. Still to come: thumbnails in several sizes
-- The other namespaces (`Talk:`, `Category:`) and `Module:` for components
+- [x] Discussions instead of talk pages (see [discussions.md](discussions.md)): topics
+      with replies at `/<page>/talk`, a topic about one change showing its diff and a quote
+      from it, resolved and locked topics, `@name` mentions, notifications, and `/talk` for
+      the whole wiki. `category:` and `module:` are in; Vue components in `module:` are not
 - [x] Template fields as a strict YAML block inside the call, checked against the
       template's own `<params>` schema; the template's page lists the fields and ready
       examples. Still to come: an editor form built from the schema, and the values as
