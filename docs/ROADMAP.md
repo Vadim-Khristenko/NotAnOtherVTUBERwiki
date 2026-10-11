@@ -363,7 +363,10 @@ Make editing pleasant, without ever putting it on the reader path.
 - Per page layout overrides
 - Error page overrides: `errors/409_conflict`, `errors/404_not_found` and so on, per skin
   and per wiki, over the generic error page
-- Core component library: infobox, navbox, hatnote, tabs
+- [x] Core component library in Markdown: `:::infobox`, `:::navbox` at the foot of an
+      article, `:::hatnote` above the text, and `:::tabs`, which stand one after another
+      without scripts and become a row of tabs with one, keyboard included, and a
+      `#tab-name` address
 - [x] `Template:Infobox VTuber` as the first real template
 - `Module:StreamArchive` as the first real component
 - [x] 7TV emotes: admins add 7TV users or emote sets, which are the allowlist; each
