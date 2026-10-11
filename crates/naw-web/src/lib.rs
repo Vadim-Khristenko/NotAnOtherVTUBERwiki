@@ -28,6 +28,7 @@ mod csrf;
 mod diagrams;
 mod diff;
 mod discord;
+mod discuss;
 mod display_name;
 mod drafts;
 mod emotes;
@@ -296,6 +297,7 @@ fn routes(state: AppState) -> Router {
         .route("/discord/interactions", post(discord::interactions))
         .route("/notifications", get(notify::list))
         .route("/watchlist", get(notify::watchlist))
+        .route("/talk", get(discuss::recent))
         .route("/", get(pages::home))
         .route(
             "/new",
@@ -356,6 +358,19 @@ fn routes(state: AppState) -> Router {
             get(reports::page_form)
                 .post(reports::page_send)
                 .layer(text_form()),
+        )
+        .route(
+            "/{slug}/talk",
+            get(discuss::list).post(discuss::create).layer(text_form()),
+        )
+        .route(
+            "/{slug}/talk/{thread}",
+            get(discuss::show).post(discuss::reply).layer(text_form()),
+        )
+        .route("/{slug}/talk/{thread}/status", post(discuss::set_status))
+        .route(
+            "/{slug}/talk/{thread}/post/{post}",
+            post(discuss::post_action).layer(text_form()),
         )
         // Before `.layer`: a fallback added after would skip every middleware.
         .fallback(pages::fallback)

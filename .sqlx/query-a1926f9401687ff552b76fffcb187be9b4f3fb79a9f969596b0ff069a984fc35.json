@@ -1,0 +1,181 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.id, t.namespace::text AS \"namespace!\", t.slug, t.title, t.status, t.locked,\n                  t.revision_id, t.hunk, t.replies, t.created_at, t.last_post_at,\n                  t.hidden_at, u.username AS \"author?\",\n                  (SELECT p.title FROM pages p WHERE p.wiki_id = t.wiki_id AND p.namespace = t.namespace\n                     AND p.slug = t.slug AND p.deleted_at IS NULL\n                   ORDER BY (COALESCE(p.locale, '') = $7) DESC LIMIT 1) AS \"page_title?\"\n           FROM threads t\n           LEFT JOIN users u ON u.id = t.author_id\n           WHERE t.wiki_id = $1\n             AND ($2::text IS NULL OR (t.namespace::text = $2 AND t.slug = $3))\n             AND ($4 = 'all' OR t.status = $4)\n             AND ($5 = 'all' OR ($5 = 'page' AND t.revision_id IS NULL)\n                  OR ($5 = 'changes' AND t.revision_id IS NOT NULL))\n             AND (t.hidden_at IS NULL OR $6)\n           ORDER BY t.last_post_at DESC\n           LIMIT $8",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "locked",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "locked"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "revision_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "revision_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "hunk",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "hunk"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "replies",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "replies"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "last_post_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "last_post_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "hidden_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "hidden_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "author?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "page_title?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "a1926f9401687ff552b76fffcb187be9b4f3fb79a9f969596b0ff069a984fc35"
+}

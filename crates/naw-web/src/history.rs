@@ -426,6 +426,25 @@ pub async fn diff(
     let older = neighbour(&state.db, found.id, &from, true).await?;
     let newer = neighbour(&state.db, found.id, &to, false).await?;
     let delta = to.body_md.len() as i64 - from.body_md.len() as i64;
+    // One edit can be discussed: the topic keeps the revision and its diff.
+    let one_edit = neighbour(&state.db, found.id, &to, true).await? == Some(from.id);
+    let topics: Vec<minijinja::Value> = if one_edit {
+        crate::discuss::about_revision(&state, to.id)
+            .await?
+            .into_iter()
+            .map(|(id, title, status)| {
+                minijinja::context! {
+                    href => ctx.link(&format!("/{slug}/talk/{id}")),
+                    title => title,
+                    status => status,
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let discuss_href =
+        one_edit.then(|| ctx.link(&format!("/{slug}/talk?new=1&revision={}#new", to.id)));
 
     let template = ctx
         .skin
@@ -455,6 +474,8 @@ pub async fn diff(
                 newer_edit => newer.map(|id| format!("from={}&to={id}", to.id)),
                 may_edit => ctx.actor.can_edit_page(found.protection),
                 to_is_current => to.id == found.revision_id,
+                discuss_href => discuss_href,
+                topics => topics,
             }
         })
         .map_err(pages::template_error)?;

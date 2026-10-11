@@ -1,0 +1,113 @@
+{% extends "layout.html" %}
+{#
+  The topics about one page (page_title set), or about every page (/talk).
+  The form for a new topic folds open; for a topic about a change it shows
+  the change and lets the writer pick one run of it and quote its words.
+
+  page_title, page_href, topics (href, title, status, locked, hidden,
+  about_change, hunk, replies, author, started, last, page_title, page_href),
+  filters (statuses, abouts: label, href, current), action, may_post,
+  signed_in, login_href, open_form, change, problem, filled_title,
+  title_max, body_max
+#}
+{% block main_class %}content content-wide talk-page{% endblock %}
+{% block body %}
+<nav class="crumbs">{% if page_title %}<a href="{{ page_href }}">{{ page_title }}</a> / {{ t("talk.crumb") }}{% else %}{{ t("talk.all_title") }}{% endif %}</nav>
+<h1>{% if page_title %}{{ t("talk.title", page=page_title) }}{% else %}{{ t("talk.all_title") }}{% endif %}</h1>
+<p class="lede">{% if page_title %}{{ t("talk.lede") }}{% else %}{{ t("talk.all_lede") }}{% endif %}</p>
+
+{% if action %}
+  {% if may_post %}
+  <details class="talk-new" id="new" {% if open_form %}open{% endif %}>
+    <summary class="button-save"><svg class="icon" aria-hidden="true"><use href="#i-message-circle" /></svg>{% if change %}{{ t("talk.new_about_change") }}{% else %}{{ t("talk.new") }}{% endif %}</summary>
+    {% if problem %}<p class="notice notice-error" role="alert">{{ problem }}</p>{% endif %}
+    <form class="talk-form" method="post" action="{{ action }}">
+      {% if change %}
+      <input type="hidden" name="revision" value="{{ change.id }}" />
+      <section class="talk-change" aria-label="{{ t('talk.change_label') }}">
+        <p class="talk-change-head">{{ t("talk.change_by", who=change.author or t("history.anonymous"), when=change.at) }}{% if change.summary %} · <em>{{ change.summary }}</em>{% endif %}
+          · <span class="diff-plus">+{{ change.added }}</span> <span class="diff-minus">−{{ change.removed }}</span>
+          · <a href="{{ change.diff_href }}">{{ t("talk.full_diff") }}</a></p>
+        {% if change.hunks > 1 %}
+        <div class="field">
+          <label class="field-label" for="talk-hunk">{{ t("talk.hunk_label") }}</label>
+          <select class="field-input" id="talk-hunk" name="hunk">
+            <option value="">{{ t("talk.hunk_all") }}</option>
+            {% for n in change.hunk_list %}<option value="{{ n }}" {% if change.hunk == n %}selected{% endif %}>{{ t("talk.hunk_n", n=n) }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        {% set rows = change.rows %}{% include "_diff_table.html" %}
+        <div class="field">
+          <label class="field-label" for="talk-quote">{{ t("talk.quote_label") }}</label>
+          <textarea class="field-input" id="talk-quote" name="quote" rows="2" maxlength="1000"></textarea>
+          <p class="field-note">{{ t("talk.quote_note") }}</p>
+        </div>
+      </section>
+      {% endif %}
+      <div class="field">
+        <label class="field-label" for="talk-title">{{ t("talk.title_label") }}</label>
+        <input class="field-input" id="talk-title" name="title" maxlength="{{ title_max }}" required value="{{ filled_title }}" />
+      </div>
+      <div class="field">
+        <label class="field-label" for="talk-body">{{ t("talk.body_label") }}</label>
+        <textarea class="field-input" id="talk-body" name="body" rows="7" maxlength="{{ body_max }}" required></textarea>
+        <p class="field-note">{{ t("talk.body_note") }}</p>
+      </div>
+      <p class="form-actions"><button class="button-save" type="submit">{{ t("talk.start") }}</button></p>
+    </form>
+  </details>
+  {% elif not signed_in %}
+  <p class="talk-signin"><a class="button-preview" href="{{ login_href }}">{{ t("talk.sign_in") }}</a></p>
+  {% endif %}
+{% endif %}
+
+<nav class="talk-filters" aria-label="{{ t('talk.filters') }}">
+  <span class="chips">{% for f in filters.statuses %}<a class="chip{% if f.current %} is-current{% endif %}" href="{{ f.href }}"{% if f.current %} aria-current="true"{% endif %}>{{ f.label }}</a>{% endfor %}</span>
+  <span class="chips">{% for f in filters.abouts %}<a class="chip{% if f.current %} is-current{% endif %}" href="{{ f.href }}"{% if f.current %} aria-current="true"{% endif %}>{{ f.label }}</a>{% endfor %}</span>
+</nav>
+
+{% if topics %}
+<ol class="talk-list">
+  {% for topic in topics %}
+  <li class="talk-item{% if topic.status == 'resolved' %} is-resolved{% endif %}{% if topic.hidden %} is-hidden{% endif %}">
+    <span class="talk-badge talk-{{ topic.status }}">{{ t("talk.badge_" ~ topic.status) }}</span>
+    <div class="talk-item-main">
+      <a class="talk-item-title" href="{{ topic.href }}">{{ topic.title }}</a>
+      <p class="talk-item-meta">
+        {% if not page_title %}<a href="{{ topic.page_href }}">{{ topic.page_title }}</a> · {% endif %}
+        {% if topic.about_change %}<span class="talk-tag">{% if topic.hunk %}{{ t("talk.tag_hunk", n=topic.hunk) }}{% else %}{{ t("talk.tag_change") }}{% endif %}</span> · {% endif %}
+        {% if topic.locked %}<span class="talk-tag">{{ t("talk.badge_locked") }}</span> · {% endif %}
+        {% if topic.hidden %}<span class="talk-tag">{{ t("talk.badge_hidden") }}</span> · {% endif %}
+        {{ t("talk.started_by", who=topic.author or t("history.anonymous"), when=topic.started) }}
+      </p>
+    </div>
+    <span class="talk-item-count" title="{{ tn('talk.replies', topic.replies) }}"><svg class="icon" aria-hidden="true"><use href="#i-message-circle" /></svg>{{ topic.replies }}<span class="talk-item-last">{{ topic.last }}</span></span>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p class="talk-empty">{{ t("talk.empty") }}</p>
+{% endif %}
+
+<script nonce="{{ csp_nonce() }}">
+  /* Selecting words in the change fills the quote: the topic is then about
+     exactly those words. Without the script the quote is typed or pasted. */
+  (function () {
+    var change = document.querySelector(".talk-change .diff");
+    var quote = document.getElementById("talk-quote");
+    if (!change || !quote || !window.getSelection) return;
+    change.addEventListener("mouseup", function () {
+      var text = String(window.getSelection() || "").trim();
+      if (text) quote.value = text.slice(0, 1000);
+    });
+    var hunk = document.getElementById("talk-hunk");
+    if (hunk) hunk.addEventListener("change", function () {
+      var url = new URL(location.href);
+      if (hunk.value) url.searchParams.set("hunk", hunk.value); else url.searchParams.delete("hunk");
+      url.hash = "new";
+      location.href = url.toString();
+    });
+  })();
+</script>
+{% endblock %}

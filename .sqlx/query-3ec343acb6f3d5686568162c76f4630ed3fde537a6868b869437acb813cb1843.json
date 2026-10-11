@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT content_hash, html FROM render_cache\n         WHERE wiki_id = $1 AND renderer_version = $2 AND content_hash = ANY($3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "content_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "render_cache",
+            "name": "content_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "html",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "render_cache",
+            "name": "html"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "3ec343acb6f3d5686568162c76f4630ed3fde537a6868b869437acb813cb1843"
+}

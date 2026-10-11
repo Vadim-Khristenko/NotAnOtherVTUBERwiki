@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO posts (id, thread_id, author_id, reply_to, body_md)\n         SELECT $1, $2, $3, (SELECT id FROM posts WHERE id = $4 AND thread_id = $2), $5\n         RETURNING reply_to",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reply_to",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "reply_to"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "5453af42d3abc87c28efa2c4940a8f5442297621a01129440247dbb3124cb474"
+}

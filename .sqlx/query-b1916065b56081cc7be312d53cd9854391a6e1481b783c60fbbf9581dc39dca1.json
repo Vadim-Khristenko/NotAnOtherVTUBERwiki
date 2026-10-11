@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE threads SET\n           status = CASE WHEN $2 IN ('resolved', 'open') THEN $2 ELSE status END,\n           resolved_by = CASE WHEN $2 = 'resolved' THEN $3 WHEN $2 = 'open' THEN NULL ELSE resolved_by END,\n           locked = CASE WHEN $2 = 'lock' THEN true WHEN $2 = 'unlock' THEN false ELSE locked END,\n           hidden_at = CASE WHEN $2 = 'hide' THEN now() WHEN $2 = 'unhide' THEN NULL ELSE hidden_at END,\n           hidden_by = CASE WHEN $2 = 'hide' THEN $3 WHEN $2 = 'unhide' THEN NULL ELSE hidden_by END\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b1916065b56081cc7be312d53cd9854391a6e1481b783c60fbbf9581dc39dca1"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE threads SET replies = replies + 1, last_post_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9024e0797400201a4ba1ef1aa7bf1d445bbd0c854cb30d9b8a5e132f0052c333"
+}

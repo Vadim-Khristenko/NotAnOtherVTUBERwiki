@@ -93,6 +93,7 @@
         {%- if rev.is_patrolled %}<span class="tag tag-patrolled" title="{{ t('history.patrolled_title') }}">{{ t("history.checked") }}</span>
         {%- elif may_patrol and not rev.review %}<button class="link-button" type="submit" form="patrol-{{ rev.id }}">{{ t("history.mark_checked") }}</button>{% endif -%}
         {%- if may_edit and not rev.is_current and not rev.review %}<button class="link-button" type="submit" form="restore-{{ rev.id }}" title="{{ t('history.restore_title') }}">{{ t("history.restore") }}</button>{% endif -%}
+        <a class="history-discuss" href="{{ base }}/{{ slug }}/talk?new=1&revision={{ rev.id }}#new" title="{{ t('talk.discuss_change') }}">{{ t("talk.discuss_short") }}</a>
       </span>
     </li>
   {% if loop.last %}</ol>{% endif %}

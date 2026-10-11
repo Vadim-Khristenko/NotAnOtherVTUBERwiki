@@ -329,6 +329,7 @@ pub(crate) const RESERVED: &[&str] = &[
     "settings",
     "skin",
     "system",
+    "talk",
     "user",
     "watchlist",
 ];
@@ -1131,6 +1132,14 @@ pub async fn page(
         }
         None => None,
     };
+    // Files and categories have pages of their own kind, without discussions.
+    let discussion = match split_path(&slug).0 {
+        "main" | "template" | "page_template" | "module" => Some(minijinja::context! {
+            href => ctx.link(&format!("/{slug}/talk")),
+            open => crate::discuss::open_count(&state, &ctx, &slug).await?,
+        }),
+        _ => None,
+    };
     let html = render_shell(
         &ctx,
         &Shell {
@@ -1152,6 +1161,7 @@ pub async fn page(
                 may_move => crate::moving::may_move(&ctx, &slug, found.protection),
                 // None for a guest: there is nobody to watch for.
                 watching => watching,
+                discussion => discussion,
                 seo => seo,
                 about => about,
                 locked => found.locked,

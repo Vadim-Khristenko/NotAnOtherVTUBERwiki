@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             (SELECT count(*) FROM posts WHERE author_id = $1\n                AND created_at > now() - interval '10 minutes') AS \"posts!\",\n             (SELECT count(*) FROM threads WHERE author_id = $1\n                AND created_at > now() - interval '1 hour') AS \"topics!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "posts!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "topics!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "32cfc22537a6df3dcd2b036d28bd2ff4753b10a3b3e2114c6c89eb83e49d420e"
+}

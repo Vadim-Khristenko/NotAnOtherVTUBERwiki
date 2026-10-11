@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT title FROM pages\n         WHERE wiki_id = $1 AND namespace = ($2::text)::page_namespace AND slug = $3\n           AND deleted_at IS NULL AND current_revision_id IS NOT NULL\n         ORDER BY (COALESCE(locale, '') = $4) DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f78374bd1aab5ddf2da613dda843973ccfdb0de8498e9f4ca9c2ba66c6d8fb6c"
+}

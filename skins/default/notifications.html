@@ -11,7 +11,7 @@
 <ul class="notify-list" role="list">
   {% for n in items %}
   <li class="notify-item notify-{{ n.kind }}{% if n.unread %} is-unread{% endif %}">
-    <svg class="icon" aria-hidden="true"><use href="#i-{% if n.kind == 'page_edited' %}pencil{% elif n.kind == 'edit_accepted' %}clipboard-check{% elif n.kind == 'edit_rejected' %}x{% else %}flag{% endif %}" /></svg>
+    <svg class="icon" aria-hidden="true"><use href="#i-{% if n.kind == 'page_edited' %}pencil{% elif n.kind == 'edit_accepted' %}clipboard-check{% elif n.kind == 'edit_rejected' %}x{% elif n.kind[:11] == 'discussion_' %}message-circle{% else %}flag{% endif %}" /></svg>
     <div class="notify-body">
       <p class="notify-text">{% if n.href %}<a href="{{ n.href }}">{{ n.text }}</a>{% else %}{{ n.text }}{% endif %}</p>
       {% if n.note %}<p class="notify-note">{{ n.note }}</p>{% endif %}

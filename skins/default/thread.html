@@ -1,0 +1,113 @@
+{% extends "layout.html" %}
+{#
+  One topic: the change it is about, when it is about one, then the messages
+  and the reply form. Every action is a form, so it all works without script.
+
+  topic_title, status, locked, hidden, page_title, page_href, talk_href,
+  topic_href, change, quote, posts (id, anchor, first, author, display_name,
+  avatar, at, day, edited, hidden, html, answers, editing, source, may_edit,
+  may_hide, may_unhide, reply_href, action), may_write, signed_in,
+  login_href, may_resolve, moderator, replying, problem, draft, body_max
+#}
+{% block main_class %}content content-wide thread-page{% endblock %}
+{% block body %}
+<nav class="crumbs"><a href="{{ page_href }}">{{ page_title }}</a> / <a href="{{ talk_href }}">{{ t("talk.crumb") }}</a></nav>
+<header class="thread-head">
+  <h1>{{ topic_title }}</h1>
+  <p class="thread-badges">
+    <span class="talk-badge talk-{{ status }}">{{ t("talk.badge_" ~ status) }}</span>
+    {% if locked %}<span class="talk-tag">{{ t("talk.badge_locked") }}</span>{% endif %}
+    {% if hidden %}<span class="talk-tag">{{ t("talk.badge_hidden") }}</span>{% endif %}
+  </p>
+  {% if may_resolve or moderator %}
+  <div class="thread-actions">
+    {% if may_resolve %}
+    <form class="inline-form" method="post" action="{{ topic_href }}/status">
+      {% if status == "open" %}
+      <input type="hidden" name="action" value="resolved" /><button class="button-preview" type="submit"><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>{{ t("talk.resolve") }}</button>
+      {% else %}
+      <input type="hidden" name="action" value="open" /><button class="button-preview" type="submit">{{ t("talk.reopen") }}</button>
+      {% endif %}
+    </form>
+    {% endif %}
+    {% if moderator %}
+    <form class="inline-form" method="post" action="{{ topic_href }}/status">
+      <input type="hidden" name="action" value="{% if locked %}unlock{% else %}lock{% endif %}" />
+      <button class="button-preview" type="submit"><svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg>{% if locked %}{{ t("talk.unlock") }}{% else %}{{ t("talk.lock") }}{% endif %}</button>
+    </form>
+    <form class="inline-form" method="post" action="{{ topic_href }}/status">
+      <input type="hidden" name="action" value="{% if hidden %}unhide{% else %}hide{% endif %}" />
+      <button class="button-preview" type="submit">{% if hidden %}{{ t("talk.unhide_topic") }}{% else %}{{ t("talk.hide_topic") }}{% endif %}</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</header>
+
+{% if change %}
+<section class="talk-change" aria-label="{{ t('talk.change_label') }}">
+  <p class="talk-change-head">{% if change.hunk %}{{ t("talk.about_hunk", n=change.hunk) }}{% else %}{{ t("talk.about_change_head") }}{% endif %}
+    {{ t("talk.change_by", who=change.author or t("history.anonymous"), when=change.at) }}{% if change.summary %} · <em>{{ change.summary }}</em>{% endif %}
+    · <span class="diff-plus">+{{ change.added }}</span> <span class="diff-minus">−{{ change.removed }}</span>
+    · <a href="{{ change.diff_href }}">{{ t("talk.full_diff") }}</a></p>
+  {% if quote %}<blockquote class="talk-quote">{{ quote }}</blockquote>{% endif %}
+  {% set rows = change.rows %}{% include "_diff_table.html" %}
+</section>
+{% elif quote %}
+<blockquote class="talk-quote">{{ quote }}</blockquote>
+{% endif %}
+
+<ol class="thread-posts">
+  {% for post in posts %}
+  <li class="post{% if post.first %} post-first{% endif %}{% if post.hidden %} is-hidden{% endif %}" id="{{ post.anchor }}">
+    <div class="post-avatar" aria-hidden="true">{% if post.avatar %}<img src="{{ post.avatar }}" alt="" loading="lazy" />{% else %}{{ (post.display_name or post.author or "?")[:1] | upper }}{% endif %}</div>
+    <div class="post-main">
+      <p class="post-head">
+        {% if post.author %}<a class="post-author" href="/user/{{ post.author }}"><bdi>{{ post.display_name or post.author }}</bdi></a>{% else %}<span class="post-author muted-cell">{{ t("history.anonymous") }}</span>{% endif %}
+        <a class="post-time" href="#{{ post.anchor }}" title="{{ post.at }}">{{ post.day }}</a>
+        {% if post.edited %}<span class="post-edited">{{ t("talk.edited") }}</span>{% endif %}
+      </p>
+      {% if post.answers %}<blockquote class="post-answers"><strong>{{ post.answers.author or t("history.anonymous") }}:</strong> {{ post.answers.text }}</blockquote>{% endif %}
+      {% if post.hidden and not post.html %}
+      <p class="post-gone">{{ t("talk.post_hidden") }}</p>
+      {% elif post.editing %}
+      <form class="post-edit" method="post" action="{{ post.action }}">
+        <input type="hidden" name="action" value="edit" />
+        <textarea class="field-input" name="body" rows="6" maxlength="{{ body_max }}" required>{{ post.source }}</textarea>
+        <p class="form-actions"><button class="button-save" type="submit">{{ t("talk.save") }}</button> <a class="button-preview" href="{{ topic_href }}#{{ post.anchor }}">{{ t("talk.cancel") }}</a></p>
+      </form>
+      {% else %}
+      {% if post.hidden %}<p class="post-gone">{{ t("talk.post_hidden_mod") }}</p>{% endif %}
+      <div class="post-body">{{ post.html | safe }}</div>
+      {% endif %}
+      <p class="post-actions">
+        {% if may_write and not post.hidden %}<a href="{{ post.reply_href }}">{{ t("talk.reply") }}</a>{% endif %}
+        {% if post.may_edit and not post.editing %}<a href="{{ topic_href }}?edit={{ post.id }}#{{ post.anchor }}">{{ t("talk.edit") }}</a>{% endif %}
+        {% if post.may_hide %}<form class="inline-form" method="post" action="{{ post.action }}"><input type="hidden" name="action" value="hide" /><button class="link-button" type="submit">{{ t("talk.hide") }}</button></form>{% endif %}
+        {% if post.may_unhide %}<form class="inline-form" method="post" action="{{ post.action }}"><input type="hidden" name="action" value="unhide" /><button class="link-button" type="submit">{{ t("talk.unhide") }}</button></form>{% endif %}
+      </p>
+    </div>
+  </li>
+  {% endfor %}
+</ol>
+
+<section class="thread-reply" id="reply">
+  {% if may_write %}
+  <h2>{{ t("talk.reply_title") }}</h2>
+  {% if problem %}<p class="notice notice-error" role="alert">{{ problem }}</p>{% endif %}
+  <form method="post" action="{{ topic_href }}">
+    {% if replying %}
+    <input type="hidden" name="reply_to" value="{{ replying.id }}" />
+    <blockquote class="post-answers"><strong>{{ replying.author or t("history.anonymous") }}:</strong> {{ replying.text }} <a href="{{ topic_href }}#reply">{{ t("talk.cancel") }}</a></blockquote>
+    {% endif %}
+    <textarea class="field-input" name="body" rows="5" maxlength="{{ body_max }}" required aria-label="{{ t('talk.reply_title') }}">{{ draft }}</textarea>
+    <p class="field-note">{{ t("talk.body_note") }}</p>
+    <p class="form-actions"><button class="button-save" type="submit">{{ t("talk.send") }}</button></p>
+  </form>
+  {% elif locked %}
+  <p class="talk-empty">{{ t("talk.locked_note") }}</p>
+  {% elif not signed_in %}
+  <p class="talk-signin"><a class="button-preview" href="{{ login_href }}">{{ t("talk.sign_in_reply") }}</a></p>
+  {% endif %}
+</section>
+{% endblock %}

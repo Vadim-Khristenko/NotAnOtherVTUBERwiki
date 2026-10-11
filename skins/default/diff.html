@@ -55,6 +55,13 @@
   {% if truncated %}
     <p class="notice notice-warn" role="status">{{ t("diff.too_large") }}</p>
   {% endif %}
+  {% if discuss_href %}
+  <div class="diff-talk">
+    <a class="button-preview" href="{{ discuss_href }}"><svg class="icon" aria-hidden="true"><use href="#i-message-circle" /></svg>{{ t("talk.discuss_change") }}</a>
+    {% if hunks > 1 %}<span class="diff-talk-hunks">{{ t("talk.discuss_hunk") }} {% for n in hunk_links %}<a href="{{ discuss_href | replace('#new', '') }}&amp;hunk={{ n }}#new">{{ n }}</a>{% if not loop.last %} {% endif %}{% endfor %}</span>{% endif %}
+    {% for topic in topics %}<a class="talk-chip talk-{{ topic.status }}" href="{{ topic.href }}">{{ topic.title }}</a>{% endfor %}
+  </div>
+  {% endif %}
   {% include "_diff_table.html" %}
 {% endif %}
 

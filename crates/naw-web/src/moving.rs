@@ -135,6 +135,15 @@ pub(crate) async fn move_article(
     )
     .execute(&mut *conn)
     .await?;
+    // So do its discussions.
+    sqlx::query!(
+        "UPDATE threads SET slug = $3 WHERE wiki_id = $1 AND namespace = 'main' AND slug = $2",
+        wiki_id,
+        from,
+        to
+    )
+    .execute(&mut *conn)
+    .await?;
     crate::notify::move_watches(conn, wiki_id, from, to).await?;
     Ok(true)
 }
