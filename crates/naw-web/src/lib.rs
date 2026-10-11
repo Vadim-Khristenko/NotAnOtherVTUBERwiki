@@ -58,6 +58,7 @@ mod profile;
 mod protect;
 mod ratelimit;
 mod recovery;
+mod redlinks;
 mod relay;
 mod reports;
 mod resolve;

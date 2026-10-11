@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.namespace AS \"namespace!\", w.slug AS \"slug!\"\n           FROM unnest($2::text[], $3::text[]) AS w(namespace, slug)\n           WHERE EXISTS (SELECT 1 FROM pages p\n                         WHERE p.wiki_id = $1 AND p.namespace::text = w.namespace AND p.slug = w.slug\n                           AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL)\n              OR EXISTS (SELECT 1 FROM page_redirects r\n                         WHERE r.wiki_id = $1 AND r.namespace::text = w.namespace AND r.from_slug = w.slug)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "slug!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "f4541ed4178dc558abe709814cd330b89192eb5bad3c4bed414fe1a8bfafed57"
+}

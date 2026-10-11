@@ -519,6 +519,7 @@ pub(crate) async fn cached_body_full(
         let html = crate::emotes::expand(state, wiki_id, row.html).await?;
         let html = crate::diagrams::expand(state, ctx, html, true).await?;
         let html = crate::thumbs::expand(state, html).await?;
+        let html = crate::redlinks::expand(state, ctx, html).await?;
         return Ok(RenderedPage {
             html,
             render_ms: None,
@@ -541,6 +542,7 @@ pub(crate) async fn cached_body_full(
     let html = crate::emotes::expand(state, wiki_id, rendered.html).await?;
     let html = crate::diagrams::expand(state, ctx, html, true).await?;
     let html = crate::thumbs::expand(state, html).await?;
+    let html = crate::redlinks::expand(state, ctx, html).await?;
     Ok(RenderedPage {
         html,
         render_ms: Some(rendered.render_ms),
@@ -2332,6 +2334,7 @@ pub async fn preview(
         let body_html = crate::emotes::expand(&state, ctx.wiki.id, body_html).await?;
         let body_html = crate::diagrams::expand(&state, &ctx, body_html, false).await?;
         let body_html = crate::thumbs::expand(&state, body_html).await?;
+        let body_html = crate::redlinks::expand(&state, &ctx, body_html).await?;
         return Ok(([HTML], body_html).into_response());
     }
     let title = form.title.trim();
@@ -2340,6 +2343,7 @@ pub async fn preview(
     let body_html = crate::emotes::expand(&state, ctx.wiki.id, rendered.html).await?;
     let body_html = crate::diagrams::expand(&state, &ctx, body_html, false).await?;
     let body_html = crate::thumbs::expand(&state, body_html).await?;
+    let body_html = crate::redlinks::expand(&state, &ctx, body_html).await?;
     let html = render_shell(
         &ctx,
         &Shell {
