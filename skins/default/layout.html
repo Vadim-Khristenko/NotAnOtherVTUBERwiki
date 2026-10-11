@@ -992,6 +992,8 @@ details[open] > summary .eb-chevron { transform: rotate(180deg); }
 .editor-frame.is-rich .editor-status { padding: 0.3rem var(--s3); border-top: 1px solid var(--line); }
 .rich-editor { border-radius: 0 0 var(--radius) var(--radius); }
 .editor-frame.is-rich .rich-editor { border-radius: 0; }
+/* A file dragged over the editor: the drop lands as an upload. */
+.drop-ready > textarea, .drop-ready > .rich-editor { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--accent-soft); }
 @media (max-width: 40rem) {
   .eb-switches { width: 100%; justify-content: flex-start; }
   .eb-switch span:last-child { font-size: 0.78rem; }

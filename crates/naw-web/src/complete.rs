@@ -29,6 +29,17 @@ struct Item {
     label: String,
     detail: Option<String>,
     apply: String,
+    /// A template's fields from its `<params>`, so the editor can write the
+    /// whole call.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    fields: Vec<Field>,
+}
+
+#[derive(Serialize)]
+struct Field {
+    name: String,
+    kind: String,
+    required: bool,
 }
 
 /// `q` as an ILIKE pattern piece: the wildcards it holds match themselves.
@@ -55,12 +66,38 @@ pub async fn complete(
     let starts = format!("{q}%");
     let anywhere = format!("%{q}%");
     let items: Vec<Item> = match query.kind.as_str() {
-        "page" | "template" => {
-            let namespace = if query.kind == "page" {
-                "main"
-            } else {
-                "template"
-            };
+        "template" => sqlx::query!(
+            r#"SELECT DISTINCT ON (p.slug) p.slug, p.title, r.body_md FROM pages p
+               JOIN revisions r ON r.id = p.current_revision_id
+               WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.deleted_at IS NULL
+                 AND (p.slug ILIKE $2 OR p.title ILIKE $3)
+               ORDER BY p.slug, (COALESCE(p.locale, '') = $4) DESC
+               LIMIT $5"#,
+            ctx.wiki.id,
+            starts,
+            anywhere,
+            ctx.content_locale,
+            SHOWN
+        )
+        .fetch_all(&state.db)
+        .await?
+        .into_iter()
+        .map(|row| Item {
+            label: row.slug.clone(),
+            detail: (row.title != row.slug).then_some(row.title),
+            apply: row.slug,
+            fields: naw_markdown::transclude::params_of(&row.body_md)
+                .into_iter()
+                .map(|p| Field {
+                    name: p.name,
+                    kind: p.kind,
+                    required: p.required,
+                })
+                .collect(),
+        })
+        .collect(),
+        "page" => {
+            let namespace = "main";
             sqlx::query!(
                 r#"SELECT DISTINCT ON (slug) slug, title FROM pages
                    WHERE wiki_id = $1 AND namespace = ($2::text)::page_namespace
@@ -82,6 +119,7 @@ pub async fn complete(
                 label: row.slug.clone(),
                 detail: (row.title != row.slug).then_some(row.title),
                 apply: row.slug,
+                fields: Vec::new(),
             })
             .collect()
         }
@@ -105,6 +143,7 @@ pub async fn complete(
             label: row.name.clone(),
             detail: Some(format!("{} · {}", row.category, row.pages)),
             apply: row.name,
+            fields: Vec::new(),
         })
         .collect(),
         _ => {

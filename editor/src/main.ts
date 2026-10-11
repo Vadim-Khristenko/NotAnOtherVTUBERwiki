@@ -40,6 +40,7 @@ import {
 } from "@codemirror/autocomplete";
 import { tags as t } from "@lezer/highlight";
 import { toggleMarks, togglePrefix } from "./marks";
+import { templateCall, type Field } from "./calls";
 
 // The plain textarea toggles marks the same way when this file is loaded.
 (window as unknown as { nawMarks: unknown }).nawMarks = { toggleMarks, togglePrefix };
@@ -119,7 +120,21 @@ const theme = EditorView.theme({
   ".cm-placeholder": { color: "var(--faint, var(--muted))" },
 });
 
-type Item = { label: string; detail?: string; apply?: string };
+type Item = { label: string; detail?: string; apply?: string; fields?: Field[] };
+
+function applyTemplate(name: string, fields: Field[]) {
+  return (view: EditorView, _completion: unknown, from: number, to: number) => {
+    // A call already closed after the cursor keeps its own `}}`.
+    const closed = view.state.sliceDoc(to, to + 2) === "}}";
+    const call = templateCall(name, fields, closed);
+    view.dispatch({
+      changes: { from, to, insert: call.text },
+      selection: EditorSelection.cursor(from + call.cursor),
+      scrollIntoView: true,
+      userEvent: "input.complete",
+    });
+  };
+}
 
 const cache = new Map<string, Promise<Item[]>>();
 
@@ -155,7 +170,12 @@ async function wikiRefs(ctx: CompletionContext): Promise<CompletionResult | null
     const items = await fetchItems(`/api/complete?kind=template&q=${encodeURIComponent(q)}`);
     return {
       from: template.from + 2,
-      options: items.map((i) => ({ label: i.label, detail: i.detail, type: "class", apply: i.apply ?? i.label })),
+      options: items.map((i) => ({
+        label: i.label,
+        detail: i.detail,
+        type: "class",
+        apply: i.fields?.length ? applyTemplate(i.apply ?? i.label, i.fields) : (i.apply ?? i.label),
+      })),
       validFor: /^[^{}|\n]*$/,
     };
   }

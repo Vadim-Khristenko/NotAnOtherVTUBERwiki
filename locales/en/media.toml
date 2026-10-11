@@ -1,7 +1,7 @@
 # Uploaded images: the editor button and the /media page.
 
 title = "Files"
-insert = "Insert an image"
+insert = "Add an image. You can also paste one (Ctrl+V) or drop it on the text"
 upload_link = "Upload an image"
 uploading = "Uploading {name}"
 failed = "The upload did not go through. Check the connection and try again."

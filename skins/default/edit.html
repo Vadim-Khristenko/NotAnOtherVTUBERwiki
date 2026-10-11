@@ -146,7 +146,8 @@
   </details>
   <input type="file" id="image-file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif" multiple hidden
          data-max="{{ upload_max }}" data-too-large="{{ t('media.refused_too_large', max=upload_max_mb) }}"
-         data-uploading="{{ t('media.uploading', name='{name}') }}" data-failed="{{ t('media.failed') }}" />
+         data-uploading="{{ t('media.uploading', name='{name}') }}" data-failed="{{ t('media.failed') }}"
+         data-not-image="{{ t('media.refused_type') }}" />
 </div>
 <div class="emote-picker" id="emote-picker" hidden>
   <label class="visually-hidden" for="emote-picker-q">{{ t("emotes.search") }}</label>
@@ -437,16 +438,56 @@
     });
     var pick = document.getElementById("image-pick");
     if (pick) pick.addEventListener("click", function () { imageFile.click(); });
-    imageFile.addEventListener("change", function () {
-      var files = Array.prototype.slice.call(imageFile.files || []);
+    var uploadAll = function (files) {
       var problems = [];
       var chain = Promise.resolve();
       files.forEach(function (file) {
         chain = chain.then(function () { return uploadOne(file); })
           .then(function (problem) { if (problem) problems.push(problem); });
       });
-      chain.then(function () { say(problems.join(" · ")); imageFile.value = ""; });
+      return chain.then(function () { say(problems.join(" · ")); });
+    };
+    imageFile.addEventListener("change", function () {
+      uploadAll(Array.prototype.slice.call(imageFile.files || [])).then(function () { imageFile.value = ""; });
     });
+    // A picture pasted from the clipboard or dropped on the editor uploads the
+    // same way. Caught before the rich editor sees it, which would otherwise
+    // paste a file's bytes as text.
+    var filesOf = function (list) {
+      return Array.prototype.slice.call(list || []).filter(function (f) {
+        return /^(image|audio|video)\//.test(f.type) || f.type === "application/pdf";
+      });
+    };
+    var surface = area.parentElement;
+    var hasFiles = function (ev) {
+      var types = ev.dataTransfer && ev.dataTransfer.types;
+      return !!types && Array.prototype.indexOf.call(types, "Files") !== -1;
+    };
+    surface.addEventListener("paste", function (ev) {
+      var files = filesOf(ev.clipboardData && ev.clipboardData.files);
+      if (!files.length) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      uploadAll(files);
+    }, true);
+    surface.addEventListener("dragover", function (ev) {
+      if (!hasFiles(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      surface.classList.add("drop-ready");
+    }, true);
+    surface.addEventListener("dragleave", function (ev) {
+      if (!surface.contains(ev.relatedTarget)) surface.classList.remove("drop-ready");
+    }, true);
+    surface.addEventListener("drop", function (ev) {
+      surface.classList.remove("drop-ready");
+      if (!hasFiles(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      var files = filesOf(ev.dataTransfer.files);
+      if (files.length) uploadAll(files);
+      else say(imageFile.dataset.notImage || imageFile.dataset.failed);
+    }, true);
   }
   // An image from a URL: stored here, and its Markdown lands at the cursor.
   var importRow = document.getElementById("image-import");
