@@ -1838,6 +1838,7 @@ dependencies = [
  "naw-core",
  "naw-markdown",
  "naw-web",
+ "naw-wikitext",
  "serde_json",
  "sqlx",
  "tokio",
@@ -1944,6 +1945,14 @@ dependencies = [
  "unicode-segmentation",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "naw-wikitext"
+version = "0.2.0"
+dependencies = [
+ "naw-markdown",
+ "quick-xml",
 ]
 
 [[package]]

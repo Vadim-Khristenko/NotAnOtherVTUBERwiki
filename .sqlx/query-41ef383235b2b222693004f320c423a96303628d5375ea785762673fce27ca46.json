@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO page_redirects (wiki_id, namespace, from_slug, to_namespace, to_slug)\n             VALUES ($1, ($2::text)::page_namespace, $3, ($4::text)::page_namespace, $5)\n             ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "41ef383235b2b222693004f320c423a96303628d5375ea785762673fce27ca46"
+}

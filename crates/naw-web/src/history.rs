@@ -93,10 +93,11 @@ pub async fn history(
         SELECT r.id, r.summary, r.is_minor, r.is_patrolled, r.created_at,
                r.reverted_revision_id, r.bytes AS "bytes!",
                r.prev_bytes, r.prev_id, r.review_status, r.review_note,
-               u.username AS "author?"
+               u.username AS "author?", r.imported_author, r.imported_from
         FROM (
           SELECT id, author_id, summary, is_minor, is_patrolled, created_at,
                  reverted_revision_id, bytes, review_status, review_note,
+                 imported_author, imported_from,
                  lag(bytes) OVER w AS prev_bytes,
                  lag(id) OVER w AS prev_id
           FROM revisions
@@ -125,6 +126,7 @@ pub async fn history(
             minijinja::context! {
                 id => rev.id.to_string(),
                 author => rev.author.clone(),
+                imported => imported_name(rev.imported_author.as_deref(), rev.imported_from.as_deref()),
                 summary => rev.summary.clone(),
                 is_minor => rev.is_minor,
                 is_patrolled => rev.is_patrolled,
@@ -193,6 +195,16 @@ struct StoredRevision {
     created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Who wrote an imported revision: `Ninamarie12 (Virtual YouTuber Wiki)`.
+/// They have no account here, so the name is not a link.
+fn imported_name(author: Option<&str>, from: Option<&str>) -> Option<String> {
+    let author = author?;
+    Some(match from {
+        Some(from) => format!("{author} ({from})"),
+        None => author.to_string(),
+    })
+}
+
 /// Loads a revision only if it belongs to `page_id`, so an id from the URL
 /// cannot read another page's history.
 async fn load_revision(
@@ -204,7 +216,8 @@ async fn load_revision(
         r#"
         SELECT r.id AS "id!", r.body_md AS "body_md!", r.summary, r.is_minor AS "is_minor!",
                r.created_at AS "created_at!", u.username AS "author?",
-               r.review_status AS "review_status!", r.author_id
+               r.review_status AS "review_status!", r.author_id,
+               r.imported_author, r.imported_from
         FROM revisions r
         LEFT JOIN users u ON u.id = r.author_id
         WHERE r.id = $1 AND r.page_id = $2
@@ -220,7 +233,9 @@ async fn load_revision(
         review_status: row.review_status,
         author_id: row.author_id,
         summary: row.summary,
-        author: row.author,
+        author: row.author.or_else(|| {
+            imported_name(row.imported_author.as_deref(), row.imported_from.as_deref())
+        }),
         is_minor: row.is_minor,
         created_at: row.created_at,
     }))

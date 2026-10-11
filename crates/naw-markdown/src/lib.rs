@@ -2369,7 +2369,9 @@ fn strip_inline_tags(html: &str) -> String {
     text
 }
 
-fn slugify(text: &str) -> String {
+/// A heading's anchor: `Early life` is `early-life`. The importer spells
+/// `[[Page#Section]]` links with it.
+pub fn slugify(text: &str) -> String {
     let mut slug = String::new();
     let mut prev_dash = true;
     for c in text.to_lowercase().chars() {

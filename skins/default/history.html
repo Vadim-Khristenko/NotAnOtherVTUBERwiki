@@ -71,6 +71,7 @@
       <a class="history-time" href="{{ base }}/{{ slug }}/rev/{{ rev.id }}" title="{{ rev.created_at }}">{{ rev.time }}</a>
       <span class="history-who">
         {%- if rev.author %}<a href="/user/{{ rev.author }}"><bdi>{{ rev.author }}</bdi></a>
+        {%- elif rev.imported %}<bdi class="muted-cell">{{ rev.imported }}</bdi>
         {%- else %}<span class="muted-cell">{{ t("history.anonymous") }}</span>{% endif -%}
       </span>
       <span class="history-size" title="{{ tn('history.bytes', rev.bytes) }}">

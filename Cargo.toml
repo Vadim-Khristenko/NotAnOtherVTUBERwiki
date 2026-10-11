@@ -13,6 +13,7 @@ resolver = "3"
 members = [
     "crates/naw-core",
     "crates/naw-markdown",
+    "crates/naw-wikitext",
     "crates/naw-web",
     "crates/naw-cli",
     "crates/naw-bots",
@@ -116,6 +117,7 @@ boa_engine = { version = "0.22.0", default-features = false }
 # --- internal crates
 naw-core = { path = "crates/naw-core" }
 naw-markdown = { path = "crates/naw-markdown" }
+naw-wikitext = { path = "crates/naw-wikitext" }
 naw-bots = { path = "crates/naw-bots" }
 naw-telegram = { path = "crates/naw-telegram" }
 naw-discord = { path = "crates/naw-discord" }

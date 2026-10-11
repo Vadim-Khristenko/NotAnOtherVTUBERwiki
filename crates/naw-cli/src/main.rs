@@ -1,13 +1,14 @@
 //! NotAnotherWiki Engine command line entry point.
 
 mod grant;
+mod import;
 mod seed;
 mod user;
 
 use std::process::ExitCode;
 use std::sync::OnceLock;
 
-const USAGE: &str = "usage: naw [--config FILE] [--env-file FILE] [--limit NAME=VALUE]... <serve|migrate|seed|grant|user|reindex|limits>
+const USAGE: &str = "usage: naw [--config FILE] [--env-file FILE] [--limit NAME=VALUE]... <serve|migrate|seed|grant|user|reindex|limits|import>
 
   --config FILE       the configuration file (default: config.toml)
   --env-file FILE     environment variables to load first; the real
@@ -88,6 +89,7 @@ async fn main() -> ExitCode {
         Some("reindex") => reindex_command(args).await,
         Some("user") => user_command(args).await,
         Some("limits") => limits_command(),
+        Some("import") => import::command(args).await,
         Some("help") => {
             println!("{USAGE}");
             ExitCode::SUCCESS

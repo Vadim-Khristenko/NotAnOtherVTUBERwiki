@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT r.id AS \"id!\", r.body_md AS \"body_md!\", r.summary, r.is_minor AS \"is_minor!\",\n               r.created_at AS \"created_at!\", u.username AS \"author?\",\n               r.review_status AS \"review_status!\", r.author_id\n        FROM revisions r\n        LEFT JOIN users u ON u.id = r.author_id\n        WHERE r.id = $1 AND r.page_id = $2\n        ",
+  "query": "\n        SELECT r.id AS \"id!\", r.body_md AS \"body_md!\", r.summary, r.is_minor AS \"is_minor!\",\n               r.created_at AS \"created_at!\", u.username AS \"author?\",\n               r.review_status AS \"review_status!\", r.author_id,\n               r.imported_author, r.imported_from\n        FROM revisions r\n        LEFT JOIN users u ON u.id = r.author_id\n        WHERE r.id = $1 AND r.page_id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,28 @@
             "name": "author_id"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "imported_author",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "imported_author"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "imported_from",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "imported_from"
+          }
+        }
       }
     ],
     "parameters": {
@@ -106,8 +128,10 @@
       false,
       true,
       false,
+      true,
+      true,
       true
     ]
   },
-  "hash": "825b3fbdb0cf83442031114925ab8253679c0ef6c3ec1bbaaa5d424bece9f57d"
+  "hash": "49b23997b3ba7c5e3978e83f1651b5d98bafdb12ec7fb5046f9c0506930185c4"
 }

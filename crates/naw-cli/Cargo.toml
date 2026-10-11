@@ -15,6 +15,7 @@ path = "src/main.rs"
 naw-core.workspace = true
 naw-web.workspace = true
 naw-markdown.workspace = true
+naw-wikitext.workspace = true
 axum.workspace = true
 tokio.workspace = true
 sqlx.workspace = true

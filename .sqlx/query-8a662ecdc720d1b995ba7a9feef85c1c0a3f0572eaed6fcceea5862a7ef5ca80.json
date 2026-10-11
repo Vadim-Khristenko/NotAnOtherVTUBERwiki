@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM pages WHERE wiki_id = $1\n                 AND namespace = ($2::text)::page_namespace AND slug = $3) AS \"taken!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "taken!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8a662ecdc720d1b995ba7a9feef85c1c0a3f0572eaed6fcceea5862a7ef5ca80"
+}
