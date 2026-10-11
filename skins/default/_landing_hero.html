@@ -13,5 +13,5 @@
     <a class="button-preview" href="{{ base }}/system:random" rel="nofollow"><svg class="icon" aria-hidden="true"><use href="#i-arrows-shuffle" /></svg>{{ t("nav.random") }}</a>
     <a class="button-preview" href="{{ home_href }}"><svg class="icon" aria-hidden="true"><use href="#i-book" /></svg>{{ t("landing.read_more") }}</a>
   </p>
-  <p class="landing-stats">{{ tn("landing.articles", articles) }} · {{ tn("landing.edits", edits) }} · {{ tn("landing.files", files) }}</p>
+  <p class="landing-stats">{{ module("stats", "line", tn("landing.articles", articles) ~ " · " ~ tn("landing.edits", edits) ~ " · " ~ tn("landing.files", files)) }}</p>
 </div>

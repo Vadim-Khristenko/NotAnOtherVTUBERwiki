@@ -65,6 +65,22 @@ title = The wiki in numbers
 
 A template may call a module too, so a module can sit inside an infobox.
 
+## Calling a module from a skin
+
+A skin's templates call a module with `module(name, function, fallback)`.
+The default skin's front page takes its line of numbers from `stats`:
+
+```jinja
+<p class="landing-stats">{{ module("stats", "line", tn("landing.articles", articles)) }}</p>
+```
+
+The result is rendered as Markdown, and a result that is one paragraph loses
+its `<p>`, so it fits inside the skin's own. When the wiki has no such
+module, or the call fails, the fallback shows instead and the failure goes
+to the log: the chrome around a page has nowhere to show a warning box. The
+front page and articles run these calls; on other pages the fallback shows.
+A skin call gets no arguments, and `page.path` is the page it sits on.
+
 ## Limits and safety
 
 The code runs in boa, a JavaScript engine inside the wiki engine. It has no

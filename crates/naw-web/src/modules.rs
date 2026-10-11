@@ -259,6 +259,93 @@ pub(crate) async fn expand(
     Ok(out.join("\n"))
 }
 
+/// Runs the `module()` calls a skin template left in rendered HTML (see
+/// naw-core templates.rs) and puts the rendered result in each one's place.
+/// A call that fails keeps its fallback and is logged: the chrome around a
+/// page has nowhere to show an error box.
+pub(crate) async fn fill_skin(
+    state: &AppState,
+    ctx: &Ctx,
+    path: &str,
+    html: String,
+) -> Result<String, AppError> {
+    let open = format!("<{} data-module=\"", naw_core::templates::MODULE_TAG);
+    let close = format!("</{}>", naw_core::templates::MODULE_TAG);
+    if !html.contains(&open) {
+        return Ok(html);
+    }
+    let mut wiki = None;
+    let page = json!({ "path": path, "lang": ctx.content_locale });
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html.as_str();
+    let mut made = 0;
+    while let Some(at) = rest.find(&open) {
+        out.push_str(&rest[..at]);
+        let after = &rest[at..];
+        let Some((call, fallback, len)) = skin_call(after, &open, &close) else {
+            // Not ours after all: keep the text and look further on.
+            out.push_str(&after[..open.len()]);
+            rest = &after[open.len()..];
+            continue;
+        };
+        rest = &after[len..];
+        made += 1;
+        if made > CALLS_MAX {
+            out.push_str(fallback);
+            continue;
+        }
+        if wiki.is_none() {
+            wiki = Some(wiki_value(state, ctx).await?);
+        }
+        let wiki = wiki.as_ref().expect("filled above");
+        match run_call(state, ctx, &call, wiki, &page).await? {
+            Ok(markdown) => out.push_str(&inline(&naw_markdown::render_html(&markdown))),
+            Err(reason) => {
+                tracing::warn!(module = %call.module, function = %call.function, %reason, "skin module call failed");
+                out.push_str(fallback);
+            }
+        }
+    }
+    out.push_str(rest);
+    Ok(out)
+}
+
+/// One marker at the start of `text`: the call, its fallback and the
+/// marker's length.
+fn skin_call<'a>(text: &'a str, open: &str, close: &str) -> Option<(Call, &'a str, usize)> {
+    let rest = text.strip_prefix(open)?;
+    let (module, rest) = rest.split_once("\" data-function=\"")?;
+    let (function, rest) = rest.split_once("\">")?;
+    let end = rest.find(close)?;
+    let fallback = &rest[..end];
+    let (module, function) = opener(&format!(":::Module:{module}:{function}"))?;
+    let len = text.len() - rest.len() + end + close.len();
+    Some((
+        Call {
+            start: 0,
+            end: 0,
+            module,
+            function,
+            args: Vec::new(),
+        },
+        fallback,
+        len,
+    ))
+}
+
+/// A result that is one paragraph loses the `<p>`, so a skin can put it
+/// inside its own.
+fn inline(html: &str) -> String {
+    let trimmed = html.trim();
+    match trimmed
+        .strip_prefix("<p>")
+        .and_then(|s| s.strip_suffix("</p>"))
+    {
+        Some(inner) if !inner.contains("<p>") => inner.to_string(),
+        _ => trimmed.to_string(),
+    }
+}
+
 /// One call: from the cache, or loaded and run. The outer error is the
 /// engine's; the inner one is a reason to show on the page.
 async fn run_call(
@@ -496,6 +583,42 @@ mod tests {
             calls(":::Module:Stats:summary\nA sentence = not an argument, it has spaces.\n:::\n");
         assert_eq!(found.len(), 1);
         assert_eq!((found[0].start, found[0].end), (0, 1));
+    }
+
+    #[test]
+    fn a_skin_marker_reads_back_as_a_call_with_its_fallback() {
+        let open = "<naw-module data-module=\"";
+        let close = "</naw-module>";
+        let text = "<naw-module data-module=\"stats\" data-function=\"line\">3 articles</naw-module> after";
+        let (call, fallback, len) = skin_call(text, open, close).expect("a call");
+        assert_eq!(
+            (call.module.as_str(), call.function.as_str()),
+            ("stats", "line")
+        );
+        assert_eq!(fallback, "3 articles");
+        assert_eq!(&text[len..], " after");
+        assert!(
+            skin_call(
+                "<naw-module data-module=\"../x\" data-function=\"f\">x</naw-module>",
+                open,
+                close
+            )
+            .is_none()
+        );
+        assert!(skin_call("<naw-module data-module=\"stats\"", open, close).is_none());
+    }
+
+    #[test]
+    fn one_paragraph_loses_its_p_and_more_keep_theirs() {
+        assert_eq!(
+            inline("<p>3 <strong>articles</strong></p>\n"),
+            "3 <strong>articles</strong>"
+        );
+        assert_eq!(inline("<p>a</p>\n<p>b</p>"), "<p>a</p>\n<p>b</p>");
+        assert_eq!(
+            inline("<div class=\"wiki-grid\"></div>"),
+            "<div class=\"wiki-grid\"></div>"
+        );
     }
 
     #[test]

@@ -93,6 +93,7 @@ pub fn build(
     env.add_function("asset", move |path: &str| -> String {
         assets.url(path).unwrap_or_default()
     });
+    env.add_function("module", module_call);
     for name in TEMPLATES {
         let path = format!("{dir}/{name}");
         let source = match std::fs::read_to_string(&path) {
@@ -115,6 +116,36 @@ pub fn build(
     }
     load_error_pages(&mut env, dir, fallback_dir)?;
     Ok(env)
+}
+
+/// The element a skin's `module()` call leaves for the engine to fill.
+pub const MODULE_TAG: &str = "naw-module";
+
+/// `{{ module("stats", "line", fallback) }}`: a call to a wiki module, as
+/// `:::Module:Stats:line` is in a page. Templates render without the
+/// database, so this only marks the place, and the handler runs the module
+/// afterwards (see naw-web modules.rs). Where nothing fills it, or the module
+/// fails, the fallback shows, as a browser shows the text inside any element
+/// it does not know.
+fn module_call(module: &str, function: &str, fallback: Option<String>) -> minijinja::Value {
+    let fallback = minijinja::HtmlEscape(fallback.as_deref().unwrap_or("")).to_string();
+    let module = module.to_ascii_lowercase();
+    let module_ok = !module.is_empty()
+        && module.len() <= 100
+        && module
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    let function_ok = !function.is_empty()
+        && function.len() <= 64
+        && function
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !module_ok || !function_ok {
+        return minijinja::Value::from_safe_string(fallback);
+    }
+    minijinja::Value::from_safe_string(format!(
+        "<{MODULE_TAG} data-module=\"{module}\" data-function=\"{function}\">{fallback}</{MODULE_TAG}>"
+    ))
 }
 
 /// Loads `errors/*.html` from the default skin, then the active one on top.
@@ -224,6 +255,25 @@ mod tests {
             head.rfind("--accent: #ff3d8b") > head.find("--accent: #0b5fff"),
             "the theme must come after the default styles to win"
         );
+    }
+
+    #[test]
+    fn a_module_call_marks_its_place_around_an_escaped_fallback() {
+        let env = load_templates_with_fallback(&default_skin(), &default_skin(), &locales())
+            .expect("default skin loads");
+        let rendered = env
+            .render_str(
+                "{{ module('Stats', 'line', '3 < 4') }}|{{ module('../x', 'f', 'plain') }}|{{ module('stats', 'f()') }}",
+                minijinja::context! { lang => "en" },
+            )
+            .expect("module is registered");
+        let parts: Vec<&str> = rendered.split('|').collect();
+        assert_eq!(
+            parts[0],
+            "<naw-module data-module=\"stats\" data-function=\"line\">3 &lt; 4</naw-module>"
+        );
+        assert_eq!(parts[1], "plain");
+        assert_eq!(parts[2], "");
     }
 
     #[test]

@@ -184,6 +184,7 @@ pub(crate) async fn page(
             }
         })
         .map_err(pages::template_error)?;
+    let html = crate::modules::fill_skin(state, ctx, "/", html).await?;
     Ok(pages::html_response(html, headers))
 }
 

@@ -1172,6 +1172,7 @@ pub async fn page(
             },
         },
     )?;
+    let html = crate::modules::fill_skin(&state, &ctx, &format!("/{slug}"), html).await?;
     Ok(html_response(html, &headers))
 }
 
