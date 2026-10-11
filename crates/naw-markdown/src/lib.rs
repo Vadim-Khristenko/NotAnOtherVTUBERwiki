@@ -669,6 +669,9 @@ enum BlockKind {
     Infobox,
     Timeline,
     CollapsibleQuote,
+    Tabs,
+    Navbox,
+    Hatnote,
 }
 
 /// Rows in one infobox; past it the lines stay Markdown.
@@ -763,11 +766,14 @@ fn extract_custom_blocks(markdown: &str, state: &mut BlockState, depth: usize) -
             .filter(|_| trimmed == ":::timeline" || trimmed.starts_with(":::timeline "))
         {
             Some((BlockKind::Timeline, rest.trim().to_string()))
+        } else if let Some(rest) = fence_opener(trimmed, ":::infobox") {
+            Some((BlockKind::Infobox, rest))
+        } else if let Some(rest) = fence_opener(trimmed, ":::tabs") {
+            Some((BlockKind::Tabs, rest))
+        } else if let Some(rest) = fence_opener(trimmed, ":::navbox") {
+            Some((BlockKind::Navbox, rest))
         } else {
-            trimmed
-                .strip_prefix(":::infobox")
-                .filter(|_| trimmed == ":::infobox" || trimmed.starts_with(":::infobox "))
-                .map(|rest| (BlockKind::Infobox, rest.trim().to_string()))
+            fence_opener(trimmed, ":::hatnote").map(|rest| (BlockKind::Hatnote, rest))
         };
         if let Some((kind, title)) = fence {
             let close = if closers_left {
@@ -795,7 +801,9 @@ fn extract_custom_blocks(markdown: &str, state: &mut BlockState, depth: usize) -
             let body = &lines[i + 1..j];
             match kind {
                 BlockKind::Timeline => out.extend(emit_timeline(&title, body, state)),
-                BlockKind::Infobox => out.extend(emit_infobox(&title, body, state, depth)),
+                BlockKind::Infobox => out.extend(emit_infobox(&title, body, state, depth, false)),
+                BlockKind::Navbox => out.extend(emit_infobox(&title, body, state, depth, true)),
+                BlockKind::Tabs => out.extend(emit_tabs(&title, body, state, depth)),
                 _ => out.extend(emit_wrapped(kind, &title, &body.join("\n"), state, depth)),
             }
             i = j + 1;
@@ -873,7 +881,13 @@ fn emit_wrapped(
             "<figure class=\"pullquote\"><blockquote>".to_string(),
             "</blockquote></figure>",
         ),
-        BlockKind::Infobox | BlockKind::Timeline => unreachable!("laid out by their own emitters"),
+        BlockKind::Hatnote => (
+            "<div class=\"hatnote\" role=\"note\">".to_string(),
+            "</div>",
+        ),
+        BlockKind::Infobox | BlockKind::Timeline | BlockKind::Tabs | BlockKind::Navbox => {
+            unreachable!("laid out by their own emitters")
+        }
     };
     state.piece(open, "", &mut out);
     if !empty {
@@ -888,7 +902,13 @@ fn emit_wrapped(
 /// any other lines stay Markdown where they stand. A card with no title, no
 /// filled row and no text leaves nothing: a page begun from a template has
 /// every field empty.
-fn emit_infobox(title: &str, body: &[&str], state: &mut BlockState, depth: usize) -> Vec<String> {
+fn emit_infobox(
+    title: &str,
+    body: &[&str],
+    state: &mut BlockState,
+    depth: usize,
+    navbox: bool,
+) -> Vec<String> {
     enum Part<'a> {
         Rows(Vec<(&'a str, &'a str)>),
         Prose(Vec<&'a str>),
@@ -927,12 +947,25 @@ fn emit_infobox(title: &str, body: &[&str], state: &mut BlockState, depth: usize
     if !has_content {
         return out;
     }
-    let mut open = String::from("<aside class=\"infobox\">");
-    if !title.is_empty() {
-        open.push_str("<p class=\"infobox-title\">");
-        open.push_str(&naw_core::html::escape(title));
-        open.push_str("</p>");
-    }
+    // A navbox is the same rows at the foot of an article, folding away.
+    let open = if navbox {
+        format!(
+            "<details class=\"navbox\" open><summary>{}</summary>",
+            naw_core::html::escape(title)
+        )
+    } else if title.is_empty() {
+        String::from("<aside class=\"infobox\">")
+    } else {
+        format!(
+            "<aside class=\"infobox\"><p class=\"infobox-title\">{}</p>",
+            naw_core::html::escape(title)
+        )
+    };
+    let rows_class = if navbox {
+        "navbox-rows"
+    } else {
+        "infobox-rows"
+    };
     state.piece(open, "", &mut out);
     for part in parts {
         match part {
@@ -944,7 +977,7 @@ fn emit_infobox(title: &str, body: &[&str], state: &mut BlockState, depth: usize
                 }
             }
             Part::Rows(rows) => {
-                state.piece("<dl class=\"infobox-rows\">".into(), "", &mut out);
+                state.piece(format!("<dl class=\"{rows_class}\">"), "", &mut out);
                 for (key, value) in rows {
                     state.piece(
                         format!(
@@ -960,8 +993,66 @@ fn emit_infobox(title: &str, body: &[&str], state: &mut BlockState, depth: usize
             }
         }
     }
-    state.piece("</aside>".into(), "", &mut out);
+    let close = if navbox { "</details>" } else { "</aside>" };
+    state.piece(close.into(), "", &mut out);
     out
+}
+
+/// `:::tabs` with a `## Name` line opening each tab. Without scripts the
+/// tabs stand one after another under their names; the skin's script turns
+/// them into a row of tabs. Text before the first name stays above them.
+fn emit_tabs(_title: &str, body: &[&str], state: &mut BlockState, depth: usize) -> Vec<String> {
+    let mut intro: Vec<&str> = Vec::new();
+    let mut tabs: Vec<(String, Vec<&str>)> = Vec::new();
+    let mut in_fence = false;
+    for &line in body {
+        let trimmed = line.trim_start();
+        if code_fence_run(trimmed).is_some() {
+            in_fence = !in_fence;
+        }
+        if !in_fence && let Some(name) = trimmed.strip_prefix("## ") {
+            tabs.push((name.trim().to_string(), Vec::new()));
+            continue;
+        }
+        match tabs.last_mut() {
+            Some((_, lines)) => lines.push(line),
+            None => intro.push(line),
+        }
+    }
+    let mut out = Vec::new();
+    let intro = intro.join("\n");
+    if !intro.trim().is_empty() {
+        out.push(extract_custom_blocks(&intro, state, depth + 1));
+        out.push(String::new());
+    }
+    if tabs.is_empty() {
+        return out;
+    }
+    state.piece("<div class=\"tabs\">".into(), "", &mut out);
+    for (name, lines) in tabs {
+        state.piece(
+            format!(
+                "<section class=\"tab-panel\"><p class=\"tab-title\">{}</p>",
+                naw_core::html::escape(&name)
+            ),
+            "",
+            &mut out,
+        );
+        let text = lines.join("\n");
+        if !text.trim().is_empty() {
+            out.push(extract_custom_blocks(&text, state, depth + 1));
+            out.push(String::new());
+        }
+        state.piece("</section>".into(), "", &mut out);
+    }
+    state.piece("</div>".into(), "", &mut out);
+    out
+}
+
+/// The rest of an opener line `:::name rest`, or `None` for another line.
+fn fence_opener(trimmed: &str, name: &str) -> Option<String> {
+    let rest = trimmed.strip_prefix(name)?;
+    (rest.is_empty() || rest.starts_with(' ')).then(|| rest.trim().to_string())
 }
 
 /// The run of backticks or tildes a code fence line starts with, three or
@@ -2388,7 +2479,7 @@ pub fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 26;
+pub const RENDERER_VERSION: i32 = 27;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -2808,6 +2899,47 @@ mod tests {
         let html = render_html("See [[home|Home page]].\n");
         assert!(html.contains("href=\"home\""), "{html}");
         assert!(html.contains(">Home page</a>"), "{html}");
+    }
+
+    #[test]
+    fn tabs_stand_under_their_names_with_markdown_inside() {
+        let html = render_html(
+            ":::tabs\nAbove the tabs.\n\n## Twitch\n**Live** on [[twitch-page|Twitch]].[^a]\n\n## YouTube\n```\n## not a tab\n```\n:::\n\n[^a]: Source.\n",
+        )
+        .replace('\n', "");
+        assert!(
+            html.contains("<p>Above the tabs.</p><div class=\"tabs\">"),
+            "{html}"
+        );
+        assert!(
+            html.contains("<section class=\"tab-panel\"><p class=\"tab-title\">Twitch</p><p><strong>Live</strong>"),
+            "{html}"
+        );
+        assert!(
+            html.contains("<p class=\"tab-title\">YouTube</p><pre><code>## not a tab"),
+            "{html}"
+        );
+        assert_eq!(html.matches("class=\"tab-panel\"").count(), 2, "{html}");
+        assert!(html.contains("footnote"), "{html}");
+    }
+
+    #[test]
+    fn a_navbox_folds_its_rows_and_a_hatnote_is_a_note() {
+        let html = render_html(
+            ":::navbox Filian's world\nCollabs = [[bao|Bao]] · [[crelly|Crelly]]\nEmpty =\n:::\n\n:::hatnote\nFor the song, see [[song]].\n:::\n",
+        )
+        .replace('\n', "");
+        assert!(
+            html.contains("<details class=\"navbox\" open=\"\"><summary>Filian's world</summary><dl class=\"navbox-rows\"><div><dt>Collabs</dt>"),
+            "{html}"
+        );
+        assert!(!html.contains("<dt>Empty</dt>"), "{html}");
+        assert!(
+            html.contains(
+                "<div class=\"hatnote\" role=\"note\"><p>For the song, see <a href=\"song\""
+            ),
+            "{html}"
+        );
     }
 
     #[test]
