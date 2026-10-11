@@ -298,10 +298,13 @@ it on.
 
 Communities will not move if moving costs everything they built.
 
-- Wikitext to Markdown converter with a coverage report
-- FANDOM and MediaWiki XML dump importer in the CLI, with a dry run mode
-- Template mapping assistant: convert a wikitext infobox into a `Template:` plus a `Module:`
-- Media and user attribution import, preserving authorship, timestamps and history
+- [x] Wikitext to Markdown converter with a coverage report (see [import.md](import.md))
+- [x] FANDOM and MediaWiki XML dump importer in the CLI, with a dry run mode
+- Template mapping assistant: FANDOM portable infoboxes already become `:::infobox`
+  templates, and their picture parameters file addresses; other infoboxes and Lua
+  modules are not converted yet
+- [x] User attribution import, preserving authorship, timestamps and history. Media files
+  are not in an XML dump and do not come over yet
 - Open export format: Markdown plus JSON, and Wikipedia style XML
 - Automated backup and restore, with a restore drill in CI
 
