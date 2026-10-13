@@ -116,6 +116,7 @@ async fn index_one(db: &sqlx::PgPool, limits: &Limits, page_id: Uuid) -> Result<
             locale: &row.locale,
             title: &row.title,
             summary: row.summary.as_deref(),
+            categories: &crate::pages::category_names(&prepared.categories),
             html: &prepared.rendered.html,
         },
     )

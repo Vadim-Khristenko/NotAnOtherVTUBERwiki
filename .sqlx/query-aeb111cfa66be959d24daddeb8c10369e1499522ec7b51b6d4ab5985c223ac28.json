@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH q AS (SELECT websearch_to_tsquery($2::text::regconfig, $3) AS tsq)\n           SELECT p.id, p.namespace::text AS \"namespace!\", p.slug, p.title, p.locale, p.updated_at,\n                  (CASE WHEN lower(p.title) = lower($3) THEN 5\n                        WHEN p.title ILIKE $4 || '%' THEN 4\n                        WHEN p.title ILIKE '%' || $4 || '%' OR p.slug ILIKE '%' || $4 || '%' THEN 3\n                        WHEN ts_filter(p.search_vector, '{a}') @@ q.tsq THEN 2\n                        ELSE 0 END)::float8 + similarity(p.title, $3) AS \"score!\",\n                  (lower(p.title) = lower($3)) AS \"exact!\",\n                  ts_headline($2::text::regconfig, coalesce(c.body, ''), q.tsq,\n                    'MaxWords=30, MinWords=12, ShortWord=3, MaxFragments=1, StartSel=' || chr(57344) || ', StopSel=' || chr(57345)\n                  ) AS \"snippet!\"\n           FROM pages p\n           CROSS JOIN q\n           LEFT JOIN search_chunks c ON c.page_id = p.id AND c.chunk_no = 1\n           WHERE p.wiki_id = $1 AND p.namespace::text = ANY($5)\n             AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n             AND ($6::text IS NULL OR COALESCE(p.locale, '') = $6)\n             AND (p.title ILIKE '%' || $4 || '%' OR p.slug ILIKE '%' || $4 || '%'\n                  OR p.title % $3 OR ts_filter(p.search_vector, '{a}') @@ q.tsq)\n           ORDER BY CASE WHEN $7 THEN p.updated_at END DESC, 7 DESC, p.updated_at DESC\n           LIMIT $8 OFFSET $9",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "locale",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "locale"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "score!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "exact!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "snippet!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray",
+        "Text",
+        "Bool",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      false,
+      true,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "aeb111cfa66be959d24daddeb8c10369e1499522ec7b51b6d4ab5985c223ac28"
+}

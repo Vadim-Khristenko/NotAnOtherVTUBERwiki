@@ -75,6 +75,27 @@ to_start = "В начало"
 next_page = "Следующая страница"
 
 
+modules = "Модули"
+modules_about = "Страницы с серверным кодом, которые статьи вызывают через :::Module."
+discussions = "Обсуждения"
+discussions_about = "Темы о всех страницах и об отдельных правках, сначала те, где писали недавно."
+rc_filters = "Фильтр правок"
+rc_all_namespaces = "Везде"
+rc_hide_minor = "Без малых правок"
+rc_only_new = "Только новые страницы"
+rc_new = "новая"
+rc_nothing = "За этот период нет правок с такими фильтрами."
+rc_sum_edits = "правок"
+rc_sum_pages = "страниц изменено"
+rc_sum_editors = "авторов"
+rc_sum_topics = "активных тем"
+stat_group_content = "Содержание"
+stat_group_activity = "Активность"
+stat_group_media = "Файлы и эмоуты"
+stat_chart = "Правки за последние 30 дней: {n}"
+stat_peak = "самый активный день: {n}"
+stat_top_editors = "Больше всего правок за 30 дней"
+stat_busiest = "Чаще всего правили за 30 дней"
 [pages_count]
 one = "{n} страница"
 few = "{n} страницы"
@@ -92,3 +113,58 @@ one = "{n} правка, последняя {when}"
 few = "{n} правки, последняя {when}"
 many = "{n} правок, последняя {when}"
 other = "{n} правки, последняя {when}"
+
+[rc_days]
+one = "{n} день"
+few = "{n} дня"
+many = "{n} дней"
+
+[figure_articles]
+one = "{n} статья"
+few = "{n} статьи"
+many = "{n} статей"
+
+[figure_categories]
+one = "{n} категория"
+few = "{n} категории"
+many = "{n} категорий"
+
+[figure_new_pages]
+one = "{n} за неделю"
+few = "{n} за неделю"
+many = "{n} за неделю"
+
+[figure_files]
+one = "{n} файл"
+few = "{n} файла"
+many = "{n} файлов"
+
+[figure_templates]
+one = "{n} шаблон"
+few = "{n} шаблона"
+many = "{n} шаблонов"
+
+[figure_modules]
+one = "{n} модуль"
+few = "{n} модуля"
+many = "{n} модулей"
+
+[figure_edits_day]
+one = "{n} сегодня"
+few = "{n} сегодня"
+many = "{n} сегодня"
+
+[figure_open_topics]
+one = "{n} открытая"
+few = "{n} открытые"
+many = "{n} открытых"
+
+[figure_active]
+one = "{n} за месяц"
+few = "{n} за месяц"
+many = "{n} за месяц"
+
+[figure_uncategorized]
+one = "{n} страница"
+few = "{n} страницы"
+many = "{n} страниц"

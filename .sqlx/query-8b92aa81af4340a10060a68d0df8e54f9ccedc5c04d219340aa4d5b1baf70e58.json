@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT r.id, r.created_at, r.summary, r.is_minor, r.bytes AS \"bytes!\", r.review_status,\n                  p.title, p.slug, p.namespace::text AS \"namespace!\",\n                  COALESCE(p.locale, '') AS \"locale!\",\n                  (SELECT u.username FROM users u WHERE u.id = r.author_id) AS \"author?\",\n                  (SELECT r2.id FROM revisions r2 WHERE r2.page_id = r.page_id\n                     AND (r2.created_at, r2.id) < (r.created_at, r.id)\n                     ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1) AS \"prev_id?\",\n                  (SELECT r2.bytes FROM revisions r2 WHERE r2.page_id = r.page_id\n                     AND (r2.created_at, r2.id) < (r.created_at, r.id)\n                     ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1) AS \"prev_bytes?\"\n           FROM revisions r\n           JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n             AND (r.review_status = 'accepted' OR $3)\n           ORDER BY r.created_at DESC, r.id DESC\n           LIMIT $2",
+  "query": "SELECT r.id, r.created_at, r.summary, r.is_minor, r.bytes AS \"bytes!\", r.review_status,\n                  p.title, p.slug, p.namespace::text AS \"namespace!\",\n                  COALESCE(p.locale, '') AS \"locale!\",\n                  (SELECT u.username FROM users u WHERE u.id = r.author_id) AS \"author?\",\n                  (SELECT r2.id FROM revisions r2 WHERE r2.page_id = r.page_id\n                     AND (r2.created_at, r2.id) < (r.created_at, r.id)\n                     ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1) AS \"prev_id?\",\n                  (SELECT r2.bytes FROM revisions r2 WHERE r2.page_id = r.page_id\n                     AND (r2.created_at, r2.id) < (r.created_at, r.id)\n                     ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1) AS \"prev_bytes?\"\n           FROM revisions r\n           JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n             AND (r.review_status = 'accepted' OR $3)\n             AND r.created_at > now() - make_interval(days => $4)\n             AND ($5::text IS NULL OR p.namespace::text = $5)\n             AND (NOT $6 OR NOT r.is_minor)\n             AND (NOT $7 OR NOT EXISTS (SELECT 1 FROM revisions r3 WHERE r3.page_id = r.page_id\n                    AND (r3.created_at, r3.id) < (r.created_at, r.id)))\n           ORDER BY r.created_at DESC, r.id DESC\n           LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -126,6 +126,10 @@
       "Left": [
         "Uuid",
         "Int8",
+        "Bool",
+        "Int4",
+        "Text",
+        "Bool",
         "Bool"
       ]
     },
@@ -145,5 +149,5 @@
       null
     ]
   },
-  "hash": "afdf10f42368a62f65a3ac88353521d2fefd8d84a5a9781d8483675f6c5c3870"
+  "hash": "8b92aa81af4340a10060a68d0df8e54f9ccedc5c04d219340aa4d5b1baf70e58"
 }

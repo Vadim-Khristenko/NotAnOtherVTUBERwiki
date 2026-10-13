@@ -75,6 +75,27 @@ to_start = "Back to the start"
 next_page = "Next page"
 
 
+modules = "Modules"
+modules_about = "Pages of server code that articles call with :::Module."
+discussions = "Discussions"
+discussions_about = "Topics about every page and about single changes, the latest active first."
+rc_filters = "Filter changes"
+rc_all_namespaces = "Everywhere"
+rc_hide_minor = "Hide minor edits"
+rc_only_new = "New pages only"
+rc_new = "new"
+rc_nothing = "No edits match these filters in this period."
+rc_sum_edits = "edits"
+rc_sum_pages = "pages changed"
+rc_sum_editors = "editors"
+rc_sum_topics = "active topics"
+stat_group_content = "Content"
+stat_group_activity = "Activity"
+stat_group_media = "Files and emotes"
+stat_chart = "Edits in the last 30 days: {n}"
+stat_peak = "busiest day: {n}"
+stat_top_editors = "Most edits in 30 days"
+stat_busiest = "Most edited pages in 30 days"
 [pages_count]
 one = "{n} page"
 other = "{n} pages"
@@ -86,3 +107,47 @@ other = "used on {n} pages"
 [edits_last]
 one = "{n} edit, the last {when}"
 other = "{n} edits, the last {when}"
+
+[rc_days]
+one = "{n} day"
+other = "{n} days"
+
+[figure_articles]
+one = "{n} article"
+other = "{n} articles"
+
+[figure_categories]
+one = "{n} category"
+other = "{n} categories"
+
+[figure_new_pages]
+one = "{n} this week"
+other = "{n} this week"
+
+[figure_files]
+one = "{n} file"
+other = "{n} files"
+
+[figure_templates]
+one = "{n} template"
+other = "{n} templates"
+
+[figure_modules]
+one = "{n} module"
+other = "{n} modules"
+
+[figure_edits_day]
+one = "{n} today"
+other = "{n} today"
+
+[figure_open_topics]
+one = "{n} open"
+other = "{n} open"
+
+[figure_active]
+one = "{n} this month"
+other = "{n} this month"
+
+[figure_uncategorized]
+one = "{n} page"
+other = "{n} pages"

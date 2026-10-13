@@ -496,6 +496,15 @@ pub(crate) struct RenderedPage {
     pub categories: Vec<naw_markdown::categories::Membership>,
 }
 
+/// Category names for the search index, one a line.
+pub(crate) fn category_names(categories: &[naw_markdown::categories::Membership]) -> String {
+    categories
+        .iter()
+        .map(|c| c.name.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// [`cached_body`], with the page's categories.
 pub(crate) async fn cached_body_full(
     state: &AppState,
@@ -616,6 +625,7 @@ pub(crate) async fn index(
             locale,
             title,
             summary,
+            categories: &category_names(&prepared.categories),
             html: &prepared.rendered.html,
         },
     )
@@ -829,6 +839,13 @@ pub struct PageQuery {
     /// The old address a reader came from, after a page was renamed.
     #[serde(default)]
     redirected: Option<String>,
+    /// Recent changes: how many days back, and which edits to leave out.
+    #[serde(default)]
+    days: Option<String>,
+    #[serde(default)]
+    hide_minor: Option<String>,
+    #[serde(default)]
+    only_new: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -867,6 +884,9 @@ pub async fn page(
         let system_query = crate::system::Query {
             from: query.from.clone(),
             ns: query.ns.clone(),
+            days: query.days.as_deref().and_then(|d| d.trim().parse().ok()),
+            hide_minor: query.hide_minor.is_some(),
+            only_new: query.only_new.is_some(),
         };
         return Ok(
             crate::system::page(&state, &ctx, &headers, name, &system_query)
@@ -2609,6 +2629,9 @@ mod tests {
             all: None,
             pending: None,
             redirected: None,
+            days: None,
+            hide_minor: None,
+            only_new: None,
         }
     }
 

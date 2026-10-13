@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH q AS (SELECT websearch_to_tsquery($2::text::regconfig, $3) AS tsq,\n                             websearch_to_tsquery('simple', $3) AS simple)\n           SELECT\n             (SELECT count(*) FROM (SELECT 1 FROM pages p, q WHERE p.wiki_id = $1 AND p.namespace = 'main'\n                AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n                AND ($5::text IS NULL OR COALESCE(p.locale, '') = $5)\n                AND (p.title ILIKE '%' || $4 || '%' OR p.search_vector @@ q.tsq\n                     OR (NOT $7 AND EXISTS (SELECT 1 FROM search_chunks c WHERE c.page_id = p.id AND c.vector @@ q.tsq)))\n                LIMIT $6) x) AS \"articles!\",\n             (SELECT count(*) FROM (SELECT DISTINCT pc.category FROM page_categories pc\n                WHERE pc.wiki_id = $1 AND (pc.name ILIKE '%' || $4 || '%' OR similarity(pc.name, $3) > $8)\n                LIMIT $6) x) AS \"categories!\",\n             (SELECT count(*) FROM (SELECT 1 FROM users u WHERE u.username NOT LIKE 'deleted-%'\n                AND (u.username ILIKE '%' || $4 || '%' OR u.display_name ILIKE '%' || $4 || '%')\n                AND EXISTS (SELECT 1 FROM wiki_memberships m WHERE m.user_id = u.id AND m.wiki_id = $1)\n                LIMIT $6) x) AS \"people!\",\n             (SELECT count(*) FROM (SELECT 1 FROM threads t, q WHERE t.wiki_id = $1 AND t.hidden_at IS NULL\n                AND (t.title_vector @@ q.simple OR t.title ILIKE '%' || $4 || '%'\n                     OR EXISTS (SELECT 1 FROM posts po WHERE po.thread_id = t.id AND po.hidden_at IS NULL\n                                AND po.body_vector @@ q.simple))\n                LIMIT $6) x) AS \"discussions!\",\n             (SELECT count(*) FROM (SELECT 1 FROM pages p, q WHERE p.wiki_id = $1\n                AND p.namespace IN ('template', 'page_template')\n                AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n                AND (p.title ILIKE '%' || $4 || '%' OR p.slug ILIKE '%' || $4 || '%' OR p.search_vector @@ q.tsq)\n                LIMIT $6) x) AS \"templates!\",\n             (SELECT count(*) FROM (SELECT 1 FROM pages p, q WHERE p.wiki_id = $1 AND p.namespace = 'module'\n                AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n                AND (p.title ILIKE '%' || $4 || '%' OR p.slug ILIKE '%' || $4 || '%' OR p.search_vector @@ q.tsq)\n                LIMIT $6) x) AS \"modules!\",\n             (SELECT count(*) FROM (SELECT 1 FROM media m WHERE m.wiki_id = $1 AND m.hidden_at IS NULL\n                AND (m.name ILIKE '%' || $4 || '%' OR m.filename ILIKE '%' || $4 || '%')\n                LIMIT $6) x) AS \"files!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "articles!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "categories!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "people!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "discussions!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "templates!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "modules!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "files!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "Bool",
+        "Float4"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "847dbd620a1884792fe2a5aeea1358fbf36c6d094ba66c51b20520a93f3e6c19"
+}

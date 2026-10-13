@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT d::date AS \"day!\", count(r.id) AS \"edits!\"\n           FROM generate_series(current_date - 29, current_date, interval '1 day') d\n           LEFT JOIN revisions r ON r.created_at >= d AND r.created_at < d + interval '1 day'\n             AND r.review_status = 'accepted'\n             AND EXISTS (SELECT 1 FROM pages p WHERE p.id = r.page_id AND p.wiki_id = $1)\n           GROUP BY d ORDER BY d",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "day!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "edits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "5cdcca34ec5fa851a61f2ed50d558b9ee86fa61ef161a02578ba12e662eca15f"
+}

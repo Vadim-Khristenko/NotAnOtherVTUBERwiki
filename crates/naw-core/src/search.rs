@@ -471,14 +471,18 @@ pub struct Document<'a> {
     pub locale: &'a str,
     pub title: &'a str,
     pub summary: Option<&'a str>,
+    /// The names of the page's categories, one a line: a search for a
+    /// category's name finds the pages in it.
+    pub categories: &'a str,
     /// The page as rendered, templates expanded.
     pub html: &'a str,
 }
 
 /// Rebuilds one page's index inside the caller's transaction, so a save and
-/// its index never disagree. The page vector holds the title and summary;
-/// each piece of the body is a row of `search_chunks`, rewritten only when
-/// its text or its stemming changed.
+/// its index never disagree. The page vector holds the title and the
+/// addresses that redirect to the page, as other names for it, then the
+/// summary and the categories; each piece of the body is a row of
+/// `search_chunks`, rewritten only when its text or its stemming changed.
 pub async fn index_page(
     conn: &mut sqlx::PgConnection,
     doc: &Document<'_>,
@@ -487,17 +491,24 @@ pub async fn index_page(
     sqlx::query!(
         r#"
         -- Every $2 is cast from ::text so PostgreSQL infers one type for it.
-        UPDATE pages SET
+        UPDATE pages p SET
           search_lang = $2::text,
           search_vector =
               setweight(to_tsvector($2::text::regconfig, $3), 'A')
+           || setweight(to_tsvector($2::text::regconfig, coalesce((
+                SELECT string_agg(replace(r.from_slug, '-', ' '), ' ')
+                FROM page_redirects r
+                WHERE r.wiki_id = p.wiki_id AND r.to_namespace = p.namespace AND r.to_slug = p.slug
+              ), '')), 'A')
            || setweight(to_tsvector($2::text::regconfig, coalesce($4, '')), 'B')
+           || setweight(to_tsvector($2::text::regconfig, $5), 'B')
         WHERE id = $1
         "#,
         doc.page_id,
         config,
         doc.title,
-        doc.summary
+        doc.summary,
+        doc.categories
     )
     .execute(&mut *conn)
     .await?;

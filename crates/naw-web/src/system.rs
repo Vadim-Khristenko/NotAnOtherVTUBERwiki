@@ -24,6 +24,7 @@ const GROUPS: [(&str, &[(&str, &str)]); 3] = [
             ("new-pages", "sparkles"),
             ("files", "photo"),
             ("templates", "template"),
+            ("modules", "code"),
             ("random", "arrows-shuffle"),
         ],
     ),
@@ -31,6 +32,7 @@ const GROUPS: [(&str, &[(&str, &str)]); 3] = [
         "activity",
         &[
             ("recent-changes", "activity"),
+            ("discussions", "message-circle"),
             ("active-users", "users-group"),
             ("statistics", "chart-bar"),
         ],
@@ -60,9 +62,18 @@ const LISTED_NAMESPACES: [&str; 5] = ["main", "category", "template", "page_temp
 pub(crate) struct Query {
     /// All pages: start at the first title from here on.
     pub from: Option<String>,
-    /// All pages: which namespace.
+    /// All pages and recent changes: which namespace.
     pub ns: Option<String>,
+    /// Recent changes: how many days back.
+    pub days: Option<i32>,
+    /// Recent changes: leave out minor edits.
+    pub hide_minor: bool,
+    /// Recent changes: only the edits that started a page.
+    pub only_new: bool,
 }
+
+/// The windows recent changes offers, in days.
+const RECENT_DAYS: [i32; 4] = [1, 3, 7, 30];
 
 /// GET /system and /system:name. `None` for a name that is not one.
 pub(crate) async fn page(
@@ -73,12 +84,18 @@ pub(crate) async fn page(
     query: &Query,
 ) -> Result<Option<Response>, AppError> {
     let (view, extra) = match name {
-        "" => ("index", index(ctx)),
-        "recent-changes" => ("recent-changes", recent_changes(state, ctx).await?),
+        "" => ("index", index(state, ctx).await?),
+        "recent-changes" => ("recent-changes", recent_changes(state, ctx, query).await?),
         "all-pages" => ("all-pages", all_pages(state, ctx, query).await?),
         "files" => ("files", files(state, ctx).await?),
         "statistics" => ("statistics", statistics(state, ctx).await?),
         "random" => return random(state, ctx).await.map(Some),
+        "discussions" => return Ok(Some(pages::see_other(&ctx.link("/talk")))),
+        "modules" => {
+            return Ok(Some(pages::see_other(
+                &ctx.link("/system:all-pages?ns=module"),
+            )));
+        }
         "categories" => ("categories", categories(state, ctx, false).await?),
         "wanted-categories" => ("wanted-categories", categories(state, ctx, true).await?),
         "uncategorized" => ("uncategorized", uncategorized(state, ctx).await?),
@@ -124,7 +141,51 @@ pub(crate) async fn page(
     ))
 }
 
-fn index(ctx: &Ctx) -> minijinja::Value {
+/// The index: every special page with a live figure where one helps,
+/// counted in one query.
+async fn index(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError> {
+    let n = sqlx::query!(
+        r#"SELECT
+             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL
+                AND current_revision_id IS NOT NULL AND COALESCE(locale, '') = $2) AS "articles!",
+             (SELECT count(DISTINCT category) FROM page_categories WHERE wiki_id = $1) AS "categories!",
+             (SELECT count(*) FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL
+                AND current_revision_id IS NOT NULL AND COALESCE(locale, '') = $2
+                AND created_at > now() - interval '7 days') AS "new_pages!",
+             (SELECT count(*) FROM media WHERE wiki_id = $1 AND hidden_at IS NULL) AS "files!",
+             (SELECT count(DISTINCT slug) FROM pages WHERE wiki_id = $1 AND namespace IN ('template', 'page_template')
+                AND deleted_at IS NULL AND current_revision_id IS NOT NULL) AS "templates!",
+             (SELECT count(DISTINCT slug) FROM pages WHERE wiki_id = $1 AND namespace = 'module'
+                AND deleted_at IS NULL AND current_revision_id IS NOT NULL) AS "modules!",
+             (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id WHERE p.wiki_id = $1
+                AND r.review_status = 'accepted' AND r.created_at > now() - interval '1 day') AS "edits_day!",
+             (SELECT count(*) FROM threads WHERE wiki_id = $1 AND status = 'open' AND hidden_at IS NULL) AS "open_topics!",
+             (SELECT count(DISTINCT r.author_id) FROM revisions r JOIN pages p ON p.id = r.page_id
+                WHERE p.wiki_id = $1 AND r.created_at > now() - interval '30 days') AS "active!",
+             (SELECT count(*) FROM pages p WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL
+                AND p.current_revision_id IS NOT NULL AND COALESCE(p.locale, '') = $2
+                AND NOT EXISTS (SELECT 1 FROM page_categories pc WHERE pc.page_id = p.id)) AS "uncategorized!""#,
+        ctx.wiki.id,
+        ctx.content_locale
+    )
+    .fetch_one(&state.db)
+    .await?;
+    let figure = |name: &str| -> Option<String> {
+        let (key, value) = match name {
+            "all-pages" => ("articles", n.articles),
+            "categories" => ("categories", n.categories),
+            "new-pages" => ("new_pages", n.new_pages),
+            "files" => ("files", n.files),
+            "templates" => ("templates", n.templates),
+            "modules" => ("modules", n.modules),
+            "recent-changes" => ("edits_day", n.edits_day),
+            "discussions" => ("open_topics", n.open_topics),
+            "active-users" => ("active", n.active),
+            "uncategorized" => ("uncategorized", n.uncategorized),
+            _ => return None,
+        };
+        Some(ctx.tn_with(&format!("system.figure_{key}"), value, &[]))
+    };
     let groups: Vec<minijinja::Value> = GROUPS
         .iter()
         .map(|(group, entries)| {
@@ -132,12 +193,17 @@ fn index(ctx: &Ctx) -> minijinja::Value {
                 .iter()
                 .map(|(name, icon)| {
                     let key = name.replace('-', "_");
+                    let href = match *name {
+                        "discussions" => ctx.link("/talk"),
+                        "modules" => ctx.link("/system:all-pages?ns=module"),
+                        _ => ctx.link(&format!("/system:{name}")),
+                    };
                     minijinja::context! {
-                        href => ctx.link(&format!("/system:{name}")),
+                        href => href,
                         icon => icon,
                         title => ctx.t(&format!("system.{key}")),
                         about => ctx.t(&format!("system.{key}_about")),
-                        path => format!("System:{name}"),
+                        figure => figure(name),
                     }
                 })
                 .collect();
@@ -147,7 +213,7 @@ fn index(ctx: &Ctx) -> minijinja::Value {
             }
         })
         .collect();
-    minijinja::context! { groups => groups }
+    Ok(minijinja::context! { groups => groups })
 }
 
 /// Where a page of any namespace lives.
@@ -186,7 +252,16 @@ fn list(ctx: &Ctx, rows: Vec<minijinja::Value>) -> minijinja::Value {
     minijinja::context! { rows => rows, list_max => ctx.limits.system_list_shown, at_limit => shown as i64 >= ctx.limits.system_list_shown }
 }
 
-async fn recent_changes(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError> {
+async fn recent_changes(
+    state: &AppState,
+    ctx: &Ctx,
+    query: &Query,
+) -> Result<minijinja::Value, AppError> {
+    let days = query.days.filter(|d| RECENT_DAYS.contains(d)).unwrap_or(7);
+    let ns = query
+        .ns
+        .as_deref()
+        .filter(|ns| LISTED_NAMESPACES.contains(ns));
     // The previous revision of each page comes from a subquery, not a join,
     // so the query plan (and sqlx's reading of it) stays the same.
     let rows = sqlx::query!(
@@ -204,14 +279,93 @@ async fn recent_changes(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value,
            JOIN pages p ON p.id = r.page_id
            WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
              AND (r.review_status = 'accepted' OR $3)
+             AND r.created_at > now() - make_interval(days => $4)
+             AND ($5::text IS NULL OR p.namespace::text = $5)
+             AND (NOT $6 OR NOT r.is_minor)
+             AND (NOT $7 OR NOT EXISTS (SELECT 1 FROM revisions r3 WHERE r3.page_id = r.page_id
+                    AND (r3.created_at, r3.id) < (r.created_at, r.id)))
            ORDER BY r.created_at DESC, r.id DESC
            LIMIT $2"#,
         ctx.wiki.id,
         ctx.limits.recent_changes_shown,
-        ctx.actor.can(Capability::RevisionPatrol)
+        ctx.actor.can(Capability::RevisionPatrol),
+        days,
+        ns,
+        query.hide_minor,
+        query.only_new
     )
     .fetch_all(&state.db)
     .await?;
+    let summary = sqlx::query!(
+        r#"SELECT count(*) AS "edits!", count(DISTINCT r.page_id) AS "pages!",
+                  count(DISTINCT r.author_id) AS "editors!",
+                  (SELECT count(*) FROM threads t WHERE t.wiki_id = $1
+                     AND t.last_post_at > now() - make_interval(days => $2)) AS "topics!"
+           FROM revisions r JOIN pages p ON p.id = r.page_id
+           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND r.review_status = 'accepted'
+             AND r.created_at > now() - make_interval(days => $2)"#,
+        ctx.wiki.id,
+        days
+    )
+    .fetch_one(&state.db)
+    .await?;
+    let here = |days: i32, ns: Option<&str>, hide_minor: bool, only_new: bool| {
+        let mut parts = vec![format!("days={days}")];
+        if let Some(ns) = ns {
+            parts.push(format!("ns={ns}"));
+        }
+        if hide_minor {
+            parts.push("hide_minor=1".into());
+        }
+        if only_new {
+            parts.push("only_new=1".into());
+        }
+        format!("{}?{}", ctx.link("/system:recent-changes"), parts.join("&"))
+    };
+    let day_links: Vec<minijinja::Value> = RECENT_DAYS
+        .iter()
+        .map(|d| {
+            minijinja::context! {
+                label => ctx.tn_with("system.rc_days", i64::from(*d), &[]),
+                href => here(*d, ns, query.hide_minor, query.only_new),
+                current => *d == days,
+            }
+        })
+        .collect();
+    let ns_links: Vec<minijinja::Value> = std::iter::once(None)
+        .chain(
+            LISTED_NAMESPACES
+                .iter()
+                .filter(|n| **n != "category")
+                .map(|n| Some(*n)),
+        )
+        .map(|n| {
+            minijinja::context! {
+                label => match n {
+                    Some(n) => ctx.t(&format!("system.ns_{n}")),
+                    None => ctx.t("system.rc_all_namespaces"),
+                },
+                href => here(days, n, query.hide_minor, query.only_new),
+                current => n == ns,
+            }
+        })
+        .collect();
+    let filters = minijinja::context! {
+        days => day_links,
+        namespaces => ns_links,
+        hide_minor => query.hide_minor,
+        only_new => query.only_new,
+        minor_href => here(days, ns, !query.hide_minor, query.only_new),
+        new_href => here(days, ns, query.hide_minor, !query.only_new),
+        summary => minijinja::context! {
+            edits => summary.edits,
+            pages => summary.pages,
+            editors => summary.editors,
+            topics => summary.topics,
+        },
+        days_n => days,
+        talk_href => ctx.link("/talk"),
+    };
     let items: Vec<minijinja::Value> = rows
         .into_iter()
         .map(|row| {
@@ -248,7 +402,11 @@ async fn recent_changes(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value,
             }
         })
         .collect();
-    Ok(minijinja::context! { changes => items, recent_max => ctx.limits.recent_changes_shown })
+    Ok(minijinja::context! {
+        changes => items,
+        recent_max => ctx.limits.recent_changes_shown,
+        filters => filters,
+    })
 }
 
 /// The letter a title is filed under.
@@ -302,7 +460,7 @@ async fn all_pages(
         r#"SELECT p.namespace::text AS "namespace!", count(DISTINCT p.slug) AS "n!"
            FROM pages p
            WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
-             AND p.namespace IN ('main', 'category', 'template', 'page_template')
+             AND p.namespace IN ('main', 'category', 'template', 'page_template', 'module')
              AND (p.namespace <> 'main' OR COALESCE(p.locale, '') = $2)
            GROUP BY p.namespace"#,
         ctx.wiki.id,
@@ -455,26 +613,116 @@ async fn statistics(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, App
     .fetch_one(&state.db)
     .await?;
     let mb = |bytes: i64| format!("{:.1}", bytes as f64 / 1024.0 / 1024.0);
-    let figures = [
-        ("articles", row.articles.to_string()),
-        ("templates", row.templates.to_string()),
-        ("categories", row.categories.to_string()),
-        ("edits", row.edits.to_string()),
-        ("edits_week", row.edits_week.to_string()),
-        ("editors_month", row.editors_month.to_string()),
-        ("members", row.members.to_string()),
-        ("files", row.files.to_string()),
-        ("file_mb", mb(row.file_bytes)),
-        ("text_mb", mb(row.text_bytes)),
-        ("emotes", row.emotes.to_string()),
+    let group = |id: &str, figures: Vec<(&str, String)>| {
+        let items: Vec<minijinja::Value> = figures
+            .into_iter()
+            .map(|(key, value)| {
+                minijinja::context! { label => ctx.t(&format!("system.stat_{key}")), value => value }
+            })
+            .collect();
+        minijinja::context! { title => ctx.t(&format!("system.stat_group_{id}")), figures => items }
+    };
+    let groups = vec![
+        group(
+            "content",
+            vec![
+                ("articles", row.articles.to_string()),
+                ("categories", row.categories.to_string()),
+                ("templates", row.templates.to_string()),
+                ("text_mb", mb(row.text_bytes)),
+            ],
+        ),
+        group(
+            "activity",
+            vec![
+                ("edits", row.edits.to_string()),
+                ("edits_week", row.edits_week.to_string()),
+                ("editors_month", row.editors_month.to_string()),
+                ("members", row.members.to_string()),
+            ],
+        ),
+        group(
+            "media",
+            vec![
+                ("files", row.files.to_string()),
+                ("file_mb", mb(row.file_bytes)),
+                ("emotes", row.emotes.to_string()),
+            ],
+        ),
     ];
-    let items: Vec<minijinja::Value> = figures
-        .into_iter()
-        .map(|(key, value)| {
-            minijinja::context! { label => ctx.t(&format!("system.stat_{key}")), value => value }
+
+    // Edits a day for the last 30 days, the empty days included.
+    let days = sqlx::query!(
+        r#"SELECT d::date AS "day!", count(r.id) AS "edits!"
+           FROM generate_series(current_date - 29, current_date, interval '1 day') d
+           LEFT JOIN revisions r ON r.created_at >= d AND r.created_at < d + interval '1 day'
+             AND r.review_status = 'accepted'
+             AND EXISTS (SELECT 1 FROM pages p WHERE p.id = r.page_id AND p.wiki_id = $1)
+           GROUP BY d ORDER BY d"#,
+        ctx.wiki.id
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let peak = days.iter().map(|d| d.edits).max().unwrap_or(0).max(1);
+    let bars: Vec<minijinja::Value> = days
+        .iter()
+        .map(|d| {
+            minijinja::context! {
+                day => d.day.format("%Y-%m-%d").to_string(),
+                edits => d.edits,
+                // Percent of the tallest day, at least a sliver for a day with edits.
+                height => if d.edits == 0 { 0 } else { (d.edits * 100 / peak).max(3) },
+            }
         })
         .collect();
-    Ok(minijinja::context! { figures => items })
+    let month_edits: i64 = days.iter().map(|d| d.edits).sum();
+
+    let editors = sqlx::query!(
+        r#"SELECT u.username, u.display_name, count(*) AS "edits!"
+           FROM revisions r JOIN pages p ON p.id = r.page_id JOIN users u ON u.id = r.author_id
+           WHERE p.wiki_id = $1 AND r.review_status = 'accepted' AND r.created_at > now() - interval '30 days'
+             AND u.username NOT LIKE 'deleted-%'
+           GROUP BY u.id ORDER BY 3 DESC, u.username LIMIT 10"#,
+        ctx.wiki.id
+    )
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|r| {
+        minijinja::context! {
+            href => format!("/user/{}", r.username),
+            name => r.display_name.unwrap_or_else(|| r.username.clone()),
+            edits => r.edits,
+        }
+    })
+    .collect::<Vec<_>>();
+    let busiest = sqlx::query!(
+        r#"SELECT p.title, p.slug, p.namespace::text AS "namespace!", count(*) AS "edits!"
+           FROM revisions r JOIN pages p ON p.id = r.page_id
+           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND r.review_status = 'accepted'
+             AND r.created_at > now() - interval '30 days'
+           GROUP BY p.id ORDER BY 4 DESC, p.title LIMIT 10"#,
+        ctx.wiki.id
+    )
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|r| {
+        minijinja::context! {
+            href => href_of(ctx, &r.namespace, &r.slug),
+            name => r.title,
+            edits => r.edits,
+        }
+    })
+    .collect::<Vec<_>>();
+    Ok(minijinja::context! {
+        stat_groups => groups,
+        bars => bars,
+        peak => peak,
+        month_edits => month_edits,
+        editors => editors,
+        busiest => busiest,
+    })
 }
 
 async fn random(state: &AppState, ctx: &Ctx) -> Result<Response, AppError> {

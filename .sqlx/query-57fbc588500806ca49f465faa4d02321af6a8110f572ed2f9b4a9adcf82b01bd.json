@@ -1,0 +1,145 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH q AS (SELECT websearch_to_tsquery($2::text::regconfig, $3) AS tsq),\n           matched AS (\n             SELECT c.page_id, c.chunk_no, ts_rank_cd(c.vector, q.tsq) AS rank\n             FROM search_chunks c, q\n             WHERE c.wiki_id = $1 AND c.vector @@ q.tsq AND NOT (c.page_id = ANY($6))\n             LIMIT $7\n           ),\n           ranked AS (\n             SELECT m.page_id, max(m.rank) + 0.1 * ln(1 + count(*)) AS score, count(*) AS hits,\n                    p.updated_at\n             FROM matched m\n             JOIN pages p ON p.id = m.page_id\n             WHERE p.namespace::text = ANY($4) AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n               AND ($5::text IS NULL OR COALESCE(p.locale, '') = $5)\n             GROUP BY m.page_id, p.updated_at\n             ORDER BY CASE WHEN $8 THEN p.updated_at END DESC, score DESC\n             LIMIT $9 OFFSET $10\n           ),\n           top AS (\n             SELECT m.page_id, m.chunk_no,\n                    row_number() OVER (PARTITION BY m.page_id ORDER BY m.rank DESC, m.chunk_no) AS n\n             FROM matched m JOIN ranked r ON r.page_id = m.page_id\n           )\n           SELECT p.id, p.namespace::text AS \"namespace!\", p.slug, p.title, p.locale, p.updated_at,\n                  r.score AS \"score!\", r.hits AS \"hits!\", t.n AS \"n!\", c.anchor, c.heading,\n                  ts_headline($2::text::regconfig, c.body, q.tsq,\n                    'MaxWords=32, MinWords=12, ShortWord=3, MaxFragments=2, FragmentDelimiter= … , StartSel=' || chr(57344) || ', StopSel=' || chr(57345)\n                  ) AS \"snippet!\"\n           FROM top t\n           JOIN ranked r ON r.page_id = t.page_id\n           JOIN pages p ON p.id = t.page_id\n           JOIN search_chunks c ON c.page_id = t.page_id AND c.chunk_no = t.chunk_no\n           CROSS JOIN q\n           WHERE t.n <= $11\n           ORDER BY CASE WHEN $8 THEN p.updated_at END DESC, r.score DESC, p.id, t.n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "locale",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "locale"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "score!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "hits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "anchor",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "search_chunks",
+            "name": "anchor"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "heading",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "search_chunks",
+            "name": "heading"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "snippet!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "TextArray",
+        "Text",
+        "UuidArray",
+        "Int8",
+        "Bool",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      false,
+      true,
+      false,
+      null,
+      null,
+      null,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "57fbc588500806ca49f465faa4d02321af6a8110f572ed2f9b4a9adcf82b01bd"
+}

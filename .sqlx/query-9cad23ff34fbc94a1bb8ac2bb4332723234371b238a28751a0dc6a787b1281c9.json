@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.username, u.display_name, u.avatar_key, m.role::text AS \"role?\",\n                  (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id\n                    WHERE r.author_id = u.id AND p.wiki_id = $1) AS \"edits!\"\n           FROM users u\n           JOIN wiki_memberships m ON m.user_id = u.id AND m.wiki_id = $1\n           WHERE u.username NOT LIKE 'deleted-%'\n             AND (u.username ILIKE '%' || $3 || '%' OR u.display_name ILIKE '%' || $3 || '%'\n                  OR similarity(u.username, $2) > $4)\n           ORDER BY (lower(u.username) = lower($2) OR lower(u.display_name) = lower($2)) DESC,\n                    (u.username ILIKE $3 || '%' OR u.display_name ILIKE $3 || '%') DESC,\n                    5 DESC, u.username\n           LIMIT $5 OFFSET $6",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "avatar_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "avatar_key"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "role?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "edits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Float4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "9cad23ff34fbc94a1bb8ac2bb4332723234371b238a28751a0dc6a787b1281c9"
+}

@@ -1,49 +1,135 @@
 {% extends "layout.html" %}
 {#
-  Search results. One form field, one submit, no JavaScript: a search box that
-  needs a script to work is a search box that does not work on a bad connection,
-  which is most of them.
+  Search: tabs for each kind with their counts, filters as a plain GET form,
+  and the results in sections. Works without JavaScript.
 
-  `snippet` is the only value rendered with `| safe`. It comes from ts_headline,
-  which escapes nothing, so the engine sanitizes it down to text and <mark>
-  tags before it gets here. The query is attacker controlled and is never marked
-  safe: where it appears inside a translated message, `t()` escapes it.
+  `snippet` is the only value rendered with `| safe`: it comes from
+  ts_headline through clean_snippet, which leaves only text and <mark>. The
+  query is attacker controlled and is never marked safe.
+
+  query, searched, scope, tabs (id, label, count, current, href), sections
+  (kind, heading, items, more_href), total, every_language, titles_only,
+  recent, page_no, prev_href, next_href, create_href
 #}
+{% block main_class %}content content-wide search-page{% endblock %}
 {% block body %}
 <h1>{{ t("search.heading") }}</h1>
 
 <form class="search-form" method="get" action="{{ base }}/search" role="search">
-  <label class="field" for="search-q">{{ t("search.label") }}</label>
+  <label class="visually-hidden" for="search-q">{{ t("search.label") }}</label>
   <div class="search-row">
     <input class="field-input" id="search-q" name="q" type="search" value="{{ query }}"
            maxlength="200" autofocus placeholder="{{ t('search.placeholder') }}" />
-    <button class="button-save" type="submit">{{ t("search.submit") }}</button>
+    {% if scope != "all" %}<input type="hidden" name="scope" value="{{ scope }}" />{% endif %}
+    <button class="button-save" type="submit"><svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>{{ t("search.submit") }}</button>
   </div>
+  {% if searched %}
+  <div class="search-options">
+    <label class="check"><input type="checkbox" name="lang" value="all" {% if every_language %}checked{% endif %} /> {{ t("search.every_language") }}</label>
+    <label class="check"><input type="checkbox" name="titles" value="1" {% if titles_only %}checked{% endif %} /> {{ t("search.titles_only") }}</label>
+    <label class="check"><input type="checkbox" name="sort" value="recent" {% if recent %}checked{% endif %} /> {{ t("search.recent_first") }}</label>
+    <button class="button-preview search-apply" type="submit">{{ t("search.apply") }}</button>
+  </div>
+  {% endif %}
 </form>
 
 {% if not searched %}
   <p class="search-hint">{{ t("search.hint") }}</p>
-{% elif result_count == 0 %}
-  <p class="notice notice-warn" role="status">{{ t("search.nothing", query=query) }}</p>
-  <p class="search-hint">
-    {{ t("search.try_again") }}
-    {% if can_create %}{{ t("search.write_it") }}{% endif %}
-  </p>
 {% else %}
-  <p class="search-count" role="status">
-    {{ tn("search.results", result_count, query=query) }}{% if truncated %}{{ t("search.best_only") }}{% endif %}
-  </p>
-  <ol class="search-results">
-    {% for hit in results %}
-    <li class="search-hit">
-      <a class="search-hit-title" href="{{ base }}/{{ hit.slug }}">{{ hit.title }}</a>
-      {% if hit.section and hit.section != hit.title %}
-      <a class="search-hit-section" href="{{ base }}/{{ hit.slug }}#{{ hit.anchor }}"><span aria-hidden="true">§</span> {{ hit.section }}</a>
-      {% endif %}
-      <p class="search-hit-snippet">{{ hit.snippet | safe }}</p>
-      <p class="search-hit-slug">{{ base }}/{{ hit.slug }}</p>
-    </li>
+  <nav class="search-tabs" aria-label="{{ t('search.tabs') }}">
+    {% for tab in tabs %}
+    <a class="search-tab{% if tab.current %} is-current{% endif %}" href="{{ tab.href }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }}{% if tab.count is not none %}<span class="search-tab-count{% if tab.count == '0' %} is-zero{% endif %}">{{ tab.count }}</span>{% endif %}</a>
     {% endfor %}
-  </ol>
+  </nav>
+
+  {% if total == 0 %}
+  <div class="search-none" role="status">
+    <p class="notice notice-warn">{{ t("search.nothing", query=query) }}</p>
+    <p class="search-hint">{{ t("search.try_again") }}</p>
+    {% if create_href %}<p><a class="button-save" href="{{ create_href }}"><svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>{{ t("search.create", query=query) }}</a></p>{% endif %}
+  </div>
+  {% endif %}
+
+  {% for section in sections %}
+  <section class="search-section search-{{ section.kind }}">
+    <h2 class="search-section-head">{{ section.heading }}</h2>
+
+    {% if section.kind == "titles" or section.kind == "text" %}
+    <ol class="search-results">
+      {% for hit in section.items %}
+      <li class="search-hit{% if hit.exact %} is-exact{% endif %}">
+        <p class="search-hit-head">
+          <a class="search-hit-title" href="{{ hit.href }}">{{ hit.title }}</a>
+          {% if hit.exact %}<span class="search-badge">{{ t("search.exact") }}</span>{% endif %}
+          {% if hit.lang %}<span class="search-badge search-lang">{{ hit.lang | upper }}</span>{% endif %}
+          {% if hit.hits and hit.hits > 1 %}<span class="search-hits">{{ tn("search.places", hit.hits) }}</span>{% endif %}
+        </p>
+        {% for p in hit.passages %}
+        <div class="search-passage">
+          {% if p.section %}<a class="search-hit-section" href="{{ p.href or hit.href }}"><span aria-hidden="true">§</span> {{ p.section }}</a>{% endif %}
+          {% if p.snippet %}<p class="search-hit-snippet">{{ p.snippet | safe }}</p>{% endif %}
+        </div>
+        {% endfor %}
+        <p class="search-hit-slug">/{{ hit.path }}{% if hit.day %} · {{ hit.day }}{% endif %}</p>
+      </li>
+      {% endfor %}
+    </ol>
+
+    {% elif section.kind == "categories" %}
+    <ul class="search-cats">
+      {% for c in section.items %}
+      <li><a class="search-cat{% if c.exact %} is-exact{% endif %}" href="{{ c.href }}"><svg class="icon" aria-hidden="true"><use href="#i-list-details" /></svg>{{ c.title }}<span class="search-tab-count">{{ c.pages }}</span></a></li>
+      {% endfor %}
+    </ul>
+
+    {% elif section.kind == "people" %}
+    <ul class="search-people">
+      {% for p in section.items %}
+      <li>
+        <a class="search-person" href="{{ p.href }}">
+          <span class="post-avatar" aria-hidden="true">{% if p.avatar %}<img src="{{ p.avatar }}" alt="" loading="lazy" />{% else %}{{ (p.display_name or p.username)[:1] | upper }}{% endif %}</span>
+          <span class="search-person-text"><strong><bdi>{{ p.display_name or p.username }}</bdi></strong><span class="search-person-meta">@{{ p.username }}{% if p.role %} · {{ t("search.role_" ~ p.role) }}{% endif %} · {{ tn("search.edits", p.edits) }}</span></span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+
+    {% elif section.kind == "discussions" %}
+    <ol class="talk-list">
+      {% for topic in section.items %}
+      <li class="talk-item{% if topic.status == 'resolved' %} is-resolved{% endif %}">
+        <span class="talk-badge talk-{{ topic.status }}">{{ t("talk.badge_" ~ topic.status) }}</span>
+        <div class="talk-item-main">
+          <a class="talk-item-title" href="{{ topic.href }}">{{ topic.title }}</a>
+          {% if topic.snippet %}<p class="search-hit-snippet">{{ topic.snippet | safe }}</p>{% endif %}
+          <p class="talk-item-meta"><a href="{{ topic.page_href }}">{{ topic.page_title }}</a> · {{ topic.day }}</p>
+        </div>
+        <span class="talk-item-count"><svg class="icon" aria-hidden="true"><use href="#i-message-circle" /></svg>{{ topic.replies }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+
+    {% elif section.kind == "files" %}
+    <ul class="search-files">
+      {% for f in section.items %}
+      <li><a class="search-file" href="{{ f.href }}">
+        {% if f.preview %}<img src="{{ f.preview }}" alt="" loading="lazy" />{% else %}<span class="search-file-kind">{{ f.kind }}</span>{% endif %}
+        <span class="search-file-name">{{ f.title }}</span>
+      </a></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if section.more_href %}<p class="search-more"><a href="{{ section.more_href }}">{{ t("search.more") }}</a></p>{% endif %}
+  </section>
+  {% endfor %}
+
+  {% if prev_href or next_href %}
+  <nav class="search-pager" aria-label="{{ t('search.pages') }}">
+    {% if prev_href %}<a class="button-preview" href="{{ prev_href }}">{{ t("search.prev") }}</a>{% endif %}
+    <span>{{ t("search.page", n=page_no) }}</span>
+    {% if next_href %}<a class="button-preview" href="{{ next_href }}">{{ t("search.next") }}</a>{% endif %}
+  </nav>
+  {% endif %}
 {% endif %}
 {% endblock %}

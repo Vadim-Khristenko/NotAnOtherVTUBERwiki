@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"edits!\", count(DISTINCT r.page_id) AS \"pages!\",\n                  count(DISTINCT r.author_id) AS \"editors!\",\n                  (SELECT count(*) FROM threads t WHERE t.wiki_id = $1\n                     AND t.last_post_at > now() - make_interval(days => $2)) AS \"topics!\"\n           FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND r.review_status = 'accepted'\n             AND r.created_at > now() - make_interval(days => $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "edits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "pages!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "editors!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "topics!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "f8a569c75a9009311f1eb612c9b899f82513f45c86718dd31e092dfbb50ffc0c"
+}

@@ -1,0 +1,126 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH q AS (SELECT websearch_to_tsquery('simple', $2) AS tsq)\n           SELECT t.id, t.namespace::text AS \"namespace!\", t.slug, t.title, t.status, t.replies, t.last_post_at,\n                  best.body_md AS \"body?\",\n                  (SELECT p.title FROM pages p WHERE p.wiki_id = t.wiki_id AND p.namespace = t.namespace\n                     AND p.slug = t.slug AND p.deleted_at IS NULL\n                   ORDER BY (COALESCE(p.locale, '') = $4) DESC LIMIT 1) AS \"page_title?\",\n                  ts_headline('simple', coalesce(best.body_md, ''), q.tsq,\n                    'MaxWords=28, MinWords=10, MaxFragments=1, StartSel=' || chr(57344) || ', StopSel=' || chr(57345)\n                  ) AS \"snippet!\"\n           FROM threads t\n           CROSS JOIN q\n           LEFT JOIN LATERAL (\n             SELECT po.body_md FROM posts po\n             WHERE po.thread_id = t.id AND po.hidden_at IS NULL\n             ORDER BY (po.body_vector @@ q.tsq) DESC, po.created_at LIMIT 1\n           ) best ON true\n           WHERE t.wiki_id = $1 AND t.hidden_at IS NULL\n             AND (t.title_vector @@ q.tsq OR t.title ILIKE '%' || $3 || '%'\n                  OR EXISTS (SELECT 1 FROM posts po WHERE po.thread_id = t.id AND po.hidden_at IS NULL\n                             AND po.body_vector @@ q.tsq))\n           ORDER BY t.last_post_at DESC\n           LIMIT $5 OFFSET $6",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "replies",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "replies"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "last_post_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "last_post_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "body?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "body_md"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "page_title?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "snippet!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "8dc65d4b0a9a2b6be463a05a6eed79c504584a2bb705cd30f29371449c6661f1"
+}
