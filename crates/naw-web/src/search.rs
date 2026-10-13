@@ -35,6 +35,8 @@ const HTML: (header::HeaderName, &str) = (header::CONTENT_TYPE, "text/html; char
 /// Results of one kind on "Everything", and on a tab's page.
 const ON_ALL: i64 = 5;
 const ON_TAB: i64 = 20;
+/// Pages found by their text on one page of "Everything".
+const ON_TEXT: i64 = 10;
 /// Sections of one article whose passages are shown.
 const PASSAGES: i64 = 3;
 /// Pieces of text considered before ranking.
@@ -55,6 +57,8 @@ const SCOPES: [&str; 8] = [
     "files",
 ];
 
+/// The query as it arrives. Every field is text: a number that is not one,
+/// or a flag spelled oddly, is read as absent instead of refusing the page.
 #[derive(Debug, serde::Deserialize, Default)]
 pub struct SearchQuery {
     #[serde(default)]
@@ -71,10 +75,101 @@ pub struct SearchQuery {
     #[serde(default)]
     sort: Option<String>,
     #[serde(default)]
-    page: Option<i64>,
+    page: Option<String>,
+    /// `1` answers with the results alone, for the page's live search.
+    #[serde(default)]
+    fragment: Option<String>,
 }
 
-/// One search, as asked.
+/// What the query asks for, checked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Asked {
+    /// The words, trimmed, capped, without control characters; `None` when
+    /// nothing is left.
+    text: Option<String>,
+    scope: &'static str,
+    page: i64,
+    every_language: bool,
+    titles_only: bool,
+    recent: bool,
+    fragment: bool,
+}
+
+/// Results pages a search goes to, at most.
+const PAGES_MAX: i64 = 50;
+
+impl Asked {
+    fn of(query: &SearchQuery) -> Self {
+        // A NUL reaches PostgreSQL as an error, other control characters
+        // match nothing: neither belongs in a query.
+        let clean: String = query.q.chars().filter(|c| !c.is_control()).collect();
+        Asked {
+            text: normalize(&clean),
+            scope: query
+                .scope
+                .as_deref()
+                .and_then(|s| SCOPES.iter().find(|x| **x == s).copied())
+                .unwrap_or("all"),
+            page: query
+                .page
+                .as_deref()
+                .and_then(|p| p.trim().parse::<i64>().ok())
+                .unwrap_or(1)
+                .clamp(1, PAGES_MAX),
+            every_language: query.lang.as_deref() == Some("all"),
+            titles_only: query.titles.as_deref() == Some("1"),
+            recent: query.sort.as_deref() == Some("recent"),
+            fragment: query.fragment.as_deref() == Some("1"),
+        }
+    }
+
+    /// The search page's address with the scope, a filter or the page changed.
+    fn link(&self, ctx: &Ctx, change: Change) -> String {
+        let mut next = self.clone();
+        next.page = 1;
+        match change {
+            Change::Scope(scope) => next.scope = scope,
+            Change::Page(page) => next.page = page,
+            Change::EveryLanguage => next.every_language = !self.every_language,
+            Change::TitlesOnly => next.titles_only = !self.titles_only,
+            Change::Recent => next.recent = !self.recent,
+            Change::Nothing => next.page = self.page,
+        }
+        let mut parts = vec![format!(
+            "q={}",
+            pages::urlencode(next.text.as_deref().unwrap_or(""))
+        )];
+        if next.scope != "all" {
+            parts.push(format!("scope={}", next.scope));
+        }
+        if next.every_language {
+            parts.push("lang=all".into());
+        }
+        if next.titles_only {
+            parts.push("titles=1".into());
+        }
+        if next.recent {
+            parts.push("sort=recent".into());
+        }
+        if next.page > 1 {
+            parts.push(format!("page={}", next.page));
+        }
+        format!("{}?{}", ctx.link("/search"), parts.join("&"))
+    }
+}
+
+/// One thing a link changes about the current search.
+#[derive(Clone, Copy)]
+enum Change {
+    Scope(&'static str),
+    Page(i64),
+    EveryLanguage,
+    TitlesOnly,
+    Recent,
+    Nothing,
+}
+
+/// One search, as the queries take it.
 struct Ask<'a> {
     text: &'a str,
     like: String,
@@ -106,6 +201,182 @@ fn like(q: &str) -> String {
     out
 }
 
+/// What one page of results holds.
+struct Found {
+    sections: Vec<minijinja::Value>,
+    total: usize,
+    more: bool,
+}
+
+impl Found {
+    fn push(
+        &mut self,
+        ctx: &Ctx,
+        kind: &str,
+        items: Vec<minijinja::Value>,
+        more_href: Option<String>,
+    ) {
+        if items.is_empty() {
+            return;
+        }
+        self.total += items.len();
+        self.sections.push(minijinja::context! {
+            kind => kind,
+            heading => ctx.t(&format!("search.section_{kind}")),
+            items => items,
+            more_href => more_href,
+        });
+    }
+}
+
+/// Takes `limit` of `items`, saying whether there were more.
+fn cut<T>(mut items: Vec<T>, limit: i64) -> (Vec<T>, bool) {
+    let more = items.len() as i64 > limit;
+    items.truncate(limit as usize);
+    (items, more)
+}
+
+/// Runs one page of a search. Only what the page shows is asked for: the
+/// first page of "Everything" looks at titles, categories, people, the text
+/// and discussions, a few of each; every later page, and every tab, at one
+/// kind, a page at a time.
+async fn find(
+    state: &AppState,
+    ctx: &Ctx,
+    asked: &Asked,
+    ask: &Ask<'_>,
+) -> Result<Found, AppError> {
+    let mut found = Found {
+        sections: Vec::new(),
+        total: 0,
+        more: false,
+    };
+    let offset = (asked.page - 1) * ON_TAB;
+    let first = asked.page == 1;
+    let more_link = |scope: &'static str| asked.link(ctx, Change::Scope(scope));
+    match asked.scope {
+        "all" => {
+            let mut shown: HashSet<Uuid> = HashSet::new();
+            if first {
+                let (titled, more) = cut(
+                    titled(state, ctx, ask, &["main"], ON_ALL + 1, 0).await?,
+                    ON_ALL,
+                );
+                shown.extend(titled.iter().map(|(id, _)| *id));
+                found.push(
+                    ctx,
+                    "titles",
+                    titled.into_iter().map(|(_, v)| v).collect(),
+                    more.then(|| more_link("articles")),
+                );
+                let (cats, more) = cut(categories(state, ctx, ask, ON_ALL + 1, 0).await?, ON_ALL);
+                found.push(
+                    ctx,
+                    "categories",
+                    cats,
+                    more.then(|| more_link("categories")),
+                );
+                let (people, more) = cut(people(state, ctx, ask, ON_ALL + 1, 0).await?, ON_ALL);
+                found.push(ctx, "people", people, more.then(|| more_link("people")));
+            } else {
+                // Later pages leave out what the first one showed by title.
+                let titled = titled(state, ctx, ask, &["main"], ON_ALL, 0).await?;
+                shown.extend(titled.iter().map(|(id, _)| *id));
+            }
+            if !ask.titles_only {
+                let (text, more) = cut(
+                    in_text(
+                        state,
+                        ctx,
+                        ask,
+                        &["main"],
+                        &shown,
+                        ON_TEXT + 1,
+                        (asked.page - 1) * ON_TEXT,
+                    )
+                    .await?,
+                    ON_TEXT,
+                );
+                found.more = more;
+                found.push(ctx, "text", text, None);
+            }
+            if first {
+                let (talk, more) = cut(discussions(state, ctx, ask, ON_ALL + 1, 0).await?, ON_ALL);
+                found.push(
+                    ctx,
+                    "discussions",
+                    talk,
+                    more.then(|| more_link("discussions")),
+                );
+            }
+        }
+        "articles" | "templates" | "modules" => {
+            let ns = namespaces(asked.scope);
+            // The title matches stand on the first page; later pages still
+            // leave them out of the text matches.
+            let titled = titled(state, ctx, ask, ns, ON_TAB, 0).await?;
+            let shown: HashSet<Uuid> = titled.iter().map(|(id, _)| *id).collect();
+            let n_titled = titled.len();
+            if first {
+                found.push(
+                    ctx,
+                    "titles",
+                    titled.into_iter().map(|(_, v)| v).collect(),
+                    None,
+                );
+            }
+            if !ask.titles_only {
+                let (text, more) = cut(
+                    in_text(state, ctx, ask, ns, &shown, ON_TAB + 1, offset).await?,
+                    ON_TAB,
+                );
+                found.more = more;
+                found.push(ctx, "text", text, None);
+            } else {
+                found.more = n_titled as i64 >= ON_TAB;
+            }
+        }
+        "categories" => {
+            let (items, more) = cut(
+                categories(state, ctx, ask, ON_TAB + 1, offset).await?,
+                ON_TAB,
+            );
+            found.more = more;
+            found.push(ctx, "categories", items, None);
+        }
+        "people" => {
+            let (items, more) = cut(people(state, ctx, ask, ON_TAB + 1, offset).await?, ON_TAB);
+            found.more = more;
+            found.push(ctx, "people", items, None);
+        }
+        "discussions" => {
+            let (items, more) = cut(
+                discussions(state, ctx, ask, ON_TAB + 1, offset).await?,
+                ON_TAB,
+            );
+            found.more = more;
+            found.push(ctx, "discussions", items, None);
+        }
+        _ => {
+            let (items, more) = cut(files(state, ctx, ask, ON_TAB + 1, offset).await?, ON_TAB);
+            found.more = more;
+            found.push(ctx, "files", items, None);
+        }
+    }
+    Ok(found)
+}
+
+fn ask_of<'a>(ctx: &'a Ctx, asked: &'a Asked) -> Option<Ask<'a>> {
+    asked.text.as_deref().map(|text| Ask {
+        text,
+        like: like(text),
+        config: regconfig_for(&ctx.content_locale),
+        locale: (!asked.every_language).then_some(ctx.content_locale.as_str()),
+        titles_only: asked.titles_only,
+        recent: asked.recent,
+    })
+}
+
 /// GET /search
 #[instrument(skip(state, user, headers))]
 pub async fn search_page(
@@ -115,242 +386,137 @@ pub async fn search_page(
     Query(query): Query<SearchQuery>,
 ) -> Result<Response, AppError> {
     let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
-    let scope = query
-        .scope
-        .as_deref()
-        .and_then(|s| SCOPES.iter().find(|x| **x == s).copied())
-        .unwrap_or("all");
-    let normalized = normalize(&query.q);
-    let page_no = query.page.unwrap_or(1).clamp(1, 50);
-    let every_language = query.lang.as_deref() == Some("all");
-    let ask = normalized.as_deref().map(|text| Ask {
-        text,
-        like: like(text),
-        config: regconfig_for(&ctx.content_locale),
-        locale: (!every_language).then_some(ctx.content_locale.as_str()),
-        titles_only: query.titles.as_deref() == Some("1"),
-        recent: query.sort.as_deref() == Some("recent"),
-    });
-
-    let mut sections: Vec<minijinja::Value> = Vec::new();
-    let mut tabs: Vec<minijinja::Value> = Vec::new();
-    let mut total = 0usize;
-    let mut more = false;
-    if let Some(ask) = &ask {
-        let counts = counts(&state, &ctx, ask).await?;
-        for (id, n) in SCOPES
-            .iter()
-            .zip(std::iter::once(None).chain(counts.iter().map(|n| Some(*n))))
-        {
-            tabs.push(minijinja::context! {
+    let asked = Asked::of(&query);
+    let ask = ask_of(&ctx, &asked);
+    let found = match &ask {
+        Some(ask) => find(&state, &ctx, &asked, ask).await?,
+        None => Found {
+            sections: Vec::new(),
+            total: 0,
+            more: false,
+        },
+    };
+    let tabs: Vec<minijinja::Value> = SCOPES
+        .iter()
+        .map(|id| {
+            minijinja::context! {
                 id => *id,
                 label => ctx.t(&format!("search.scope_{id}")),
-                count => n.map(|n| if n >= COUNT_MAX { format!("{COUNT_MAX}+") } else { n.to_string() }),
-                current => *id == scope,
-                href => link(&ctx, &query, Some(id), None),
-            });
+                current => *id == asked.scope,
+                href => asked.link(&ctx, Change::Scope(id)),
+            }
+        })
+        .collect();
+    let toggle = |label: &str, on: bool, change: Change| {
+        minijinja::context! {
+            label => ctx.t(&format!("search.{label}")),
+            on => on,
+            href => asked.link(&ctx, change),
         }
-        let limit = if scope == "all" { ON_ALL } else { ON_TAB };
-        let offset = if scope == "all" {
-            0
-        } else {
-            (page_no - 1) * ON_TAB
-        };
-        let mut shown: HashSet<Uuid> = HashSet::new();
-        let mut push = |kind: &str,
-                        items: Vec<minijinja::Value>,
-                        extra: Option<String>,
-                        sections: &mut Vec<minijinja::Value>| {
-            if !items.is_empty() {
-                total += items.len();
-                sections.push(minijinja::context! {
-                    kind => kind,
-                    heading => ctx.t(&format!("search.section_{kind}")),
-                    items => items,
-                    more_href => extra,
-                });
-            }
-        };
-        match scope {
-            "all" => {
-                let titled = titled(&state, &ctx, ask, &["main"], limit + 1, 0).await?;
-                let more_titled = titled.len() as i64 > limit;
-                let titled: Vec<_> = titled.into_iter().take(limit as usize).collect();
-                shown.extend(titled.iter().map(|(id, _)| *id));
-                push(
-                    "titles",
-                    titled.into_iter().map(|(_, v)| v).collect(),
-                    more_titled.then(|| link(&ctx, &query, Some("articles"), None)),
-                    &mut sections,
-                );
-                let cats = categories(&state, &ctx, ask, limit + 1, 0).await?;
-                let more_cats = cats.len() as i64 > limit;
-                push(
-                    "categories",
-                    cats.into_iter().take(limit as usize).collect(),
-                    more_cats.then(|| link(&ctx, &query, Some("categories"), None)),
-                    &mut sections,
-                );
-                let people = people(&state, &ctx, ask, limit + 1, 0).await?;
-                let more_people = people.len() as i64 > limit;
-                push(
-                    "people",
-                    people.into_iter().take(limit as usize).collect(),
-                    more_people.then(|| link(&ctx, &query, Some("people"), None)),
-                    &mut sections,
-                );
-                if !ask.titles_only {
-                    let text = in_text(&state, &ctx, ask, &["main"], &shown, limit + 1, 0).await?;
-                    let more_text = text.len() as i64 > limit;
-                    push(
-                        "text",
-                        text.into_iter().take(limit as usize).collect(),
-                        more_text.then(|| link(&ctx, &query, Some("articles"), None)),
-                        &mut sections,
-                    );
-                }
-                let talk = discussions(&state, &ctx, ask, limit + 1, 0).await?;
-                let more_talk = talk.len() as i64 > limit;
-                push(
-                    "discussions",
-                    talk.into_iter().take(limit as usize).collect(),
-                    more_talk.then(|| link(&ctx, &query, Some("discussions"), None)),
-                    &mut sections,
-                );
-            }
-            "articles" | "templates" | "modules" => {
-                let ns = namespaces(scope);
-                // Titles first on the first page; the text after them.
-                let titled = if page_no == 1 {
-                    titled(&state, &ctx, ask, ns, ON_TAB, 0).await?
-                } else {
-                    Vec::new()
-                };
-                shown.extend(titled.iter().map(|(id, _)| *id));
-                let n_titled = titled.len();
-                push(
-                    "titles",
-                    titled.into_iter().map(|(_, v)| v).collect(),
-                    None,
-                    &mut sections,
-                );
-                if !ask.titles_only {
-                    let text = in_text(&state, &ctx, ask, ns, &shown, ON_TAB + 1, offset).await?;
-                    more = text.len() as i64 > ON_TAB;
-                    push(
-                        "text",
-                        text.into_iter().take(ON_TAB as usize).collect(),
-                        None,
-                        &mut sections,
-                    );
-                } else {
-                    more = n_titled as i64 >= ON_TAB;
-                }
-            }
-            "categories" => {
-                let items = categories(&state, &ctx, ask, ON_TAB + 1, offset).await?;
-                more = items.len() as i64 > ON_TAB;
-                push(
-                    "categories",
-                    items.into_iter().take(ON_TAB as usize).collect(),
-                    None,
-                    &mut sections,
-                );
-            }
-            "people" => {
-                let items = people(&state, &ctx, ask, ON_TAB + 1, offset).await?;
-                more = items.len() as i64 > ON_TAB;
-                push(
-                    "people",
-                    items.into_iter().take(ON_TAB as usize).collect(),
-                    None,
-                    &mut sections,
-                );
-            }
-            "discussions" => {
-                let items = discussions(&state, &ctx, ask, ON_TAB + 1, offset).await?;
-                more = items.len() as i64 > ON_TAB;
-                push(
-                    "discussions",
-                    items.into_iter().take(ON_TAB as usize).collect(),
-                    None,
-                    &mut sections,
-                );
-            }
-            _ => {
-                let items = files(&state, &ctx, ask, ON_TAB + 1, offset).await?;
-                more = items.len() as i64 > ON_TAB;
-                push(
-                    "files",
-                    items.into_iter().take(ON_TAB as usize).collect(),
-                    None,
-                    &mut sections,
-                );
-            }
-        }
-    }
-
-    let exact = ask
-        .as_ref()
-        .map(|a| crate::pages::slug_is_valid(&a.text.to_lowercase().replace(' ', "-")))
-        .unwrap_or(false);
-    let can_create = exact && ctx.actor.can(crate::perm::Capability::PageCreate);
+    };
+    let toggles = vec![
+        toggle(
+            "every_language",
+            asked.every_language,
+            Change::EveryLanguage,
+        ),
+        toggle("titles_only", asked.titles_only, Change::TitlesOnly),
+        toggle("recent_first", asked.recent, Change::Recent),
+    ];
+    let text = asked.text.as_deref();
+    let can_create = text
+        .map(|t| crate::pages::slug_is_valid(&t.to_lowercase().replace(' ', "-")))
+        .unwrap_or(false)
+        && ctx.actor.can(crate::perm::Capability::PageCreate);
+    let counts_href = text.map(|_| {
+        let full = asked.link(&ctx, Change::Nothing);
+        let query = full.split_once('?').map_or("", |(_, q)| q);
+        format!("{}?{query}", ctx.link("/search/counts"))
+    });
     let template = ctx
         .skin
         .env
-        .get_template("search.html")
+        .get_template(if asked.fragment {
+            "_search_results.html"
+        } else {
+            "search.html"
+        })
         .map_err(pages::template_error)?;
     let html = template
         .render(minijinja::context! {
+            // The page has its own field; the header's would be a second one.
+            // Before the chrome, whose value it replaces.
+            ..minijinja::context! { show_search => false },
             ..ctx.chrome_context(),
             ..minijinja::context! {
-                title => match normalized.as_deref() {
+                title => match text {
                     Some(text) => ctx.t_with("search.title_for", &[("query", text)]),
                     None => ctx.t("search.heading"),
                 },
                 version => ENGINE_VERSION,
-                query => query.q.clone(),
-                searched => normalized.is_some(),
-                scope => scope,
+                query => text.unwrap_or(""),
+                searched => text.is_some(),
+                scope => asked.scope,
                 tabs => tabs,
-                sections => sections,
-                total => total,
-                every_language => every_language,
-                titles_only => query.titles.as_deref() == Some("1"),
-                recent => query.sort.as_deref() == Some("recent"),
-                page_no => page_no,
-                prev_href => (scope != "all" && page_no > 1).then(|| link(&ctx, &query, None, Some(page_no - 1))),
-                next_href => (scope != "all" && more).then(|| link(&ctx, &query, None, Some(page_no + 1))),
+                toggles => toggles,
+                sections => found.sections,
+                total => found.total,
+                page_no => asked.page,
+                counts_href => counts_href,
+                prev_href => (asked.page > 1).then(|| asked.link(&ctx, Change::Page(asked.page - 1))),
+                next_href => (found.more && asked.page < PAGES_MAX).then(|| asked.link(&ctx, Change::Page(asked.page + 1))),
                 create_href => can_create.then(|| ctx.link(&format!(
                     "/new?title={}",
-                    pages::urlencode(normalized.as_deref().unwrap_or(""))
+                    pages::urlencode(text.unwrap_or(""))
                 ))),
             }
         })
         .map_err(pages::template_error)?;
-    Ok((StatusCode::OK, [HTML], html).into_response())
+    let mut response = (StatusCode::OK, [HTML], html).into_response();
+    // A fragment varies with nothing but its address.
+    if asked.fragment {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("private, max-age=30"),
+        );
+    }
+    Ok(response)
 }
 
-/// The search page's address with one thing changed.
-fn link(ctx: &Ctx, query: &SearchQuery, scope: Option<&str>, page: Option<i64>) -> String {
-    let mut parts = vec![format!("q={}", pages::urlencode(query.q.trim()))];
-    let scope = scope.or(query.scope.as_deref()).filter(|s| *s != "all");
-    if let Some(scope) = scope {
-        parts.push(format!("scope={scope}"));
-    }
-    if query.lang.as_deref() == Some("all") {
-        parts.push("lang=all".into());
-    }
-    if query.titles.as_deref() == Some("1") {
-        parts.push("titles=1".into());
-    }
-    if query.sort.as_deref() == Some("recent") {
-        parts.push("sort=recent".into());
-    }
-    if let Some(page) = page.filter(|p| *p > 1) {
-        parts.push(format!("page={page}"));
-    }
-    format!("{}?{}", ctx.link("/search"), parts.join("&"))
+/// GET /search/counts: how many results each tab holds, capped, for the
+/// page to fill in after it has shown the results. The counting runs apart
+/// from the search, so a slow count never holds the results back.
+#[instrument(skip(state, user, headers))]
+pub async fn search_counts(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    Query(query): Query<SearchQuery>,
+) -> Result<Response, AppError> {
+    let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
+    let asked = Asked::of(&query);
+    let Some(ask) = ask_of(&ctx, &asked) else {
+        return Ok((StatusCode::OK, axum::Json(serde_json::json!({}))).into_response());
+    };
+    let n = counts(&state, &ctx, &ask).await?;
+    let shown = |n: i64| {
+        if n >= COUNT_MAX {
+            format!("{COUNT_MAX}+")
+        } else {
+            n.to_string()
+        }
+    };
+    let body: serde_json::Map<String, serde_json::Value> = SCOPES[1..]
+        .iter()
+        .zip(n)
+        .map(|(id, n)| (id.to_string(), serde_json::Value::String(shown(n))))
+        .collect();
+    Ok((
+        StatusCode::OK,
+        [(header::CACHE_CONTROL, "private, max-age=60")],
+        axum::Json(body),
+    )
+        .into_response())
 }
 
 /// How many results each tab has, capped, in the order of `SCOPES` after "all".
@@ -810,6 +976,79 @@ mod tests {
     fn wildcards_in_a_query_match_themselves() {
         assert_eq!(like("50%_off"), "50\\%\\_off");
         assert_eq!(like("Filian"), "Filian");
+    }
+
+    fn ask(pairs: &[(&str, &str)]) -> Asked {
+        let mut q = SearchQuery::default();
+        for (k, v) in pairs {
+            if *k == "q" {
+                q.q = v.to_string();
+                continue;
+            }
+            let v = Some(v.to_string());
+            match *k {
+                "scope" => q.scope = v,
+                "lang" => q.lang = v,
+                "titles" => q.titles = v,
+                "sort" => q.sort = v,
+                "page" => q.page = v,
+                "fragment" => q.fragment = v,
+                _ => {}
+            }
+        }
+        Asked::of(&q)
+    }
+
+    #[test]
+    fn a_query_is_cleaned_before_it_reaches_the_database() {
+        // A NUL is an error in PostgreSQL; other controls match nothing.
+        assert_eq!(ask(&[("q", "fil\0ian")]).text.as_deref(), Some("filian"));
+        assert_eq!(
+            ask(&[("q", "a\u{1}\u{7f}b\r\n")]).text.as_deref(),
+            Some("ab")
+        );
+        assert_eq!(ask(&[("q", "   ")]).text, None);
+        assert_eq!(ask(&[("q", "\0\0")]).text, None);
+        // Capped, and cut on a character, not a byte.
+        let long = ask(&[("q", &"ж".repeat(500))]).text.unwrap();
+        assert_eq!(long.chars().count(), naw_core::search::QUERY_MAX);
+        // Quotes and SQL are words to look for, nothing more.
+        assert_eq!(
+            ask(&[("q", "' OR 1=1; -- %_")]).text.as_deref(),
+            Some("' OR 1=1; -- %_")
+        );
+        assert_eq!(like("' OR 1=1; -- %_"), "' OR 1=1; -- \\%\\_");
+    }
+
+    #[test]
+    fn odd_parameters_fall_back_instead_of_refusing() {
+        let a = ask(&[
+            ("q", "x"),
+            ("page", "abc"),
+            ("scope", "../../etc"),
+            ("sort", "DROP"),
+        ]);
+        assert_eq!((a.page, a.scope, a.recent), (1, "all", false));
+        assert_eq!(ask(&[("q", "x"), ("page", "-5")]).page, 1);
+        assert_eq!(ask(&[("q", "x"), ("page", "99999999999999999999")]).page, 1);
+        assert_eq!(ask(&[("q", "x"), ("page", "7")]).page, 7);
+        assert_eq!(ask(&[("q", "x"), ("page", "500")]).page, PAGES_MAX);
+        assert_eq!(ask(&[("q", "x"), ("scope", "people")]).scope, "people");
+        let flags = ask(&[
+            ("q", "x"),
+            ("lang", "all"),
+            ("titles", "1"),
+            ("sort", "recent"),
+            ("fragment", "1"),
+        ]);
+        assert!(flags.every_language && flags.titles_only && flags.recent && flags.fragment);
+        let off = ask(&[
+            ("q", "x"),
+            ("lang", "ALL"),
+            ("titles", "yes"),
+            ("fragment", "true"),
+        ]);
+        assert!(!off.every_language && !off.titles_only && !off.fragment);
     }
 
     #[test]

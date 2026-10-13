@@ -42,6 +42,7 @@ mod ipblock;
 mod landing;
 mod lang;
 mod legal;
+mod lenient;
 mod locale_path;
 mod media;
 mod metrics;
@@ -257,6 +258,7 @@ fn routes(state: AppState) -> Router {
         .route("/admin/errors", get(admin::error_gallery))
         .route("/admin/errors/{kind}", get(admin::error_preview))
         .route("/search", get(search::search_page))
+        .route("/search/counts", get(search::search_counts))
         .route("/media", get(media::page))
         .route("/emotes", get(emotes::list))
         .route("/emotes.json", get(emotes::list_json))

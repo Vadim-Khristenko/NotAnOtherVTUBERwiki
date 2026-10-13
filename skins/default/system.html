@@ -19,21 +19,27 @@
 <h1>{{ heading }}</h1>
 
 {% if view == "index" %}
-<p class="muted-cell">{{ t("system.index_about") }}</p>
-{% for g in groups %}
-<section class="system-group" aria-labelledby="system-group-{{ loop.index }}">
-  <h2 id="system-group-{{ loop.index }}">{{ g.title }}</h2>
-  <ul class="system-grid" role="list">
-    {% for e in g.entries %}
-    <li><a class="system-card" href="{{ e.href }}">
-      <span class="system-card-top"><svg class="icon" aria-hidden="true"><use href="#i-{{ e.icon }}" /></svg>{% if e.figure %}<span class="system-card-figure">{{ e.figure }}</span>{% endif %}</span>
-      <span class="system-card-title">{{ e.title }}</span>
-      <span class="system-card-about">{{ e.about }}</span>
-    </a></li>
-    {% endfor %}
-  </ul>
-</section>
-{% endfor %}
+<p class="sys-lede">{{ t("system.index_about") }}</p>
+<p class="sys-today">
+  {% for item in today %}<a class="sys-today-item" href="{{ item.href }}"><strong>{{ item.n }}</strong> {{ item.label }}</a>{% endfor %}
+</p>
+<div class="sys-directory">
+  {% for g in groups %}
+  <section class="sys-col sys-col-{{ g.id }}" aria-labelledby="sys-col-{{ g.id }}">
+    <h2 class="sys-col-head" id="sys-col-{{ g.id }}">{{ g.title }}</h2>
+    <ul class="sys-rows" role="list">
+      {% for e in g.entries %}
+      <li><a class="sys-row{% if e.attention %} needs-work{% endif %}" href="{{ e.href }}">
+        <svg class="icon sys-icon" aria-hidden="true"><use href="#i-{{ e.icon }}" /></svg>
+        <span class="sys-name">{{ e.title }}</span>
+        {% if e.figure is not none %}<span class="sys-figure" title="{{ e.figure_label }}">{{ e.figure }}</span>{% endif %}
+        <span class="sys-about">{{ e.about }}</span>
+      </a></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
+</div>
 
 {% elif view == "recent-changes" %}
 <p class="muted-cell">{{ about }}</p>
@@ -60,6 +66,7 @@
 {% endif %}
   <li class="rc-item{% if c.is_minor %} is-minor{% endif %}">
     <span class="rc-time">{{ c.time }}</span>
+    <span class="rc-node{% if c.is_new %} is-new{% elif c.is_minor %} is-minor{% endif %}" aria-hidden="true"></span>
     <span class="rc-main">
       <a class="rc-title" href="{{ c.href }}">{{ c.title }}</a>
       {%- if c.is_new %} <span class="rc-tag rc-new">{{ t("system.rc_new") }}</span>{% endif -%}
@@ -68,8 +75,9 @@
       {%- if c.review %} <a class="tag tag-review-{{ c.review.status }}" href="{{ c.review.open }}">{{ c.review.label }}</a>{% endif %}
       <span class="rc-meta">{% if c.author %}<a href="/user/{{ c.author }}"><bdi>{{ c.author }}</bdi></a>{% else %}{{ t("history.anonymous") }}{% endif %}{% if c.summary %} · <span class="rc-summary-text">{{ c.summary }}</span>{% endif %}</span>
     </span>
-    <span class="history-delta rc-delta {% if c.delta > 0 %}is-plus{% elif c.delta < 0 %}is-minus{% else %}is-zero{% endif %}{% if c.delta_big %} is-big{% endif %}">
-      {%- if c.delta > 0 %}+{{ c.delta }}{% elif c.delta < 0 %}&minus;{{ c.delta | abs }}{% else %}0{% endif -%}
+    <span class="rc-size {% if c.delta > 0 %}is-plus{% elif c.delta < 0 %}is-minus{% else %}is-zero{% endif %}{% if c.delta_big %} is-big{% endif %}">
+      <span class="rc-bar" aria-hidden="true"><span style="width: {{ c.bar }}%"></span></span>
+      <span class="rc-bytes">{%- if c.delta > 0 %}+{{ c.delta }}{% elif c.delta < 0 %}&minus;{{ c.delta | abs }}{% else %}0{% endif -%}</span>
     </span>
     <span class="rc-actions">
       {% if c.diff %}<a href="{{ c.diff }}" title="{{ t('history.prev_title') }}" aria-label="{{ t('history.prev_title') }}"><svg class="icon" aria-hidden="true"><use href="#i-arrows-diff" /></svg></a>{% endif %}
@@ -140,14 +148,16 @@
 {% endif %}
 
 {% elif view == "statistics" %}
+<div class="stat-ledgers">
 {% for g in stat_groups %}
-<section class="stat-group">
+<section class="stat-ledger">
   <h2>{{ g.title }}</h2>
-  <dl class="stat-grid">
-    {% for f in g.figures %}<div class="stat"><dt>{{ f.label }}</dt><dd>{{ f.value }}</dd></div>{% endfor %}
+  <dl>
+    {% for f in g.figures %}<div><dt>{{ f.label }}</dt><dd>{{ f.value }}</dd></div>{% endfor %}
   </dl>
 </section>
 {% endfor %}
+</div>
 <section class="stat-group">
   <h2>{{ t("system.stat_chart", n=month_edits) }}</h2>
   <div class="stat-chart" role="img" aria-label="{{ t('system.stat_chart', n=month_edits) }}">
@@ -158,11 +168,11 @@
 <div class="stat-tops">
   <section class="stat-group">
     <h2>{{ t("system.stat_top_editors") }}</h2>
-    {% if editors %}<ol class="stat-top">{% for e in editors %}<li><a href="{{ e.href }}"><bdi>{{ e.name }}</bdi></a><span>{{ e.edits }}</span></li>{% endfor %}</ol>{% else %}<p class="muted-cell">{{ t("system.nothing_yet") }}</p>{% endif %}
+    {% if editors %}<ol class="stat-top">{% for e in editors %}<li><a href="{{ e.href }}"><bdi>{{ e.name }}</bdi></a><span class="stat-meter" aria-hidden="true"><span style="width: {{ e.share }}%"></span></span><b>{{ e.edits }}</b></li>{% endfor %}</ol>{% else %}<p class="muted-cell">{{ t("system.nothing_yet") }}</p>{% endif %}
   </section>
   <section class="stat-group">
     <h2>{{ t("system.stat_busiest") }}</h2>
-    {% if busiest %}<ol class="stat-top">{% for p in busiest %}<li><a href="{{ p.href }}">{{ p.name }}</a><span>{{ p.edits }}</span></li>{% endfor %}</ol>{% else %}<p class="muted-cell">{{ t("system.nothing_yet") }}</p>{% endif %}
+    {% if busiest %}<ol class="stat-top">{% for p in busiest %}<li><a href="{{ p.href }}">{{ p.name }}</a><span class="stat-meter" aria-hidden="true"><span style="width: {{ p.share }}%"></span></span><b>{{ p.edits }}</b></li>{% endfor %}</ol>{% else %}<p class="muted-cell">{{ t("system.nothing_yet") }}</p>{% endif %}
   </section>
 </div>
 

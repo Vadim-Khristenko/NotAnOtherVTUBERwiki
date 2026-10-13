@@ -110,4 +110,13 @@ html[data-theme="dark"] .content mark.mark-gray { background: #4a2d55; color: #f
 @media (max-width: 46rem) {
   .landing-art { margin: calc(var(--s4) * -1) auto 0; }
 }
+
+/* Search and the special pages carry the two colours of the banner: pink
+   for what is chosen, violet for what is counted. */
+.find-tab[aria-current]::after, .rc-node.is-new { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.find-count, .sys-figure { color: var(--accent-2); }
+.find-hit.is-exact { border-color: #4c367d; }
+html[data-theme="dark"] .find-hit.is-exact { background: #1a1029; }
+.content .find-snippet mark, html[data-theme] .content .find-snippet mark { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+.stat-meter > span { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
 </style>

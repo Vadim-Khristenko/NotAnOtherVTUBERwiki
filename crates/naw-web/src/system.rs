@@ -170,7 +170,7 @@ async fn index(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError
     )
     .fetch_one(&state.db)
     .await?;
-    let figure = |name: &str| -> Option<String> {
+    let figure = |name: &str| -> Option<(String, i64)> {
         let (key, value) = match name {
             "all-pages" => ("articles", n.articles),
             "categories" => ("categories", n.categories),
@@ -184,7 +184,10 @@ async fn index(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError
             "uncategorized" => ("uncategorized", n.uncategorized),
             _ => return None,
         };
-        Some(ctx.tn_with(&format!("system.figure_{key}"), value, &[]))
+        Some((
+            ctx.tn_with(&format!("system.figure_{key}"), value, &[]),
+            value,
+        ))
     };
     let groups: Vec<minijinja::Value> = GROUPS
         .iter()
@@ -198,22 +201,49 @@ async fn index(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError
                         "modules" => ctx.link("/system:all-pages?ns=module"),
                         _ => ctx.link(&format!("/system:{name}")),
                     };
+                    let figure = figure(name);
                     minijinja::context! {
                         href => href,
                         icon => icon,
                         title => ctx.t(&format!("system.{key}")),
                         about => ctx.t(&format!("system.{key}_about")),
-                        figure => figure(name),
+                        figure => figure.as_ref().map(|(_, n)| *n),
+                        figure_label => figure.as_ref().map(|(label, _)| label.clone()),
+                        // Work waiting: a maintenance list that is not empty.
+                        attention => *group == "maintenance" && figure.is_some_and(|(_, n)| n > 0),
                     }
                 })
                 .collect();
             minijinja::context! {
+                id => *group,
                 title => ctx.t(&format!("system.group_{group}")),
                 entries => entries,
             }
         })
         .collect();
-    Ok(minijinja::context! { groups => groups })
+    let today = vec![
+        minijinja::context! {
+            n => n.edits_day,
+            label => ctx.tn_with("system.today_edits", n.edits_day, &[]),
+            href => ctx.link("/system:recent-changes?days=1"),
+        },
+        minijinja::context! {
+            n => n.new_pages,
+            label => ctx.tn_with("system.today_new_pages", n.new_pages, &[]),
+            href => ctx.link("/system:new-pages"),
+        },
+        minijinja::context! {
+            n => n.open_topics,
+            label => ctx.tn_with("system.today_topics", n.open_topics, &[]),
+            href => ctx.link("/talk"),
+        },
+        minijinja::context! {
+            n => n.active,
+            label => ctx.tn_with("system.today_active", n.active, &[]),
+            href => ctx.link("/system:active-users"),
+        },
+    ];
+    Ok(minijinja::context! { groups => groups, today => today })
 }
 
 /// Where a page of any namespace lives.
@@ -391,6 +421,7 @@ async fn recent_changes(
                 is_new => row.prev_id.is_none(),
                 delta => delta,
                 delta_big => i64::from(delta.abs()) >= ctx.limits.big_edit_bytes,
+                bar => size_bar(i64::from(delta)),
                 locale => (row.locale != ctx.content_locale).then_some(row.locale),
                 review => (row.review_status != "accepted").then(|| minijinja::context! {
                     status => row.review_status.clone(),
@@ -407,6 +438,26 @@ async fn recent_changes(
         recent_max => ctx.limits.recent_changes_shown,
         filters => filters,
     })
+}
+
+/// How wide a change's size bar is, in percent: on a log scale, so a
+/// ten-byte fix shows and a five-megabyte import does not drown the rest.
+fn size_bar(delta: i64) -> u32 {
+    if delta == 0 {
+        return 0;
+    }
+    let magnitude = (delta.unsigned_abs() as f64 + 1.0).log10();
+    // 1 byte is about 8 %, a kilobyte about 75 %, ten kilobytes and more the whole bar.
+    ((magnitude * 25.0).round() as u32).clamp(4, 100)
+}
+
+/// A share of the biggest, in percent, for a bar in a top list.
+fn share(n: i64, max: i64) -> i64 {
+    if max <= 0 {
+        0
+    } else {
+        (n * 100 / max).clamp(1, 100)
+    }
 }
 
 /// The letter a title is filed under.
@@ -686,16 +737,19 @@ async fn statistics(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, App
         ctx.wiki.id
     )
     .fetch_all(&state.db)
-    .await?
-    .into_iter()
-    .map(|r| {
-        minijinja::context! {
-            href => format!("/user/{}", r.username),
-            name => r.display_name.unwrap_or_else(|| r.username.clone()),
-            edits => r.edits,
-        }
-    })
-    .collect::<Vec<_>>();
+    .await?;
+    let top = editors.first().map_or(0, |r| r.edits);
+    let editors = editors
+        .into_iter()
+        .map(|r| {
+            minijinja::context! {
+                href => format!("/user/{}", r.username),
+                name => r.display_name.unwrap_or_else(|| r.username.clone()),
+                edits => r.edits,
+                share => share(r.edits, top),
+            }
+        })
+        .collect::<Vec<_>>();
     let busiest = sqlx::query!(
         r#"SELECT p.title, p.slug, p.namespace::text AS "namespace!", count(*) AS "edits!"
            FROM revisions r JOIN pages p ON p.id = r.page_id
@@ -705,16 +759,19 @@ async fn statistics(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, App
         ctx.wiki.id
     )
     .fetch_all(&state.db)
-    .await?
-    .into_iter()
-    .map(|r| {
-        minijinja::context! {
-            href => href_of(ctx, &r.namespace, &r.slug),
-            name => r.title,
-            edits => r.edits,
-        }
-    })
-    .collect::<Vec<_>>();
+    .await?;
+    let top = busiest.first().map_or(0, |r| r.edits);
+    let busiest = busiest
+        .into_iter()
+        .map(|r| {
+            minijinja::context! {
+                href => href_of(ctx, &r.namespace, &r.slug),
+                name => r.title,
+                edits => r.edits,
+                share => share(r.edits, top),
+            }
+        })
+        .collect::<Vec<_>>();
     Ok(minijinja::context! {
         stat_groups => groups,
         bars => bars,
@@ -1095,4 +1152,36 @@ async fn active_users(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, A
         })
         .collect();
     Ok(list(ctx, rows))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_size_bar_grows_with_the_size_and_stays_in_bounds() {
+        assert_eq!(size_bar(0), 0);
+        assert!(size_bar(1) >= 4);
+        assert!(size_bar(10) < size_bar(1000));
+        assert_eq!(size_bar(i64::MAX), 100);
+        assert_eq!(size_bar(i64::MIN), 100);
+        assert_eq!(size_bar(-500), size_bar(500));
+    }
+
+    #[test]
+    fn a_share_is_a_percent_of_the_first() {
+        assert_eq!(share(5, 10), 50);
+        assert_eq!(share(10, 10), 100);
+        assert_eq!(share(1, 1000), 1);
+        assert_eq!(share(5, 0), 0);
+        assert_eq!(share(20, 10), 100);
+    }
+
+    #[test]
+    fn a_title_is_filed_under_its_first_letter() {
+        assert_eq!(letter_of("bao"), "B");
+        assert_eq!(letter_of("  ёлка"), "Ё");
+        assert_eq!(letter_of("!!!"), "#");
+        assert_eq!(letter_of(""), "#");
+    }
 }

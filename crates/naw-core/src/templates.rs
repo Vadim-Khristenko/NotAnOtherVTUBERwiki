@@ -30,6 +30,7 @@ const TEMPLATES: &[&str] = &[
     "relay.html",
     "message.html",
     "search.html",
+    "_search_results.html",
     "file.html",
     "system.html",
     "landing.html",

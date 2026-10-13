@@ -151,3 +151,19 @@ other = "{n} this month"
 [figure_uncategorized]
 one = "{n} page"
 other = "{n} pages"
+
+[today_edits]
+one = "edit today"
+other = "edits today"
+
+[today_new_pages]
+one = "new page this week"
+other = "new pages this week"
+
+[today_topics]
+one = "open topic"
+other = "open topics"
+
+[today_active]
+one = "editor this month"
+other = "editors this month"

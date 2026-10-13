@@ -1,135 +1,137 @@
 {% extends "layout.html" %}
 {#
-  Search: tabs for each kind with their counts, filters as a plain GET form,
-  and the results in sections. Works without JavaScript.
+  Search. Without a script it is a plain GET form whose tabs and filters are
+  links. With one, results follow the typing (the server sends
+  _search_results.html alone), the tabs fill in their counts from
+  /search/counts once the results are shown, `/` jumps to the field and the
+  arrow keys walk the results.
 
-  `snippet` is the only value rendered with `| safe`: it comes from
-  ts_headline through clean_snippet, which leaves only text and <mark>. The
-  query is attacker controlled and is never marked safe.
-
-  query, searched, scope, tabs (id, label, count, current, href), sections
-  (kind, heading, items, more_href), total, every_language, titles_only,
-  recent, page_no, prev_href, next_href, create_href
+  query, searched, scope, tabs (id, label, current, href), toggles (label,
+  on, href), counts_href, and what _search_results.html takes.
 #}
-{% block main_class %}content content-wide search-page{% endblock %}
+{% block main_class %}content content-wide find-page{% endblock %}
 {% block body %}
-<h1>{{ t("search.heading") }}</h1>
-
-<form class="search-form" method="get" action="{{ base }}/search" role="search">
-  <label class="visually-hidden" for="search-q">{{ t("search.label") }}</label>
-  <div class="search-row">
-    <input class="field-input" id="search-q" name="q" type="search" value="{{ query }}"
-           maxlength="200" autofocus placeholder="{{ t('search.placeholder') }}" />
+<div class="find" data-find data-counts="{{ counts_href or '' }}" data-action="{{ base }}/search">
+  <h1 class="find-heading">{{ t("search.heading") }}</h1>
+  <form class="find-bar" method="get" action="{{ base }}/search" role="search">
+    <label class="find-field">
+      <svg class="icon find-field-icon" aria-hidden="true"><use href="#i-search" /></svg>
+      <span class="visually-hidden">{{ t("search.label") }}</span>
+      <input id="search-q" name="q" type="search" value="{{ query }}" maxlength="200" autocomplete="off"
+             spellcheck="false" autofocus placeholder="{{ t('search.placeholder') }}" />
+      <kbd class="find-key" aria-hidden="true" title="{{ t('search.key_hint') }}">/</kbd>
+    </label>
     {% if scope != "all" %}<input type="hidden" name="scope" value="{{ scope }}" />{% endif %}
-    <button class="button-save" type="submit"><svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>{{ t("search.submit") }}</button>
-  </div>
+    <button class="find-go" type="submit" aria-label="{{ t('search.submit') }}"><svg class="icon find-go-icon" aria-hidden="true"><use href="#i-search" /></svg><span class="find-go-text">{{ t("search.submit") }}</span></button>
+  </form>
+
   {% if searched %}
-  <div class="search-options">
-    <label class="check"><input type="checkbox" name="lang" value="all" {% if every_language %}checked{% endif %} /> {{ t("search.every_language") }}</label>
-    <label class="check"><input type="checkbox" name="titles" value="1" {% if titles_only %}checked{% endif %} /> {{ t("search.titles_only") }}</label>
-    <label class="check"><input type="checkbox" name="sort" value="recent" {% if recent %}checked{% endif %} /> {{ t("search.recent_first") }}</label>
-    <button class="button-preview search-apply" type="submit">{{ t("search.apply") }}</button>
-  </div>
-  {% endif %}
-</form>
-
-{% if not searched %}
-  <p class="search-hint">{{ t("search.hint") }}</p>
-{% else %}
-  <nav class="search-tabs" aria-label="{{ t('search.tabs') }}">
-    {% for tab in tabs %}
-    <a class="search-tab{% if tab.current %} is-current{% endif %}" href="{{ tab.href }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }}{% if tab.count is not none %}<span class="search-tab-count{% if tab.count == '0' %} is-zero{% endif %}">{{ tab.count }}</span>{% endif %}</a>
-    {% endfor %}
-  </nav>
-
-  {% if total == 0 %}
-  <div class="search-none" role="status">
-    <p class="notice notice-warn">{{ t("search.nothing", query=query) }}</p>
-    <p class="search-hint">{{ t("search.try_again") }}</p>
-    {% if create_href %}<p><a class="button-save" href="{{ create_href }}"><svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>{{ t("search.create", query=query) }}</a></p>{% endif %}
+  <div class="find-controls">
+    <nav class="find-tabs" aria-label="{{ t('search.tabs') }}">
+      {% for tab in tabs %}<a class="find-tab" href="{{ tab.href }}" data-scope="{{ tab.id }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }}{% if tab.id != "all" %}<span class="find-count" data-count="{{ tab.id }}"></span>{% endif %}</a>{% endfor %}
+    </nav>
+    <div class="find-toggles" role="group" aria-label="{{ t('search.filters') }}">
+      {% for f in toggles %}<a class="find-toggle" href="{{ f.href }}" aria-pressed="{{ 'true' if f.on else 'false' }}"><svg class="icon" aria-hidden="true"><use href="#i-{{ 'check' if f.on else 'plus' }}" /></svg>{{ f.label }}</a>{% endfor %}
+    </div>
   </div>
   {% endif %}
 
-  {% for section in sections %}
-  <section class="search-section search-{{ section.kind }}">
-    <h2 class="search-section-head">{{ section.heading }}</h2>
+  <div class="find-results" id="find-results" aria-live="polite">
+    {% include "_search_results.html" %}
+  </div>
+</div>
 
-    {% if section.kind == "titles" or section.kind == "text" %}
-    <ol class="search-results">
-      {% for hit in section.items %}
-      <li class="search-hit{% if hit.exact %} is-exact{% endif %}">
-        <p class="search-hit-head">
-          <a class="search-hit-title" href="{{ hit.href }}">{{ hit.title }}</a>
-          {% if hit.exact %}<span class="search-badge">{{ t("search.exact") }}</span>{% endif %}
-          {% if hit.lang %}<span class="search-badge search-lang">{{ hit.lang | upper }}</span>{% endif %}
-          {% if hit.hits and hit.hits > 1 %}<span class="search-hits">{{ tn("search.places", hit.hits) }}</span>{% endif %}
-        </p>
-        {% for p in hit.passages %}
-        <div class="search-passage">
-          {% if p.section %}<a class="search-hit-section" href="{{ p.href or hit.href }}"><span aria-hidden="true">§</span> {{ p.section }}</a>{% endif %}
-          {% if p.snippet %}<p class="search-hit-snippet">{{ p.snippet | safe }}</p>{% endif %}
-        </div>
-        {% endfor %}
-        <p class="search-hit-slug">/{{ hit.path }}{% if hit.day %} · {{ hit.day }}{% endif %}</p>
-      </li>
-      {% endfor %}
-    </ol>
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  "use strict";
+  var root = document.querySelector("[data-find]");
+  if (!root || !window.fetch || !window.URL) return;
+  var input = document.getElementById("search-q");
+  var results = document.getElementById("find-results");
+  var timer = 0, inflight = null, last = input.value.trim();
 
-    {% elif section.kind == "categories" %}
-    <ul class="search-cats">
-      {% for c in section.items %}
-      <li><a class="search-cat{% if c.exact %} is-exact{% endif %}" href="{{ c.href }}"><svg class="icon" aria-hidden="true"><use href="#i-list-details" /></svg>{{ c.title }}<span class="search-tab-count">{{ c.pages }}</span></a></li>
-      {% endfor %}
-    </ul>
-
-    {% elif section.kind == "people" %}
-    <ul class="search-people">
-      {% for p in section.items %}
-      <li>
-        <a class="search-person" href="{{ p.href }}">
-          <span class="post-avatar" aria-hidden="true">{% if p.avatar %}<img src="{{ p.avatar }}" alt="" loading="lazy" />{% else %}{{ (p.display_name or p.username)[:1] | upper }}{% endif %}</span>
-          <span class="search-person-text"><strong><bdi>{{ p.display_name or p.username }}</bdi></strong><span class="search-person-meta">@{{ p.username }}{% if p.role %} · {{ t("search.role_" ~ p.role) }}{% endif %} · {{ tn("search.edits", p.edits) }}</span></span>
-        </a>
-      </li>
-      {% endfor %}
-    </ul>
-
-    {% elif section.kind == "discussions" %}
-    <ol class="talk-list">
-      {% for topic in section.items %}
-      <li class="talk-item{% if topic.status == 'resolved' %} is-resolved{% endif %}">
-        <span class="talk-badge talk-{{ topic.status }}">{{ t("talk.badge_" ~ topic.status) }}</span>
-        <div class="talk-item-main">
-          <a class="talk-item-title" href="{{ topic.href }}">{{ topic.title }}</a>
-          {% if topic.snippet %}<p class="search-hit-snippet">{{ topic.snippet | safe }}</p>{% endif %}
-          <p class="talk-item-meta"><a href="{{ topic.page_href }}">{{ topic.page_title }}</a> · {{ topic.day }}</p>
-        </div>
-        <span class="talk-item-count"><svg class="icon" aria-hidden="true"><use href="#i-message-circle" /></svg>{{ topic.replies }}</span>
-      </li>
-      {% endfor %}
-    </ol>
-
-    {% elif section.kind == "files" %}
-    <ul class="search-files">
-      {% for f in section.items %}
-      <li><a class="search-file" href="{{ f.href }}">
-        {% if f.preview %}<img src="{{ f.preview }}" alt="" loading="lazy" />{% else %}<span class="search-file-kind">{{ f.kind }}</span>{% endif %}
-        <span class="search-file-name">{{ f.title }}</span>
-      </a></li>
-      {% endfor %}
-    </ul>
-    {% endif %}
-
-    {% if section.more_href %}<p class="search-more"><a href="{{ section.more_href }}">{{ t("search.more") }}</a></p>{% endif %}
-  </section>
-  {% endfor %}
-
-  {% if prev_href or next_href %}
-  <nav class="search-pager" aria-label="{{ t('search.pages') }}">
-    {% if prev_href %}<a class="button-preview" href="{{ prev_href }}">{{ t("search.prev") }}</a>{% endif %}
-    <span>{{ t("search.page", n=page_no) }}</span>
-    {% if next_href %}<a class="button-preview" href="{{ next_href }}">{{ t("search.next") }}</a>{% endif %}
-  </nav>
-  {% endif %}
-{% endif %}
+  function hrefWith(q) {
+    var url = new URL(location.href);
+    url.searchParams.set("q", q);
+    url.searchParams.delete("page");
+    url.searchParams.delete("fragment");
+    return url;
+  }
+  // Tabs and filters keep the words typed since the page loaded.
+  function retarget(q) {
+    root.querySelectorAll(".find-tab, .find-toggle").forEach(function (a) {
+      var url = new URL(a.href);
+      url.searchParams.set("q", q);
+      a.href = url.toString();
+    });
+  }
+  function counts(href) {
+    if (!href) return;
+    fetch(href, { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : {}; })
+      .then(function (n) {
+        root.querySelectorAll("[data-count]").forEach(function (el) {
+          var v = n[el.dataset.count];
+          el.textContent = v === undefined ? "" : v;
+          el.classList.toggle("is-zero", v === "0");
+          el.classList.add("is-in");
+        });
+      }, function () {});
+  }
+  function countsHref(q) {
+    var url = hrefWith(q);
+    return root.dataset.action + "/counts" + url.search;
+  }
+  function run(q) {
+    if (q === last) return;
+    last = q;
+    if (inflight) inflight.abort();
+    inflight = window.AbortController ? new AbortController() : null;
+    var url = hrefWith(q);
+    var page = new URL(url.toString());
+    url.searchParams.set("fragment", "1");
+    results.setAttribute("aria-busy", "true");
+    fetch(url.toString(), { signal: inflight ? inflight.signal : undefined, headers: { Accept: "text/html" } })
+      .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
+      .then(function (html) {
+        results.innerHTML = html;
+        results.removeAttribute("aria-busy");
+        history.replaceState(null, "", page.toString());
+        retarget(q);
+        if (q) counts(countsHref(q));
+      }, function (err) {
+        if (err && err.name === "AbortError") return;
+        results.removeAttribute("aria-busy");
+      });
+  }
+  input.addEventListener("input", function () {
+    clearTimeout(timer);
+    var q = input.value.trim();
+    timer = setTimeout(function () { run(q); }, 220);
+  });
+  // Arrow keys walk the results; `/` comes back to the field.
+  function hits() { return Array.prototype.slice.call(results.querySelectorAll("a.find-title")); }
+  input.addEventListener("keydown", function (ev) {
+    if (ev.key === "ArrowDown") { var h = hits(); if (h.length) { ev.preventDefault(); h[0].focus(); } }
+  });
+  results.addEventListener("keydown", function (ev) {
+    if (ev.key !== "ArrowDown" && ev.key !== "ArrowUp") return;
+    var h = hits(), i = h.indexOf(document.activeElement);
+    if (i < 0) return;
+    ev.preventDefault();
+    if (ev.key === "ArrowUp" && i === 0) { input.focus(); return; }
+    var next = h[i + (ev.key === "ArrowDown" ? 1 : -1)];
+    if (next) next.focus();
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "/" || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    var t = ev.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    ev.preventDefault();
+    input.focus();
+    input.select();
+  });
+  counts(root.dataset.counts);
+})();
+</script>
 {% endblock %}

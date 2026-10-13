@@ -1,0 +1,110 @@
+{#
+  The results of a search, alone: the search page includes it, and the live
+  search asks for it as a fragment. Every kind is one row shape: a mark for
+  its kind on the left, then the title, where it lives, and the words found.
+
+  `snippet` is the only value rendered with `| safe`: it comes from
+  ts_headline through clean_snippet, which leaves only text and <mark>.
+
+  searched, query, sections (kind, heading, items, more_href), total,
+  page_no, prev_href, next_href, create_href
+#}
+{% if not searched %}
+<div class="find-intro">
+  <p>{{ t("search.hint") }}</p>
+</div>
+{% elif total == 0 %}
+<div class="find-empty" role="status">
+  <p class="find-empty-head">{{ t("search.nothing", query=query) }}</p>
+  <p>{{ t("search.try_again") }}</p>
+  {% if create_href %}<p><a class="button-save" href="{{ create_href }}"><svg class="icon" aria-hidden="true"><use href="#i-file-plus" /></svg>{{ t("search.create", query=query) }}</a></p>{% endif %}
+</div>
+{% else %}
+{% for section in sections %}
+<section class="find-section find-{{ section.kind }}" aria-labelledby="find-h-{{ section.kind }}">
+  <h2 class="find-section-head" id="find-h-{{ section.kind }}">{{ section.heading }}</h2>
+
+  {% if section.kind == "titles" or section.kind == "text" %}
+  <ol class="find-list">
+    {% for hit in section.items %}
+    <li class="find-hit{% if hit.exact %} is-exact{% endif %}">
+      <svg class="icon find-kind" aria-hidden="true"><use href="#i-{% if hit.namespace == 'template' or hit.namespace == 'page_template' %}template{% elif hit.namespace == 'module' %}code{% else %}file-text{% endif %}" /></svg>
+      <div class="find-body">
+        <p class="find-line">
+          <a class="find-title" href="{{ hit.href }}">{{ hit.title }}</a>
+          {% if hit.exact %}<span class="find-flag">{{ t("search.exact") }}</span>{% endif %}
+          {% if hit.lang %}<span class="find-flag is-quiet">{{ hit.lang | upper }}</span>{% endif %}
+          {% if hit.hits and hit.hits > 1 %}<span class="find-note">{{ tn("search.places", hit.hits) }}</span>{% endif %}
+        </p>
+        <p class="find-path">/{{ hit.path }}{% if hit.day %} · {{ hit.day }}{% endif %}</p>
+        {% for p in hit.passages %}{% if p.snippet or p.section %}
+        <div class="find-passage">
+          {% if p.section %}<a class="find-anchor" href="{{ p.href or hit.href }}">§ {{ p.section }}</a>{% endif %}
+          {% if p.snippet %}<p class="find-snippet">{{ p.snippet | safe }}</p>{% endif %}
+        </div>
+        {% endif %}{% endfor %}
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+
+  {% elif section.kind == "categories" %}
+  <ol class="find-list">
+    {% for c in section.items %}
+    <li class="find-hit find-hit-compact{% if c.exact %} is-exact{% endif %}">
+      <svg class="icon find-kind" aria-hidden="true"><use href="#i-list-details" /></svg>
+      <div class="find-body"><p class="find-line"><a class="find-title" href="{{ c.href }}">{{ c.title }}</a><span class="find-note">{{ tn("system.pages_count", c.pages) }}</span></p></div>
+    </li>
+    {% endfor %}
+  </ol>
+
+  {% elif section.kind == "people" %}
+  <ol class="find-list find-people">
+    {% for p in section.items %}
+    <li class="find-hit find-hit-compact">
+      <span class="find-avatar" aria-hidden="true">{% if p.avatar %}<img src="{{ p.avatar }}" alt="" loading="lazy" />{% else %}{{ (p.display_name or p.username)[:1] | upper }}{% endif %}</span>
+      <div class="find-body">
+        <p class="find-line"><a class="find-title" href="{{ p.href }}"><bdi>{{ p.display_name or p.username }}</bdi></a>{% if p.role %}<span class="find-flag is-quiet">{{ t("search.role_" ~ p.role) }}</span>{% endif %}</p>
+        <p class="find-path">@{{ p.username }} · {{ tn("search.edits", p.edits) }}</p>
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+
+  {% elif section.kind == "discussions" %}
+  <ol class="find-list">
+    {% for topic in section.items %}
+    <li class="find-hit">
+      <svg class="icon find-kind" aria-hidden="true"><use href="#i-message-circle" /></svg>
+      <div class="find-body">
+        <p class="find-line"><a class="find-title" href="{{ topic.href }}">{{ topic.title }}</a><span class="find-flag{% if topic.status == 'resolved' %} is-quiet{% endif %}">{{ t("talk.badge_" ~ topic.status) }}</span><span class="find-note">{{ tn("talk.replies", topic.replies) }}</span></p>
+        <p class="find-path"><a href="{{ topic.page_href }}">{{ topic.page_title }}</a> · {{ topic.day }}</p>
+        {% if topic.snippet %}<div class="find-passage"><p class="find-snippet">{{ topic.snippet | safe }}</p></div>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+
+  {% elif section.kind == "files" %}
+  <ul class="find-files">
+    {% for f in section.items %}
+    <li><a class="find-file find-title" href="{{ f.href }}">
+      {% if f.preview %}<img src="{{ f.preview }}" alt="" loading="lazy" />{% else %}<span class="find-file-kind">{{ f.kind }}</span>{% endif %}
+      <span class="find-file-name">{{ f.title }}</span>
+    </a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if section.more_href %}<p class="find-more"><a href="{{ section.more_href }}">{{ t("search.more") }} <svg class="icon" aria-hidden="true"><use href="#i-chevron-right" /></svg></a></p>{% endif %}
+</section>
+{% endfor %}
+
+{% if prev_href or next_href %}
+<nav class="find-pager" aria-label="{{ t('search.pages') }}">
+  {% if prev_href %}<a class="find-pager-link" href="{{ prev_href }}" rel="prev"><svg class="icon" aria-hidden="true"><use href="#i-chevron-left" /></svg>{{ t("search.prev") }}</a>{% else %}<span class="find-pager-link is-off"><svg class="icon" aria-hidden="true"><use href="#i-chevron-left" /></svg>{{ t("search.prev") }}</span>{% endif %}
+  <span class="find-page-no">{{ t("search.page", n=page_no) }}</span>
+  {% if next_href %}<a class="find-pager-link" href="{{ next_href }}" rel="next">{{ t("search.next") }}<svg class="icon" aria-hidden="true"><use href="#i-chevron-right" /></svg></a>{% else %}<span class="find-pager-link is-off">{{ t("search.next") }}<svg class="icon" aria-hidden="true"><use href="#i-chevron-right" /></svg></span>{% endif %}
+</nav>
+{% endif %}
+{% endif %}
