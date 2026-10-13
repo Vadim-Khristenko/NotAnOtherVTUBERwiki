@@ -427,16 +427,17 @@ impl Cx<'_> {
         let mut out = String::with_capacity(text.len());
         let mut i = 0;
         let bytes = text.as_bytes();
+        let mut braces = Braces::new(text);
         while i < bytes.len() {
             if bytes[i..].starts_with(b"{{{")
-                && let Some(end) = param_close(text, i)
+                && let Some(end) = braces.triple(i)
             {
                 out.push_str(&text[i..end]);
                 i = end;
                 continue;
             }
             if bytes[i..].starts_with(b"{{") {
-                if let Some(end) = braces_close(text, i) {
+                if let Some(end) = braces.double(i) {
                     let inner = &text[i + 2..end - 2];
                     out.push_str(&self.template_call(inner));
                     i = end;
@@ -552,8 +553,14 @@ impl Cx<'_> {
             Some(slug) => {
                 *self.report.templates.entry(slug.clone()).or_default() += 1;
                 self.report.ok("template renamed");
-                let at = body.find(name.as_str()).unwrap_or(0);
-                format!("{{{{{}{slug}{}}}}}", &body[..at], &body[at + name.len()..])
+                // The name as written may be gone from the body, when what
+                // was inside it changed; then the call stays as it is.
+                match body.find(name.as_str()) {
+                    Some(at) => {
+                        format!("{{{{{}{slug}{}}}}}", &body[..at], &body[at + name.len()..])
+                    }
+                    None => format!("{{{{{body}}}}}"),
+                }
             }
             None => {
                 self.report.miss("template name", &name);
@@ -1004,11 +1011,12 @@ impl Cx<'_> {
             escape,
         };
         let bytes = s.as_bytes();
+        let mut braces = Braces::new(s);
         let mut i = 0;
         while i < bytes.len() {
             let rest = &s[i..];
             if rest.starts_with("[[")
-                && let Some(end) = brackets_close(s, i)
+                && let Some(end) = braces.link(i)
             {
                 let inner = &s[i + 2..end - 2];
                 let trail: String = s[end..]
@@ -1021,14 +1029,14 @@ impl Cx<'_> {
                 continue;
             }
             if rest.starts_with("{{{")
-                && let Some(end) = param_close(s, i)
+                && let Some(end) = braces.triple(i)
             {
                 line.token(&s[i..end]);
                 i = end;
                 continue;
             }
             if rest.starts_with("{{")
-                && let Some(end) = braces_close(s, i)
+                && let Some(end) = braces.double(i)
             {
                 let inner = self.inline(&s[i + 2..end - 2], false);
                 line.token(&format!("{{{{{inner}}}}}"));
@@ -1941,82 +1949,160 @@ fn split_definition(s: &str) -> Option<(&str, &str)> {
     None
 }
 
-/// Index just past the `]]` matching the `[[` at `start`.
-fn brackets_close(s: &str, start: usize) -> Option<usize> {
-    let b = s.as_bytes();
-    let mut depth = 0usize;
-    let mut i = start;
-    while i < b.len() {
-        if b[i..].starts_with(b"[[") {
-            depth += 1;
-            i += 2;
-            continue;
+/// Templates and parameters inside each other, at most this deep; past it a
+/// brace is text. MediaWiki stops far sooner, and an unbounded depth is a
+/// stack overflow on a page of `{{{` repeated.
+const NEST_MAX: usize = 100;
+
+/// Finds the `}}` and `}}}` matching the braces of one text, remembering
+/// every answer. Without that a run of unclosed `{{` is scanned to its end
+/// from each of them, and again from each `{{{` inside: cubic, a minute for
+/// a few kilobytes of braces. With it each start is scanned once.
+struct Braces<'a> {
+    b: &'a [u8],
+    double: HashMap<usize, Option<usize>>,
+    triple: HashMap<usize, Option<usize>>,
+    /// Bytes the scans may still look at. Past it every brace is text, so
+    /// even a page built to be slow costs a bounded amount of work.
+    budget: usize,
+}
+
+impl<'a> Braces<'a> {
+    fn new(s: &'a str) -> Self {
+        Braces {
+            b: s.as_bytes(),
+            double: HashMap::new(),
+            triple: HashMap::new(),
+            budget: s.len().saturating_mul(32) + 4096,
         }
-        if b[i..].starts_with(b"]]") {
-            depth -= 1;
-            i += 2;
-            if depth == 0 {
-                return Some(i);
-            }
-            continue;
+    }
+
+    /// Index just past the `}}` matching the `{{` at `start`.
+    fn double(&mut self, start: usize) -> Option<usize> {
+        self.double_at(start, 0)
+    }
+
+    /// Index just past the `}}}` matching the `{{{` at `start`.
+    fn triple(&mut self, start: usize) -> Option<usize> {
+        self.triple_at(start, 0)
+    }
+
+    fn double_at(&mut self, start: usize, nest: usize) -> Option<usize> {
+        if let Some(hit) = self.double.get(&start) {
+            return *hit;
         }
-        if b[i] == b'\n' {
+        if nest > NEST_MAX {
             return None;
         }
-        i += 1;
-    }
-    None
-}
-
-/// Index just past the `}}` matching the `{{` at `start`.
-fn braces_close(s: &str, start: usize) -> Option<usize> {
-    let b = s.as_bytes();
-    let mut depth = 1usize;
-    let mut i = start + 2;
-    while i < b.len() {
-        if b[i..].starts_with(b"{{{")
-            && let Some(end) = param_close(s, i)
-        {
-            i = end;
-            continue;
-        }
-        if b[i..].starts_with(b"{{") {
-            depth += 1;
-            i += 2;
-            continue;
-        }
-        if b[i..].starts_with(b"}}") {
-            depth -= 1;
-            i += 2;
-            if depth == 0 {
-                return Some(i);
+        let b = self.b;
+        let mut depth = 1usize;
+        let mut i = start + 2;
+        let mut found = None;
+        while i < b.len() {
+            if self.budget == 0 {
+                break;
             }
-            continue;
+            self.budget -= 1;
+            if b[i..].starts_with(b"{{{")
+                && let Some(end) = self.triple_at(i, nest + 1)
+            {
+                i = end;
+                continue;
+            }
+            if b[i..].starts_with(b"{{") {
+                depth += 1;
+                i += 2;
+                continue;
+            }
+            if b[i..].starts_with(b"}}") {
+                depth -= 1;
+                i += 2;
+                if depth == 0 {
+                    found = Some(i);
+                    break;
+                }
+                continue;
+            }
+            i += 1;
         }
-        i += 1;
+        self.double.insert(start, found);
+        found
     }
-    None
-}
 
-/// Index just past the `}}}` matching the `{{{` at `start`.
-fn param_close(s: &str, start: usize) -> Option<usize> {
-    let b = s.as_bytes();
-    let mut i = start + 3;
-    while i < b.len() {
-        if b[i..].starts_with(b"}}}") {
-            return Some(i + 3);
+    /// Index just past the `]]` matching the `[[` at `start`, on its line,
+    /// from the same budget as the braces.
+    fn link(&mut self, start: usize) -> Option<usize> {
+        let b = self.b;
+        let mut depth = 0usize;
+        let mut i = start;
+        while i < b.len() {
+            if self.budget == 0 {
+                return None;
+            }
+            self.budget -= 1;
+            if b[i..].starts_with(b"[[") {
+                depth += 1;
+                i += 2;
+                continue;
+            }
+            if b[i..].starts_with(b"]]") {
+                depth -= 1;
+                i += 2;
+                if depth == 0 {
+                    return Some(i);
+                }
+                continue;
+            }
+            if b[i] == b'\n' {
+                return None;
+            }
+            i += 1;
         }
-        if b[i..].starts_with(b"{{{") {
-            i = param_close(s, i)?;
-            continue;
-        }
-        if b[i..].starts_with(b"{{") {
-            i = braces_close(s, i)?;
-            continue;
-        }
-        i += 1;
+        None
     }
-    None
+
+    fn triple_at(&mut self, start: usize, nest: usize) -> Option<usize> {
+        if let Some(hit) = self.triple.get(&start) {
+            return *hit;
+        }
+        if nest > NEST_MAX {
+            return None;
+        }
+        let b = self.b;
+        let mut i = start + 3;
+        let mut found = None;
+        while i < b.len() {
+            if self.budget == 0 {
+                break;
+            }
+            self.budget -= 1;
+            if b[i..].starts_with(b"}}}") {
+                found = Some(i + 3);
+                break;
+            }
+            if b[i..].starts_with(b"{{{") {
+                match self.triple_at(i, nest + 1) {
+                    Some(end) => {
+                        i = end;
+                        continue;
+                    }
+                    None => break,
+                }
+            }
+            if b[i..].starts_with(b"{{") {
+                match self.double_at(i, nest + 1) {
+                    Some(end) => {
+                        i = end;
+                        continue;
+                    }
+                    None => break,
+                }
+            }
+            i += 1;
+        }
+        self.triple.insert(start, found);
+        found
+    }
 }
 
 /// Template braces a line opens, less those it closes.
@@ -2151,11 +2237,12 @@ fn redirect_target(text: &str) -> Option<String> {
 /// Text with the markup of links and emphasis taken out, for alt text.
 fn plain(s: &str) -> String {
     let mut out = String::new();
+    let mut braces = Braces::new(s);
     let mut i = 0;
     while i < s.len() {
         let rest = &s[i..];
         if rest.starts_with("[[")
-            && let Some(end) = brackets_close(s, i)
+            && let Some(end) = braces.link(i)
         {
             let inner = &s[i + 2..end - 2];
             out.push_str(inner.rsplit('|').next().unwrap_or(inner));

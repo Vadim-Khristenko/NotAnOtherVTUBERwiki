@@ -42,7 +42,7 @@ fn stamp(at: chrono::DateTime<chrono::Utc>) -> String {
 
 #[derive(Debug, serde::Deserialize)]
 pub struct HistoryQuery {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::lenient::number")]
     page: Option<i64>,
     /// After a rollback, to say so.
     #[serde(default)]

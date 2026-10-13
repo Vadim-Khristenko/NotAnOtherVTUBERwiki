@@ -2310,7 +2310,7 @@ pub struct PreviewForm {
 
 #[derive(Debug, serde::Deserialize)]
 pub struct PreviewQuery {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::lenient::number")]
     fragment: Option<u8>,
 }
 

@@ -276,6 +276,14 @@ fn a_portable_infobox_template_and_its_calls_carry_over() {
 }
 
 #[test]
+fn a_renamed_template_whose_name_changed_inside_does_not_panic() {
+    // The fuzzer found it: the name held a magic word, so the body no
+    // longer contained the name as written, and the rename sliced past it.
+    let out = md("{{Status/{{PAGENAME}}|x}} {{A/{{lc:B}}}}");
+    assert!(out.contains("{{"), "{out}");
+}
+
+#[test]
 fn template_sections_stay_for_the_engine() {
     assert_eq!(
         md("<includeonly>{{{1}}}</includeonly><noinclude>Docs</noinclude>"),

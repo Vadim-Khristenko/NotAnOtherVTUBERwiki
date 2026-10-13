@@ -139,6 +139,66 @@ mod tests {
     }
 
     #[test]
+    fn no_address_outside_the_wiki_is_ever_taken_for_a_page() {
+        for href in [
+            "javascript:alert(1)",
+            "JAVASCRIPT:alert(1)",
+            "data:text/html,x",
+            "//evil.example/x",
+            "\\\\evil.example",
+            "/../admin",
+            "..%2fadmin",
+            "bao%00",
+            "bao\u{0}",
+            "bao?x=1",
+            "bao&x",
+            "mailto:a@b",
+            "ftp://x",
+            "",
+            "#",
+            "/",
+            "./",
+            "bao/edit",
+            "Bao",
+            "bao-the-whale-\u{202e}",
+        ] {
+            if let Some((ns, slug)) = page_target(href) {
+                assert!(
+                    slug.chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+                    "{href:?} -> {ns}/{slug}"
+                );
+            }
+        }
+        // And any text at all goes through without a panic.
+        let mut seed: u64 = 11;
+        let pieces = [
+            "/",
+            ".",
+            ":",
+            "#",
+            "?",
+            "%",
+            "a",
+            "-",
+            "ж",
+            "template:",
+            "module:",
+            "\u{0}",
+            "//",
+            " ",
+        ];
+        for _ in 0..3000 {
+            let mut s = String::new();
+            for _ in 0..8 {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                s.push_str(pieces[(seed >> 33) as usize % pieces.len()]);
+            }
+            let _ = page_target(&s);
+        }
+    }
+
+    #[test]
     fn anchors_and_hrefs_are_read_from_rendered_html() {
         let html = "<p>See <a href=\"bao\">Bao</a> and <a rel=\"x\" href=\"/lore\">lore</a>.</p>";
         let hrefs: Vec<_> = anchors(html).filter_map(href).collect();

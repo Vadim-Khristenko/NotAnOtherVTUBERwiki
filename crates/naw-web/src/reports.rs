@@ -509,6 +509,7 @@ pub async fn user_send(
 pub struct QueueQuery {
     status: Option<String>,
     kind: Option<String>,
+    #[serde(default, deserialize_with = "crate::lenient::number")]
     page: Option<i64>,
 }
 

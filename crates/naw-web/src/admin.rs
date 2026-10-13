@@ -177,7 +177,7 @@ pub async fn overview(
 pub struct ListQuery {
     #[serde(default)]
     q: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::lenient::number")]
     page: Option<i64>,
 }
 
@@ -966,7 +966,7 @@ pub struct SavedQuery {
     #[serde(default)]
     saved: Option<String>,
     /// Submitted rows dropped as unsafe or incomplete.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::lenient::number")]
     refused: Option<u32>,
 }
 
@@ -1274,7 +1274,7 @@ pub struct AuditQuery {
     group: Option<String>,
     #[serde(default)]
     who: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::lenient::number")]
     page: Option<i64>,
 }
 

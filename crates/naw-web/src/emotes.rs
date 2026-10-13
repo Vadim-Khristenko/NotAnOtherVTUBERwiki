@@ -642,7 +642,7 @@ pub async fn expand(state: &AppState, wiki_id: Uuid, html: String) -> Result<Str
 pub struct ListQuery {
     #[serde(default)]
     q: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::lenient::number")]
     page: Option<usize>,
 }
 

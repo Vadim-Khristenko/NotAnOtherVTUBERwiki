@@ -406,10 +406,40 @@ async fn render_bodies(
         };
         out.push(html);
     }
-    let joined = out.join("\u{1}");
+    // Expanded together, one query for the lot, then cut apart again. The
+    // seam is an HTML comment, which the sanitizer takes out of every
+    // message, so no message can carry one and move the cut.
+    let joined = out.join(POST_SEAM);
     let joined = crate::emotes::expand(state, ctx.wiki.id, joined).await?;
     let joined = crate::redlinks::expand(state, ctx, joined).await?;
-    Ok(joined.split('\u{1}').map(str::to_string).collect())
+    let parts: Vec<String> = joined.split(POST_SEAM).map(str::to_string).collect();
+    if parts.len() != bodies.len() {
+        // Should not happen; render each alone rather than misplace one.
+        tracing::warn!(
+            expected = bodies.len(),
+            got = parts.len(),
+            "message seam lost"
+        );
+        let mut alone = Vec::with_capacity(out.len());
+        for html in out {
+            let html = crate::emotes::expand(state, ctx.wiki.id, html).await?;
+            alone.push(crate::redlinks::expand(state, ctx, html).await?);
+        }
+        return Ok(alone);
+    }
+    Ok(parts)
+}
+
+/// Between two rendered messages while they are expanded together.
+const POST_SEAM: &str = "<!--naw:post-->";
+
+/// A message or a name as stored: line ends as `\n`, and no other control
+/// characters, which render as nothing and could only hide or confuse.
+pub(crate) fn clean_text(raw: &str) -> String {
+    raw.replace("\r\n", "\n")
+        .chars()
+        .filter(|c| *c == '\n' || *c == '\t' || !c.is_control())
+        .collect()
 }
 
 /// Whether this person may send another message now.
@@ -519,13 +549,23 @@ pub struct ListQuery {
     /// `page` for topics about the page as a whole, `changes` for those about a change.
     #[serde(default)]
     about: Option<String>,
-    /// Open the form for a new topic.
+    /// Open the form for a new topic. Text, as every field here: a value
+    /// that is not a number reads as none instead of refusing the page.
     #[serde(default)]
-    new: Option<u8>,
+    new: Option<String>,
     #[serde(default)]
     revision: Option<String>,
     #[serde(default)]
-    hunk: Option<i32>,
+    hunk: Option<String>,
+}
+
+impl ListQuery {
+    fn hunk(&self) -> Option<i32> {
+        self.hunk
+            .as_deref()
+            .and_then(|h| h.trim().parse::<i32>().ok())
+            .filter(|h| (1..=10_000).contains(h))
+    }
 }
 
 struct TopicFilter {
@@ -650,7 +690,7 @@ pub async fn list(
     let filter = TopicFilter::of(&query);
     let revision = query.revision.as_deref().and_then(pages::parse_uuid);
     let change = match revision {
-        Some(id) => change_view(&state, &ctx, &subject, id, query.hunk).await?,
+        Some(id) => change_view(&state, &ctx, &subject, id, query.hunk()).await?,
         None => None,
     };
     if query.new.is_some() && !may_post(&ctx) {
@@ -772,8 +812,9 @@ pub async fn create(
     let Some(me) = ctx.actor.user_id else {
         return Ok(sign_in_or_refuse(&ctx, &back));
     };
-    let title = form.title.trim();
-    let body = form.body.replace("\r\n", "\n");
+    let title = clean_text(&form.title).replace(['\n', '\t'], " ");
+    let title = title.trim();
+    let body = clean_text(&form.body);
     let revision = pages::parse_uuid(&form.revision);
     let hunk = form.hunk.trim().parse::<i32>().ok().filter(|h| *h > 0);
     let change = match revision {
@@ -1109,7 +1150,7 @@ pub async fn reply(
     if topic.locked && !is_moderator(&ctx) {
         return Ok(refuse(&ctx, &topic_href, &ctx.t("talk.locked_note")));
     }
-    let body = form.body.replace("\r\n", "\n");
+    let body = clean_text(&form.body);
     let problem = match check_body(&ctx, &body) {
         Err(p) => Some(p),
         Ok(()) if !within_rate(&state, me, false).await? => Some(ctx.t("talk.too_fast")),
@@ -1283,7 +1324,7 @@ pub async fn post_action(
     let moderator = is_moderator(&ctx);
     match form.action.as_str() {
         "edit" if mine && row.hidden_at.is_none() => {
-            let body = form.body.replace("\r\n", "\n");
+            let body = clean_text(&form.body);
             if let Err(problem) = check_body(&ctx, &body) {
                 return Ok(refuse(
                     &ctx,
@@ -1332,6 +1373,71 @@ mod tests {
             vec!["vai".to_string(), "akane".to_string()]
         );
         assert!(mentioned("```\n@vai\n```").is_empty());
+    }
+
+    #[test]
+    fn a_message_keeps_its_lines_and_loses_other_controls() {
+        assert_eq!(
+            clean_text("a\r\nb\tc\u{1}\u{0}\u{7f}d\u{202e}"),
+            "a\nb\tcd\u{202e}"
+        );
+        assert_eq!(clean_text(""), "");
+    }
+
+    #[test]
+    fn no_message_can_carry_the_seam_between_messages() {
+        // The renderer drops comments, so a message written to hold the seam
+        // comes out without it, and the cut between messages cannot move.
+        for body in [
+            POST_SEAM.to_string(),
+            format!("before {POST_SEAM} after"),
+            format!("`{POST_SEAM}`"),
+            format!("```\n{POST_SEAM}\n```"),
+            "<!--naw:post-->".into(),
+            "&lt;!--naw:post--&gt;".into(),
+        ] {
+            let html = naw_markdown::render_html(&body);
+            assert!(!html.contains(POST_SEAM), "{body:?} -> {html}");
+        }
+    }
+
+    #[test]
+    fn a_hunk_in_the_address_is_a_small_positive_number_or_none() {
+        let q = |h: &str| ListQuery {
+            hunk: Some(h.to_string()),
+            ..ListQuery::default()
+        };
+        assert_eq!(q("3").hunk(), Some(3));
+        assert_eq!(q(" 3 ").hunk(), Some(3));
+        assert_eq!(q("0").hunk(), None);
+        assert_eq!(q("-1").hunk(), None);
+        assert_eq!(q("abc").hunk(), None);
+        assert_eq!(q("99999999999").hunk(), None);
+        assert_eq!(ListQuery::default().hunk(), None);
+    }
+
+    #[test]
+    fn mentions_survive_any_text() {
+        let people: HashSet<String> = ["vai".to_string(), "a.b".to_string()].into();
+        let mut seed: u64 = 7;
+        let pieces = [
+            "@", "vai", "a.b", ".", "`", "```", "\n", " ", "ж", "🐳", "@@", "/", "x", "\u{0}", "-",
+        ];
+        for _ in 0..3000 {
+            let mut s = String::new();
+            for _ in 0..12 {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                s.push_str(pieces[(seed >> 33) as usize % pieces.len()]);
+            }
+            let _ = mentioned(&s);
+            let linked = link_mentions(&s, &people);
+            // Every link it makes points at a real person's page.
+            for (at, _) in linked.match_indices("](/user/") {
+                let rest = &linked[at + "](/user/".len()..];
+                let name: String = rest.chars().take_while(|c| *c != ')').collect();
+                assert!(people.contains(&name), "{s:?} -> {linked:?}");
+            }
+        }
     }
 
     #[test]

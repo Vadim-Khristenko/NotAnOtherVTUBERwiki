@@ -566,6 +566,39 @@ mod tests {
     }
 
     #[test]
+    fn any_text_parses_without_a_panic_and_only_into_safe_names() {
+        let mut seed: u64 = 3;
+        let pieces = [
+            ":::", "Module", ":", "stats", "line", "\n", "=", " ", "key", "```", "ж", "🐳", "../",
+            "\u{0}", "_", "-", "()", "<", ">",
+        ];
+        for _ in 0..5000 {
+            let mut s = String::new();
+            for _ in 0..14 {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                s.push_str(pieces[(seed >> 33) as usize % pieces.len()]);
+            }
+            for call in calls(&s) {
+                assert!(
+                    call.module
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+                    "{s:?}"
+                );
+                assert!(
+                    call.function
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_'),
+                    "{s:?}"
+                );
+                assert!(call.start < call.end && call.args.len() <= 50, "{s:?}");
+            }
+            let open = "<naw-module data-module=\"";
+            let _ = skin_call(&s, open, "</naw-module>");
+        }
+    }
+
+    #[test]
     fn bad_names_are_not_calls() {
         assert_eq!(
             opener(":::Module:Stats:summary"),
