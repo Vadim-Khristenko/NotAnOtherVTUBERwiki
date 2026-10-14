@@ -567,6 +567,8 @@ pub(crate) struct Prepared {
     pub rendered: naw_markdown::RenderedBody,
     /// Templates the body uses.
     pub used: Vec<String>,
+    /// Modules the body calls.
+    pub modules: Vec<String>,
     /// Categories the expanded body puts the page in.
     pub categories: Vec<naw_markdown::categories::Membership>,
 }
@@ -603,6 +605,7 @@ pub(crate) async fn render_prepared(
     Ok(Prepared {
         rendered,
         used: expanded.used,
+        modules: expanded.modules,
         categories,
     })
 }
@@ -642,7 +645,7 @@ pub(crate) async fn index(
 /// the author's redirect is a cache hit.
 pub(crate) async fn after_save(state: &AppState, ctx: &Ctx, page_id: Uuid, prepared: &Prepared) {
     let wiki_id = ctx.wiki.id;
-    crate::templates::record_uses(state, wiki_id, page_id, &prepared.used).await;
+    crate::templates::record_uses(state, wiki_id, page_id, &prepared.used, &prepared.modules).await;
     crate::categories::record_or_log(&state.db, wiki_id, page_id, &prepared.categories).await;
     let files: Result<(), AppError> = async {
         let mut conn = state.db.acquire().await?;
@@ -846,6 +849,12 @@ pub struct PageQuery {
     hide_minor: Option<String>,
     #[serde(default)]
     only_new: Option<String>,
+    /// All pages: `uses` puts the most used first.
+    #[serde(default)]
+    sort: Option<String>,
+    /// Ping: `parts` asks for the server's round trips as JSON.
+    #[serde(default)]
+    probe: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -887,6 +896,8 @@ pub async fn page(
             days: query.days.as_deref().and_then(|d| d.trim().parse().ok()),
             hide_minor: query.hide_minor.is_some(),
             only_new: query.only_new.is_some(),
+            by_uses: query.sort.as_deref() == Some("uses"),
+            probe_parts: query.probe.as_deref() == Some("parts"),
         };
         return Ok(
             crate::system::page(&state, &ctx, &headers, name, &system_query)
@@ -2632,6 +2643,8 @@ mod tests {
             days: None,
             hide_minor: None,
             only_new: None,
+            sort: None,
+            probe: None,
         }
     }
 

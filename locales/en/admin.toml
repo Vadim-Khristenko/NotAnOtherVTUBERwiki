@@ -312,6 +312,11 @@ limit_install_only = "set by the install"
 limit_lower_only = "only lower"
 limits_save = "Save limits"
 
+system_pages = "Special pages"
+ping_page = "The Ping page: everyone sees their own delay to the server"
+ping_parts = "Show on it the delay from the server to the database, cache, storage and worker too"
+ping_note = "Both are off until turned on. The second works only with the first."
+
 [unindexed_warning]
 one = "{n} live page is missing from the search index and cannot be found by searching."
 other = "{n} live pages are missing from the search index and cannot be found by searching."

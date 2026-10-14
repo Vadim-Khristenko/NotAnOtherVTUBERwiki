@@ -80,6 +80,7 @@
       <span class="rc-bytes">{%- if c.delta > 0 %}+{{ c.delta }}{% elif c.delta < 0 %}&minus;{{ c.delta | abs }}{% else %}0{% endif -%}</span>
     </span>
     <span class="rc-actions">
+      {% if c.talk %}<a class="rc-talk" href="{{ c.talk }}" title="{{ c.talk_label }}" aria-label="{{ c.talk_label }}"><svg class="icon" aria-hidden="true"><use href="#i-message-circle" /></svg>{% if c.talk_n > 1 %}<span class="rc-talk-n" aria-hidden="true">{{ c.talk_n }}</span>{% endif %}</a>{% endif %}
       {% if c.diff %}<a href="{{ c.diff }}" title="{{ t('history.prev_title') }}" aria-label="{{ t('history.prev_title') }}"><svg class="icon" aria-hidden="true"><use href="#i-arrows-diff" /></svg></a>{% endif %}
       {% if c.history %}<a href="{{ c.history }}" title="{{ t('history.crumb') }}" aria-label="{{ t('history.crumb') }}"><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg></a>{% endif %}
     </span>
@@ -92,42 +93,220 @@
 {% endif %}
 
 {% elif view == "all-pages" %}
-<nav class="all-pages-tabs" aria-label="{{ t('system.namespaces') }}">
-  {% for tab in tabs %}<a href="{{ tab.href }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }} <span class="all-pages-count">{{ tab.count }}</span></a>{% endfor %}
+<nav class="ap-tabs" aria-label="{{ t('system.namespaces') }}">
+  {% for tab in tabs %}<a class="ap-tab" href="{{ tab.href }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }}<span class="ap-tab-n">{{ tab.count }}</span></a>{% endfor %}
 </nav>
-<form class="all-pages-jump" method="get" action="{{ action }}" role="search">
-  {% if ns != "main" %}<input type="hidden" name="ns" value="{{ ns }}" />{% endif %}
-  <label class="visually-hidden" for="all-pages-from">{{ t("system.jump_label") }}</label>
-  <input id="all-pages-from" class="field-input" type="search" name="from" value="{{ from }}" placeholder="{{ t('system.jump_label') }}" maxlength="100" />
-  <button type="submit" class="button-preview">{{ t("system.jump") }}</button>
-</form>
+<div class="ap-tools">
+  <form class="ap-find" method="get" action="{{ action }}" role="search" data-ap-filter>
+    {% if ns != "main" %}<input type="hidden" name="ns" value="{{ ns }}" />{% endif %}
+    <svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>
+    <label class="visually-hidden" for="ap-from">{{ t("system.jump_label") }}</label>
+    <input id="ap-from" type="search" name="from" value="{{ from }}" placeholder="{{ t('system.ap_filter') }}" maxlength="100" autocomplete="off" />
+    <button type="submit" class="ap-go" title="{{ t('system.jump') }}">{{ t("system.jump") }}</button>
+  </form>
+  {% if countable %}
+  <nav class="ap-sort" aria-label="{{ t('system.ap_sort') }}">
+    <a href="{{ by_title_href }}"{% if not by_uses %} aria-current="true"{% endif %}>{{ t("system.ap_by_title") }}</a>
+    <a href="{{ by_uses_href }}"{% if by_uses %} aria-current="true"{% endif %}>{{ t("system.ap_by_uses_" ~ ns) }}</a>
+  </nav>
+  {% endif %}
+</div>
 {% if letters %}
-<nav class="all-pages-letters" aria-label="{{ t('system.letters') }}">
-  {% for l in letters %}<a href="{{ l.href }}">{{ l.letter }}</a>{% endfor %}
+<nav class="ap-letters" aria-label="{{ t('system.letters') }}">
+  {% for l in letters %}<a href="{{ l.href }}"{% if from and l.letter == from[:1] | upper %} aria-current="true"{% endif %}>{{ l.letter }}</a>{% endfor %}
 </nav>
 {% endif %}
-<p class="muted-cell">{{ tn("system.pages_count", total) }}{% if from %} · {{ t("system.from_here", from=from) }}{% endif %}</p>
+<p class="ap-status muted-cell">{{ total_label }}{% if from %} · {{ t("system.from_here", from=from) }}{% endif %}<span class="ap-none" hidden> · {{ t("system.ap_none") }}</span></p>
 {% if pages %}
-<div class="category-columns">
+{% if by_uses %}
+<ol class="ap-ranked" role="list">
+  {% for p in pages %}
+  <li class="ap-item">
+    <span class="ap-rank">{{ loop.index }}</span>
+    <a class="ap-title" href="{{ p.href }}">{{ p.title }}</a>
+    {% if p.tag %}<span class="ap-tag">{{ p.tag }}</span>{% endif %}
+    <span class="ap-meter" aria-hidden="true"><span style="width: {{ p.share }}%"></span></span>
+    <span class="ap-n" title="{{ p.uses_label }}">{{ p.uses }}</span>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<div class="ap-columns">
 {% for p in pages %}
 {% if loop.first or p.letter != loop.previtem.letter %}
-{% if not loop.first %}</ul></div>{% endif %}
-<div class="category-group"><h2 class="category-letter">{{ p.letter }}</h2>
-<ul role="list">
+{% if not loop.first %}</ul></section>{% endif %}
+<section class="ap-group"><h2 class="ap-letter">{{ p.letter }}</h2>
+<ul class="ap-list" role="list">
 {% endif %}
-  <li><a href="{{ p.href }}">{{ p.title }}</a></li>
-{% if loop.last %}</ul></div>{% endif %}
+  <li class="ap-item">
+    <a class="ap-title" href="{{ p.href }}">{{ p.title }}</a>
+    {% if p.tag %}<span class="ap-tag">{{ p.tag }}</span>{% endif %}
+    {% if p.uses is not none %}<span class="ap-n" title="{{ p.uses_label }}">{{ p.uses }}</span>{% elif p.day %}<span class="ap-day">{{ p.day }}</span>{% endif %}
+  </li>
+{% if loop.last %}</ul></section>{% endif %}
 {% endfor %}
 </div>
+{% endif %}
 {% else %}
 <p class="notice">{{ t("system.nothing_yet") }}</p>
 {% endif %}
 {% if next or first %}
-<nav class="all-pages-more">
+<nav class="ap-more">
   {% if first %}<a class="button-preview" href="{{ first }}">{{ t("system.to_start") }}</a>{% endif %}
   {% if next %}<a class="button-preview" href="{{ next }}">{{ t("system.next_page") }}</a>{% endif %}
 </nav>
 {% endif %}
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  // Typing narrows the titles on screen at once; Enter still jumps the
+  // list to that title on the server.
+  var form = document.querySelector("[data-ap-filter]");
+  if (!form) return;
+  var input = form.querySelector("input[name=from]");
+  var items = Array.prototype.slice.call(document.querySelectorAll(".ap-item"));
+  var groups = Array.prototype.slice.call(document.querySelectorAll(".ap-group"));
+  var none = document.querySelector(".ap-none");
+  var start = input.value;
+  input.addEventListener("input", function () {
+    var q = input.value.trim().toLowerCase();
+    if (q === start.trim().toLowerCase()) q = "";
+    var shown = 0;
+    items.forEach(function (li) {
+      var title = li.querySelector(".ap-title").textContent.toLowerCase();
+      var hit = !q || title.indexOf(q) !== -1;
+      li.hidden = !hit;
+      if (hit) shown++;
+    });
+    groups.forEach(function (g) { g.hidden = !g.querySelector(".ap-item:not([hidden])"); });
+    if (none) none.hidden = shown !== 0;
+  });
+})();
+</script>
+
+{% elif view == "ping" %}
+<p class="muted-cell">{{ about }}</p>
+<div class="ping" data-ping data-echo="{{ echo_href }}" data-fine="{{ t('system.ping_fine') }}" data-good="{{ t('system.ping_good') }}" data-slow="{{ t('system.ping_slow') }}" data-bad="{{ t('system.ping_bad') }}" data-down="{{ t('system.ping_down') }}" data-ms="{{ t('system.ping_ms') }}"{% if parts %} data-parts="{{ parts_href }}"{% endif %}>
+  <section class="ping-you" aria-labelledby="ping-you-h">
+    <h2 id="ping-you-h">{{ t("system.ping_you") }}</h2>
+    <p class="ping-now" aria-live="polite"><b class="ping-ms" data-ping-now>…</b> <span>{{ t("system.ping_ms") }}</span> <span class="ping-word" data-ping-word></span></p>
+    <div class="ping-chart" data-ping-chart aria-hidden="true"></div>
+    <dl class="ping-stats">
+      <div><dt>{{ t("system.ping_min") }}</dt><dd data-ping-min>…</dd></div>
+      <div><dt>{{ t("system.ping_median") }}</dt><dd data-ping-median>…</dd></div>
+      <div><dt>{{ t("system.ping_jitter") }}</dt><dd data-ping-jitter>…</dd></div>
+      <div><dt>{{ t("system.ping_lost") }}</dt><dd data-ping-lost>…</dd></div>
+    </dl>
+    <p class="ping-controls"><button class="button-preview" type="button" data-ping-toggle data-pause="{{ t('system.ping_pause') }}" data-go="{{ t('system.ping_go') }}">{{ t("system.ping_pause") }}</button> <span class="muted-cell" data-ping-count></span></p>
+  </section>
+  {% if parts %}
+  <section class="ping-parts" aria-labelledby="ping-parts-h">
+    <h2 id="ping-parts-h">{{ t("system.ping_parts") }}</h2>
+    <ul class="ping-part-list" role="list">
+      {% for id in ["database", "cache", "storage", "worker"] %}
+      <li class="ping-part" data-part="{{ id }}"{% if id == "worker" %} hidden{% endif %}><span class="ping-dot" aria-hidden="true"></span><span class="ping-part-name">{{ t("system.ping_part_" ~ id) }}</span><b class="ping-part-ms">…</b></li>
+      {% endfor %}
+    </ul>
+    <p class="muted-cell">{{ t("system.ping_parts_note") }}</p>
+  </section>
+  {% endif %}
+  <noscript><p class="notice">{{ t("system.ping_noscript") }}</p></noscript>
+</div>
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  "use strict";
+  var root = document.querySelector("[data-ping]");
+  if (!root || !window.fetch || !window.performance) return;
+  var $ = function (sel) { return root.querySelector(sel); };
+  var d = root.dataset;
+  var words = { fine: d.fine, good: d.good, slow: d.slow, bad: d.bad };
+  var down = d.down;
+  var samples = [], sent = 0, lost = 0, running = true, timer = 0, n = 0;
+  var MAX = 40, LIMIT = 300;
+  // A reader across the world is fine at 60 ms; a part next to the server
+  // should answer in a few.
+  function word(ms) { return ms < 60 ? "fine" : ms < 150 ? "good" : ms < 300 ? "slow" : "bad"; }
+  function partWord(ms) { return ms < 10 ? "fine" : ms < 50 ? "good" : ms < 250 ? "slow" : "bad"; }
+  var unit = " " + d.ms;
+  function fmt(ms) { return ms < 10 ? ms.toFixed(1) : String(Math.round(ms)); }
+  function median(a) { var s = a.slice().sort(function (x, y) { return x - y; }); var m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
+  function draw() {
+    var last = samples.slice(-MAX), top = Math.max.apply(null, last.concat([1]));
+    var chart = $("[data-ping-chart]");
+    chart.textContent = "";
+    last.forEach(function (ms) {
+      var bar = document.createElement("span");
+      bar.className = "ping-bar is-" + word(ms);
+      bar.style.height = Math.max(4, Math.round(ms / top * 100)) + "%";
+      bar.title = fmt(ms) + unit;
+      chart.appendChild(bar);
+    });
+    if (!samples.length) return;
+    var now = samples[samples.length - 1];
+    $("[data-ping-now]").textContent = fmt(now);
+    var w = word(median(samples.slice(-10)));
+    var label = $("[data-ping-word]");
+    label.textContent = words[w];
+    label.className = "ping-word is-" + w;
+    $("[data-ping-min]").textContent = fmt(Math.min.apply(null, samples)) + unit;
+    $("[data-ping-median]").textContent = fmt(median(samples)) + unit;
+    var jit = 0;
+    for (var i = 1; i < samples.length; i++) jit += Math.abs(samples[i] - samples[i - 1]);
+    $("[data-ping-jitter]").textContent = samples.length > 1 ? fmt(jit / (samples.length - 1)) + unit : "…";
+    $("[data-ping-lost]").textContent = sent ? Math.round(lost / sent * 100) + " %" : "…";
+    $("[data-ping-count]").textContent = samples.length + " / " + LIMIT;
+  }
+  function once() {
+    var t0 = performance.now();
+    var ctl = window.AbortController ? new AbortController() : null;
+    var guard = setTimeout(function () { if (ctl) ctl.abort(); }, 3000);
+    sent++;
+    // The first answer pays for the connection; it is not counted.
+    var first = n++ === 0;
+    return fetch(root.dataset.echo + "?n=" + n, { cache: "no-store", signal: ctl ? ctl.signal : undefined })
+      .then(function (r) { return r.text().then(function () { return r.ok; }); })
+      .then(function (ok) {
+        clearTimeout(guard);
+        if (first) { sent--; return; }
+        if (!ok) { lost++; return; }
+        samples.push(performance.now() - t0);
+      }, function () { clearTimeout(guard); if (!first) lost++; else sent--; })
+      .then(draw);
+  }
+  function loop() {
+    if (!running || document.hidden) return;
+    if (samples.length >= LIMIT) { stop(); return; }
+    once().then(function () { timer = setTimeout(loop, 1000); });
+  }
+  var toggle = $("[data-ping-toggle]");
+  function stop() { running = false; clearTimeout(timer); toggle.textContent = toggle.dataset.go; }
+  function go() {
+    if (samples.length >= LIMIT) { samples = []; sent = 0; lost = 0; }
+    running = true; toggle.textContent = toggle.dataset.pause; clearTimeout(timer); loop();
+  }
+  toggle.addEventListener("click", function () { running ? stop() : go(); });
+  document.addEventListener("visibilitychange", function () { if (!document.hidden && running) { clearTimeout(timer); loop(); } });
+  loop();
+
+  var partsHref = root.dataset.parts;
+  function parts() {
+    if (!partsHref || document.hidden) return;
+    fetch(partsHref, { cache: "no-store", headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        data.parts.forEach(function (p) {
+          var li = root.querySelector('[data-part="' + p.id + '"]');
+          if (!li) return;
+          li.hidden = false;
+          var ok = p.ms !== null;
+          li.className = "ping-part " + (ok ? "is-" + partWord(p.ms) : "is-down");
+          li.querySelector(".ping-part-ms").textContent = ok ? fmt(p.ms) + unit : down;
+        });
+      }, function () {});
+  }
+  if (partsHref) { parts(); setInterval(parts, 5000); }
+})();
+</script>
 
 {% elif view == "files" or view == "unused-files" %}
 <p class="muted-cell">{{ about }}</p>

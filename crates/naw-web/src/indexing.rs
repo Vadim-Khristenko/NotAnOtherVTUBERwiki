@@ -73,7 +73,7 @@ pub(crate) fn refresh_users_of(state: &AppState, ctx: &Ctx, slug: &str) {
     });
 }
 
-/// Indexes one live page and records the templates it uses. `false` when
+/// Indexes one live page and records the templates and modules it uses. `false` when
 /// the page is gone or archived.
 async fn index_one(db: &sqlx::PgPool, limits: &Limits, page_id: Uuid) -> Result<bool, AppError> {
     let Some(row) = sqlx::query!(
@@ -121,20 +121,14 @@ async fn index_one(db: &sqlx::PgPool, limits: &Limits, page_id: Uuid) -> Result<
         },
     )
     .await?;
-    sqlx::query!("DELETE FROM template_uses WHERE page_id = $1", page_id)
-        .execute(&mut *tx)
-        .await?;
-    if !prepared.used.is_empty() {
-        sqlx::query!(
-            "INSERT INTO template_uses (page_id, wiki_id, template_slug)
-             SELECT $1, $2, unnest($3::text[]) ON CONFLICT DO NOTHING",
-            page_id,
-            row.wiki_id,
-            &prepared.used
-        )
-        .execute(&mut *tx)
-        .await?;
-    }
+    templates::write_uses(
+        &mut tx,
+        row.wiki_id,
+        page_id,
+        &prepared.used,
+        &prepared.modules,
+    )
+    .await?;
     crate::files::record_uses(&mut tx, row.wiki_id, page_id, &prepared.rendered.html).await?;
     tx.commit().await?;
     // A template can put its pages in a category, so its edit moves them.

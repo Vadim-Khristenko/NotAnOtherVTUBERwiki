@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.namespace::text AS \"namespace!\", count(DISTINCT p.slug) AS \"n!\"\n           FROM pages p\n           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n             AND p.namespace IN ('main', 'template', 'page_template', 'module')\n             AND (p.namespace <> 'main' OR COALESCE(p.locale, '') = $2)\n           GROUP BY p.namespace",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "dc56013f4b88b9a72c2caa7537a7c82c2661d5c2fb8ad8f69c939983db293d88"
+}

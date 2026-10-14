@@ -4,7 +4,7 @@
 #}
 {% if categories %}
 <nav class="category-box" aria-label="{{ t('category.box') }}">
-  <a class="category-box-label" href="{{ base }}/system:categories">{{ t("category.box") }}</a>
+  <a class="category-box-label" href="{{ base }}/system:all-pages?ns=category">{{ t("category.box") }}</a>
   <ul role="list">{% for c in categories %}<li>
     {%- for l in c.trail %}{% if not loop.first %}<span class="category-sep" aria-hidden="true"> › </span>{% endif %}<a href="{{ l.href }}">{{ l.name }}</a>{% endfor -%}
   </li>{% endfor %}</ul>

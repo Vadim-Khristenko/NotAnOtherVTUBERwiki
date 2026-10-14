@@ -19,6 +19,8 @@ pub(crate) struct Expanded {
     pub text: String,
     /// Slugs of the templates the text used.
     pub used: Vec<String>,
+    /// Slugs of the modules it calls, found before they run.
+    pub modules: Vec<String>,
 }
 
 /// What a page's source becomes before Markdown: a template page shows its
@@ -311,7 +313,12 @@ async fn finish(
     used: Vec<String>,
 ) -> Result<Expanded, AppError> {
     let text = crate::files::resolve(db, wiki.id, text).await?;
-    Ok(Expanded { text, used })
+    let modules = crate::modules::used_in(&text);
+    Ok(Expanded {
+        text,
+        used,
+        modules,
+    })
 }
 
 /// What a round of loading brings: each template's code, from its main
@@ -354,31 +361,63 @@ async fn load(db: &sqlx::PgPool, wiki: &Wiki<'_>, slugs: &[String]) -> Result<Lo
     Ok(Loaded { code, labels })
 }
 
-/// Replaces the list of templates `page_id` uses. A failure is logged: the
-/// list feeds "used on" and is rebuilt by the next save.
-pub(crate) async fn record_uses(state: &AppState, wiki_id: Uuid, page_id: Uuid, used: &[String]) {
+/// Replaces the lists of templates and modules `page_id` uses. A failure
+/// is logged: the lists feed "used on" and are rebuilt by the next save.
+pub(crate) async fn record_uses(
+    state: &AppState,
+    wiki_id: Uuid,
+    page_id: Uuid,
+    used: &[String],
+    modules: &[String],
+) {
     let result: Result<(), sqlx::Error> = async {
         let mut tx = state.db.begin().await?;
-        sqlx::query!("DELETE FROM template_uses WHERE page_id = $1", page_id)
-            .execute(&mut *tx)
-            .await?;
-        if !used.is_empty() {
-            sqlx::query!(
-                "INSERT INTO template_uses (page_id, wiki_id, template_slug)
-                 SELECT $1, $2, unnest($3::text[]) ON CONFLICT DO NOTHING",
-                page_id,
-                wiki_id,
-                used
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
+        write_uses(&mut tx, wiki_id, page_id, used, modules).await?;
         tx.commit().await
     }
     .await;
     if let Err(err) = result {
         tracing::warn!(error = %err, %page_id, "could not record the templates a page uses");
     }
+}
+
+/// Rewrites the templates and modules `page_id` uses, inside `conn`.
+pub(crate) async fn write_uses(
+    conn: &mut sqlx::PgConnection,
+    wiki_id: Uuid,
+    page_id: Uuid,
+    used: &[String],
+    modules: &[String],
+) -> Result<(), sqlx::Error> {
+    sqlx::query!("DELETE FROM template_uses WHERE page_id = $1", page_id)
+        .execute(&mut *conn)
+        .await?;
+    if !used.is_empty() {
+        sqlx::query!(
+            "INSERT INTO template_uses (page_id, wiki_id, template_slug)
+             SELECT $1, $2, unnest($3::text[]) ON CONFLICT DO NOTHING",
+            page_id,
+            wiki_id,
+            used
+        )
+        .execute(&mut *conn)
+        .await?;
+    }
+    sqlx::query!("DELETE FROM module_uses WHERE page_id = $1", page_id)
+        .execute(&mut *conn)
+        .await?;
+    if !modules.is_empty() {
+        sqlx::query!(
+            "INSERT INTO module_uses (page_id, wiki_id, module_slug)
+             SELECT $1, $2, unnest($3::text[]) ON CONFLICT DO NOTHING",
+            page_id,
+            wiki_id,
+            modules
+        )
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
 }
 
 /// One page that uses a template.

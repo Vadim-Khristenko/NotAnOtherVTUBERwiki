@@ -35,6 +35,7 @@ const GROUPS: [(&str, &[(&str, &str)]); 3] = [
             ("discussions", "message-circle"),
             ("active-users", "users-group"),
             ("statistics", "chart-bar"),
+            ("ping", "world"),
         ],
     ),
     (
@@ -70,6 +71,10 @@ pub(crate) struct Query {
     pub hide_minor: bool,
     /// Recent changes: only the edits that started a page.
     pub only_new: bool,
+    /// All pages: the most used first, for categories, templates and modules.
+    pub by_uses: bool,
+    /// Ping: the server's round trips to its parts, as JSON.
+    pub probe_parts: bool,
 }
 
 /// The windows recent changes offers, in days.
@@ -91,12 +96,10 @@ pub(crate) async fn page(
         "statistics" => ("statistics", statistics(state, ctx).await?),
         "random" => return random(state, ctx).await.map(Some),
         "discussions" => return Ok(Some(pages::see_other(&ctx.link("/talk")))),
-        "modules" => {
-            return Ok(Some(pages::see_other(
-                &ctx.link("/system:all-pages?ns=module"),
-            )));
+        // Categories, templates and modules are tabs of All pages.
+        "modules" | "categories" | "templates" => {
+            return Ok(Some(pages::see_other(&all_pages_of(ctx, name))));
         }
-        "categories" => ("categories", categories(state, ctx, false).await?),
         "wanted-categories" => ("wanted-categories", categories(state, ctx, true).await?),
         "uncategorized" => ("uncategorized", uncategorized(state, ctx).await?),
         "new-pages" => ("new-pages", new_pages(state, ctx).await?),
@@ -105,8 +108,31 @@ pub(crate) async fn page(
         "long-pages" => ("long-pages", by_size(state, ctx, false).await?),
         "stale-pages" => ("stale-pages", stale_pages(state, ctx).await?),
         "unused-files" => ("unused-files", unused_files(state, ctx).await?),
-        "templates" => ("templates", templates(state, ctx).await?),
         "active-users" => ("active-users", active_users(state, ctx).await?),
+        "ping" => {
+            let on = crate::ping::flags(&ctx.wiki.settings);
+            if !on.page || (query.probe_parts && !on.parts) {
+                return Ok(None);
+            }
+            if query.probe_parts {
+                return Ok(Some(
+                    (
+                        StatusCode::OK,
+                        [(header::CACHE_CONTROL, "no-store")],
+                        axum::Json(crate::ping::parts(state).await),
+                    )
+                        .into_response(),
+                ));
+            }
+            (
+                "ping",
+                minijinja::context! {
+                    parts => on.parts,
+                    echo_href => "/health",
+                    parts_href => ctx.link("/system:ping?probe=parts"),
+                },
+            )
+        }
         _ => return Ok(None),
     };
     let key = view.replace('-', "_");
@@ -164,7 +190,15 @@ async fn index(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError
                 WHERE p.wiki_id = $1 AND r.created_at > now() - interval '30 days') AS "active!",
              (SELECT count(*) FROM pages p WHERE p.wiki_id = $1 AND p.namespace = 'main' AND p.deleted_at IS NULL
                 AND p.current_revision_id IS NOT NULL AND COALESCE(p.locale, '') = $2
-                AND NOT EXISTS (SELECT 1 FROM page_categories pc WHERE pc.page_id = p.id)) AS "uncategorized!""#,
+                AND NOT EXISTS (SELECT 1 FROM page_categories pc WHERE pc.page_id = p.id)) AS "uncategorized!",
+             (SELECT count(DISTINCT pc.category) FROM page_categories pc JOIN pages p ON p.id = pc.page_id
+                WHERE pc.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM pages c WHERE c.wiki_id = $1 AND c.namespace = 'category'
+                  AND c.slug = pc.category AND c.deleted_at IS NULL)) AS "wanted!",
+             (SELECT count(DISTINCT p.slug) FROM pages p WHERE p.wiki_id = $1 AND p.namespace = 'main'
+                AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM pages q WHERE q.wiki_id = p.wiki_id AND q.namespace = 'main'
+                  AND q.slug = p.slug AND COALESCE(q.locale, '') = $2 AND q.deleted_at IS NULL)) AS "untranslated!""#,
         ctx.wiki.id,
         ctx.content_locale
     )
@@ -178,10 +212,11 @@ async fn index(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError
             "files" => ("files", n.files),
             "templates" => ("templates", n.templates),
             "modules" => ("modules", n.modules),
-            "recent-changes" => ("edits_day", n.edits_day),
             "discussions" => ("open_topics", n.open_topics),
             "active-users" => ("active", n.active),
             "uncategorized" => ("uncategorized", n.uncategorized),
+            "wanted-categories" => ("wanted", n.wanted),
+            "untranslated" => ("untranslated", n.untranslated),
             _ => return None,
         };
         Some((
@@ -189,16 +224,18 @@ async fn index(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError
             value,
         ))
     };
+    let ping = crate::ping::flags(&ctx.wiki.settings).page;
     let groups: Vec<minijinja::Value> = GROUPS
         .iter()
         .map(|(group, entries)| {
             let entries: Vec<minijinja::Value> = entries
                 .iter()
+                .filter(|(name, _)| *name != "ping" || ping)
                 .map(|(name, icon)| {
                     let key = name.replace('-', "_");
                     let href = match *name {
                         "discussions" => ctx.link("/talk"),
-                        "modules" => ctx.link("/system:all-pages?ns=module"),
+                        "modules" | "categories" | "templates" => all_pages_of(ctx, name),
                         _ => ctx.link(&format!("/system:{name}")),
                     };
                     let figure = figure(name);
@@ -244,6 +281,16 @@ async fn index(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError
         },
     ];
     Ok(minijinja::context! { groups => groups, today => today })
+}
+
+/// The tab of All pages a special page of that name became.
+fn all_pages_of(ctx: &Ctx, name: &str) -> String {
+    let ns = match name {
+        "categories" => "category",
+        "templates" => "template",
+        _ => "module",
+    };
+    ctx.link(&format!("/system:all-pages?ns={ns}"))
 }
 
 /// Where a page of any namespace lives.
@@ -304,7 +351,10 @@ async fn recent_changes(
                      ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1) AS "prev_id?",
                   (SELECT r2.bytes FROM revisions r2 WHERE r2.page_id = r.page_id
                      AND (r2.created_at, r2.id) < (r.created_at, r.id)
-                     ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1) AS "prev_bytes?"
+                     ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1) AS "prev_bytes?",
+                  (SELECT t.id FROM threads t WHERE t.revision_id = r.id AND t.hidden_at IS NULL
+                     ORDER BY t.created_at LIMIT 1) AS "thread?",
+                  (SELECT count(*) FROM threads t WHERE t.revision_id = r.id AND t.hidden_at IS NULL) AS "threads!"
            FROM revisions r
            JOIN pages p ON p.id = r.page_id
            WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
@@ -409,11 +459,22 @@ async fn recent_changes(
                 }
                 _ => None,
             };
+            // The topic about this change; with several, the page's topics.
+            let talk = match (&path, row.thread) {
+                (Some(path), Some(thread)) if row.threads == 1 => {
+                    Some(ctx.link(&format!("/{path}/talk/{thread}")))
+                }
+                (Some(path), Some(_)) => Some(ctx.link(&format!("/{path}/talk"))),
+                _ => None,
+            };
             let history = path.map(|path| ctx.link(&format!("/{path}/history")));
             minijinja::context! {
                 title => row.title,
                 href => href,
                 diff => diff,
+                talk => talk,
+                talk_n => row.threads,
+                talk_label => (row.threads > 0).then(|| ctx.tn_with("system.rc_talk", row.threads, &[])),
                 history => history,
                 author => row.author,
                 summary => row.summary,
@@ -469,6 +530,21 @@ fn letter_of(title: &str) -> String {
         .unwrap_or_else(|| "#".to_string())
 }
 
+/// One line of All pages.
+struct Listed {
+    title: String,
+    href: String,
+    /// Pages in a category, pages that use a template or a module.
+    uses: Option<i64>,
+    /// Last edited, for articles.
+    day: Option<String>,
+    /// A word about what is missing: no description, not used.
+    tag: Option<String>,
+}
+
+/// Every page of one namespace by title, a page at a time from `from`, or
+/// for categories, templates and modules the most used first. Categories
+/// include the ones only used, with no page of their own.
 async fn all_pages(
     state: &AppState,
     ctx: &Ctx,
@@ -479,6 +555,8 @@ async fn all_pages(
         .as_deref()
         .filter(|ns| LISTED_NAMESPACES.contains(ns))
         .unwrap_or("main");
+    let countable = matches!(ns, "category" | "template" | "module");
+    let by_uses = countable && query.by_uses;
     let from: String = query
         .from
         .as_deref()
@@ -488,30 +566,13 @@ async fn all_pages(
         .filter(|c| !c.is_control())
         .take(100)
         .collect();
-    // Templates and categories live in every language at once; articles in one.
-    let one_language = ns == "main";
-    let rows = sqlx::query!(
-        r#"SELECT p.title, p.slug FROM pages p
-           WHERE p.wiki_id = $1 AND p.namespace = ($4::text)::page_namespace
-             AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
-             AND (NOT $5 OR COALESCE(p.locale, '') = $2)
-             AND lower(p.title) >= lower($6)
-           ORDER BY lower(p.title), p.slug
-           LIMIT $3"#,
-        ctx.wiki.id,
-        ctx.content_locale,
-        ctx.limits.all_pages_shown + 1,
-        ns,
-        one_language,
-        from
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let from = if by_uses { String::new() } else { from };
+    let shown = ctx.limits.all_pages_shown as usize;
     let counts = sqlx::query!(
         r#"SELECT p.namespace::text AS "namespace!", count(DISTINCT p.slug) AS "n!"
            FROM pages p
            WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
-             AND p.namespace IN ('main', 'category', 'template', 'page_template', 'module')
+             AND p.namespace IN ('main', 'template', 'page_template', 'module')
              AND (p.namespace <> 'main' OR COALESCE(p.locale, '') = $2)
            GROUP BY p.namespace"#,
         ctx.wiki.id,
@@ -519,54 +580,142 @@ async fn all_pages(
     )
     .fetch_all(&state.db)
     .await?;
-    let letters = sqlx::query_scalar!(
-        r#"SELECT DISTINCT upper(left(p.title, 1)) AS "letter!" FROM pages p
-           WHERE p.wiki_id = $1 AND p.namespace = ($3::text)::page_namespace
-             AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL AND (NOT $4 OR COALESCE(p.locale, '') = $2)
-           ORDER BY 1"#,
-        ctx.wiki.id,
-        ctx.content_locale,
-        ns,
-        one_language
-    )
-    .fetch_all(&state.db)
-    .await?;
 
-    let here = |from: &str| {
+    let mut letters: Vec<String>;
+    let mut listed: Vec<Listed>;
+    let category_total;
+    if ns == "category" {
+        // Few enough to sort and page here, and the used-only ones have no
+        // row of their own to page through in SQL.
+        let mut all: Vec<Listed> = category_entries(state, ctx, false)
+            .await?
+            .into_iter()
+            .map(|(key, e)| Listed {
+                href: crate::categories::href(ctx, &key),
+                uses: Some(e.n),
+                day: None,
+                tag: (!e.described).then(|| ctx.t("system.no_description")),
+                title: e.name,
+            })
+            .collect();
+        category_total = all.len() as i64;
+        all.sort_by_key(|l| l.title.to_lowercase());
+        letters = all.iter().map(|l| letter_of(&l.title)).collect();
+        if by_uses {
+            all.sort_by_key(|l| std::cmp::Reverse(l.uses));
+        } else {
+            let from = from.to_lowercase();
+            all.retain(|l| l.title.to_lowercase() >= from);
+        }
+        all.truncate(shown + 1);
+        listed = all;
+    } else {
+        category_total = category_entries(state, ctx, false).await?.len() as i64;
+        // Templates and modules live in every language at once; articles in one.
+        let one_language = ns == "main";
+        let rows = sqlx::query!(
+            r#"SELECT s.title AS "title!", s.slug AS "slug!", s.updated_at AS "updated_at!", s.uses AS "uses?" FROM (
+                 SELECT p.title, p.slug, p.updated_at,
+                        CASE ($4::text)
+                          WHEN 'template' THEN (SELECT count(DISTINCT tu.page_id) FROM template_uses tu
+                                                WHERE tu.wiki_id = p.wiki_id AND tu.template_slug = p.slug)
+                          WHEN 'module' THEN (SELECT count(DISTINCT mu.page_id) FROM module_uses mu
+                                              WHERE mu.wiki_id = p.wiki_id AND mu.module_slug = p.slug)
+                        END AS uses
+                 FROM pages p
+                 WHERE p.wiki_id = $1 AND p.namespace = ($4::text)::page_namespace
+                   AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
+                   AND (NOT $5 OR COALESCE(p.locale, '') = $2)
+                   AND lower(p.title) >= lower($6)
+               ) s
+               ORDER BY CASE WHEN $7 THEN s.uses END DESC NULLS LAST, lower(s.title), s.slug
+               LIMIT $3"#,
+            ctx.wiki.id,
+            ctx.content_locale,
+            ctx.limits.all_pages_shown + 1,
+            ns,
+            one_language,
+            from,
+            by_uses
+        )
+        .fetch_all(&state.db)
+        .await?;
+        letters = sqlx::query_scalar!(
+            r#"SELECT DISTINCT upper(left(p.title, 1)) AS "letter!" FROM pages p
+               WHERE p.wiki_id = $1 AND p.namespace = ($3::text)::page_namespace
+                 AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL AND (NOT $4 OR COALESCE(p.locale, '') = $2)
+               ORDER BY 1"#,
+            ctx.wiki.id,
+            ctx.content_locale,
+            ns,
+            one_language
+        )
+        .fetch_all(&state.db)
+        .await?;
+        // A template has one row per language; the list shows it once.
+        let mut seen = std::collections::HashSet::new();
+        listed = rows
+            .into_iter()
+            .filter(|row| seen.insert(row.slug.clone()))
+            .map(|row| Listed {
+                href: href_of(ctx, ns, &row.slug),
+                tag: (row.uses == Some(0)).then(|| ctx.t("system.unused")),
+                uses: row.uses,
+                day: (ns == "main").then(|| ctx.day(row.updated_at)),
+                title: row.title,
+            })
+            .collect();
+    }
+    letters.retain(|l| !l.trim().is_empty());
+    letters.dedup();
+
+    let here = |from: &str, by_uses: bool| {
         let mut href = ctx.link("/system:all-pages");
         let mut sep = '?';
         if ns != "main" {
             href.push_str(&format!("{sep}ns={ns}"));
             sep = '&';
         }
-        if !from.is_empty() {
+        if by_uses {
+            href.push_str(&format!("{sep}sort=uses"));
+        } else if !from.is_empty() {
             href.push_str(&format!("{sep}from={}", pages::urlencode(from)));
         }
         href
     };
-    let has_more = rows.len() as i64 > ctx.limits.all_pages_shown;
-    let next = has_more.then(|| here(&rows[ctx.limits.all_pages_shown as usize].title));
-    // A template has one row per language; the list shows it once.
-    let mut seen = std::collections::HashSet::new();
-    let items: Vec<minijinja::Value> = rows
+    let has_more = listed.len() > shown;
+    let next = (has_more && !by_uses).then(|| here(&listed[shown].title, false));
+    listed.truncate(shown);
+    let most = listed.iter().filter_map(|l| l.uses).max().unwrap_or(0);
+    let items: Vec<minijinja::Value> = listed
         .into_iter()
-        .take(ctx.limits.all_pages_shown as usize)
-        .filter(|row| seen.insert(row.slug.clone()))
-        .map(|row| {
+        .map(|l| {
             minijinja::context! {
-                letter => letter_of(&row.title),
-                href => href_of(ctx, ns, &row.slug),
-                title => row.title,
+                letter => letter_of(&l.title),
+                uses_label => l.uses.map(|n| match ns {
+                    "category" => ctx.tn_with("category.members", n, &[]),
+                    _ => ctx.tn_with("system.used_on", n, &[]),
+                }),
+                share => l.uses.map(|n| if n == 0 { 0 } else { share(n, most) }),
+                uses => l.uses,
+                day => l.day,
+                tag => l.tag,
+                href => l.href,
+                title => l.title,
             }
         })
         .collect();
     let tabs: Vec<minijinja::Value> = LISTED_NAMESPACES
         .iter()
         .map(|id| {
-            let n = counts
-                .iter()
-                .find(|c| c.namespace == *id)
-                .map_or(0, |c| c.n);
+            let n = if *id == "category" {
+                category_total
+            } else {
+                counts
+                    .iter()
+                    .find(|c| c.namespace == *id)
+                    .map_or(0, |c| c.n)
+            };
             let mut href = ctx.link("/system:all-pages");
             if *id != "main" {
                 href.push_str(&format!("?ns={id}"));
@@ -581,20 +730,33 @@ async fn all_pages(
         .collect();
     let letters: Vec<minijinja::Value> = letters
         .into_iter()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| minijinja::context! { href => here(&l), letter => l })
+        .map(|l| minijinja::context! { href => here(&l, false), letter => l })
         .collect();
-    let total = counts.iter().find(|c| c.namespace == ns).map_or(0, |c| c.n);
+    let total = if ns == "category" {
+        category_total
+    } else {
+        counts.iter().find(|c| c.namespace == ns).map_or(0, |c| c.n)
+    };
     Ok(minijinja::context! {
         pages => items,
+        total_label => match ns {
+            "category" => ctx.tn_with("system.figure_categories", total, &[]),
+            "template" => ctx.tn_with("system.figure_templates", total, &[]),
+            "module" => ctx.tn_with("system.figure_modules", total, &[]),
+            _ => ctx.tn_with("system.pages_count", total, &[]),
+        },
         total => total,
         tabs => tabs,
-        letters => letters,
+        letters => if by_uses { Vec::new() } else { letters },
         ns => ns,
         from => from,
         next => next,
-        first => (!query.from.as_deref().unwrap_or("").is_empty()).then(|| here("")),
+        first => (!from.is_empty()).then(|| here("", false)),
         action => ctx.link("/system:all-pages"),
+        countable => countable,
+        by_uses => by_uses,
+        by_title_href => here("", false),
+        by_uses_href => here("", true),
     })
 }
 
@@ -799,12 +961,21 @@ async fn random(state: &AppState, ctx: &Ctx) -> Result<Response, AppError> {
     })
 }
 
-/// Every category with its size, or only those nobody described yet.
-async fn categories(
+/// A category as the lists show it.
+struct CategoryEntry {
+    name: String,
+    n: i64,
+    described: bool,
+}
+
+/// Every category by key with its size, or only those nobody described yet.
+/// A level written only inside a longer name (Streams in Streams/ARG) is a
+/// category too, with no pages of its own.
+async fn category_entries(
     state: &AppState,
     ctx: &Ctx,
     wanted_only: bool,
-) -> Result<minijinja::Value, AppError> {
+) -> Result<std::collections::BTreeMap<String, CategoryEntry>, AppError> {
     let rows = sqlx::query!(
         r#"WITH used AS (
              SELECT pc.category, min(pc.name) AS name,
@@ -829,15 +1000,8 @@ async fn categories(
     )
     .fetch_all(&state.db)
     .await?;
-    let may_create = ctx.actor.can(Capability::PageCreate);
-    // A level written only inside a longer name (Streams in Streams/ARG) is
-    // a category too, with no pages of its own.
-    struct Entry {
-        name: String,
-        n: i64,
-        described: bool,
-    }
-    let mut entries: std::collections::BTreeMap<String, Entry> = std::collections::BTreeMap::new();
+    let mut entries: std::collections::BTreeMap<String, CategoryEntry> =
+        std::collections::BTreeMap::new();
     for r in rows {
         let levels =
             naw_markdown::categories::levels_in(&r.name, naw_markdown::categories::Shape::LOOSEST);
@@ -850,7 +1014,7 @@ async fn categories(
             prefix.push_str(&level.key);
             shown.push(level.name.clone());
             if prefix != r.key && !wanted_only {
-                entries.entry(prefix.clone()).or_insert(Entry {
+                entries.entry(prefix.clone()).or_insert(CategoryEntry {
                     name: shown.join(" › "),
                     n: 0,
                     described: false,
@@ -864,14 +1028,25 @@ async fn categories(
         };
         entries.insert(
             r.key,
-            Entry {
+            CategoryEntry {
                 name,
                 n: r.n,
                 described: r.described,
             },
         );
     }
-    let rows = entries
+    Ok(entries)
+}
+
+/// The categories nobody described yet, each with a link to write it.
+async fn categories(
+    state: &AppState,
+    ctx: &Ctx,
+    wanted_only: bool,
+) -> Result<minijinja::Value, AppError> {
+    let may_create = ctx.actor.can(Capability::PageCreate);
+    let rows = category_entries(state, ctx, wanted_only)
+        .await?
         .into_iter()
         .map(|(key, e)| {
             let path = format!("{}{key}", crate::categories::PREFIX);
@@ -1090,42 +1265,6 @@ async fn unused_files(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, A
         })
         .collect();
     Ok(minijinja::context! { files => items })
-}
-
-/// Templates by how many pages use them, the unused ones last.
-async fn templates(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, AppError> {
-    let rows = sqlx::query!(
-        r#"SELECT DISTINCT ON (p.slug) p.slug, p.title,
-                  (SELECT count(DISTINCT tu.page_id) FROM template_uses tu
-                   WHERE tu.wiki_id = p.wiki_id AND tu.template_slug = p.slug) AS "uses!"
-           FROM pages p
-           WHERE p.wiki_id = $1 AND p.namespace = 'template' AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL
-           ORDER BY p.slug, (COALESCE(p.locale, '') = $2) DESC
-           LIMIT 1000"#,
-        ctx.wiki.id,
-        ctx.content_locale
-    )
-    .fetch_all(&state.db)
-    .await?;
-    let mut rows: Vec<_> = rows.into_iter().collect();
-    rows.sort_by(|a, b| {
-        b.uses
-            .cmp(&a.uses)
-            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
-    });
-    let rows = rows
-        .into_iter()
-        .map(|r| {
-            row_with(
-                r.title,
-                href_of(ctx, "template", &r.slug),
-                ctx.tn_with("system.used_on", r.uses, &[]),
-                (r.uses == 0).then(|| ctx.t("system.unused")),
-                None,
-            )
-        })
-        .collect();
-    Ok(list(ctx, rows))
 }
 
 /// Who edited in the last 30 days, most edits first.

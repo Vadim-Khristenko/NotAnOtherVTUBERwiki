@@ -55,6 +55,7 @@ mod notify;
 mod observe;
 mod pages;
 mod perm;
+mod ping;
 mod policy;
 mod profile;
 mod protect;

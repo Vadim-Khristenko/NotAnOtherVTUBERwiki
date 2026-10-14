@@ -768,6 +768,12 @@
       <p class="field-note">{{ t("admin.chrome_admin_note") }}</p>
     </fieldset>
     <fieldset class="perm-set">
+      <legend>{{ t("admin.system_pages") }}</legend>
+      <label class="check"><input type="checkbox" name="ping_page" value="1" {% if ping_page %}checked{% endif %} /> {{ t("admin.ping_page") }}</label>
+      <label class="check"><input type="checkbox" name="ping_parts" value="1" {% if ping_parts %}checked{% endif %} /> {{ t("admin.ping_parts") }}</label>
+      <p class="field-note">{{ t("admin.ping_note") }}</p>
+    </fieldset>
+    <fieldset class="perm-set">
       <legend>{{ t("admin.chrome_footer") }}</legend>
       <p class="field-note">{% if footer_customised %}{{ t("admin.chrome_footer_custom") }}{% else %}{{ t("admin.chrome_footer_default") }}{% endif %}</p>
       <div class="footer-rows">

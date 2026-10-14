@@ -16,7 +16,7 @@
   `categories`     the categories this one is in
 #}
 {% block body %}
-<nav class="crumbs"><a href="{{ base }}/system:categories">{{ t("category.all") }}</a>{% for a in ancestors %} / <a href="{{ a.href }}">{{ a.name }}</a>{% endfor %} / {{ name }}</nav>
+<nav class="crumbs"><a href="{{ base }}/system:all-pages?ns=category">{{ t("category.all") }}</a>{% for a in ancestors %} / <a href="{{ a.href }}">{{ a.name }}</a>{% endfor %} / {{ name }}</nav>
 <h1>{{ heading }}</h1>
 
 {% if description %}

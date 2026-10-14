@@ -116,6 +116,14 @@ fn arg_line(line: &str) -> Option<(String, String)> {
     ok.then(|| (key.to_string(), value.trim().to_string()))
 }
 
+/// The modules the text calls, each once, sorted.
+pub(crate) fn used_in(text: &str) -> Vec<String> {
+    let mut names: Vec<String> = calls(text).into_iter().map(|c| c.module).collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// Every call in the text, outside code fences.
 fn calls(text: &str) -> Vec<Call> {
     let lines: Vec<&str> = text.split('\n').collect();
@@ -596,6 +604,16 @@ mod tests {
             let open = "<naw-module data-module=\"";
             let _ = skin_call(&s, open, "</naw-module>");
         }
+    }
+
+    /// "Used on" counts a module once per page, whatever the case of the
+    /// call, and never a call shown as code.
+    #[test]
+    fn the_modules_a_page_uses_are_each_named_once() {
+        let text = ":::Module:Stats:summary\n\n:::module:STATS:card\n\n:::Module:infobox-data:row\n\
+                    ```\n:::Module:secret:f\n```\n:::Module:../x:f\n";
+        assert_eq!(used_in(text), vec!["infobox-data", "stats"]);
+        assert!(used_in("No calls here.").is_empty());
     }
 
     #[test]

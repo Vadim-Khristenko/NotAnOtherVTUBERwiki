@@ -774,6 +774,8 @@ pub async fn chrome_settings(
             h_theme => header.theme,
             h_search => header.search,
             h_emotes => header.emotes,
+            ping_page => crate::ping::flags(&ctx.wiki.settings).page,
+            ping_parts => crate::ping::flags(&ctx.wiki.settings).parts,
             footer_rows => rows,
             footer_customised => customised,
             offered => ctx.offered_languages(),
@@ -892,6 +894,16 @@ pub async fn save_chrome_settings(
         chrome["footer"] = footer.clone();
     }
     object.insert("chrome".to_string(), chrome);
+    // The special pages an admin turns on: for now Ping, and whether it
+    // shows the server's own round trips too.
+    let ping = json!({ "page": on("ping_page"), "parts": on("ping_page") && on("ping_parts") });
+    let mut system = object
+        .get("system")
+        .cloned()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    system["ping"] = ping.clone();
+    object.insert("system".to_string(), system);
     sqlx::query!(
         "UPDATE wikis SET settings = $2 WHERE id = $1",
         ctx.wiki.id,
@@ -907,7 +919,7 @@ pub async fn save_chrome_settings(
             action: "wiki.chrome",
             entity_type: "wiki",
             entity_id: Some(ctx.wiki.id),
-            meta: json!({ "header": header, "footer": footer, "domains": domains, "refused_links": refused }),
+            meta: json!({ "header": header, "footer": footer, "domains": domains, "refused_links": refused, "ping": ping }),
         },
     )
     .await?;

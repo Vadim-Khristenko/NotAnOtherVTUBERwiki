@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.title AS \"title!\", s.slug AS \"slug!\", s.updated_at AS \"updated_at!\", s.uses AS \"uses?\" FROM (\n                 SELECT p.title, p.slug, p.updated_at,\n                        CASE ($4::text)\n                          WHEN 'template' THEN (SELECT count(DISTINCT tu.page_id) FROM template_uses tu\n                                                WHERE tu.wiki_id = p.wiki_id AND tu.template_slug = p.slug)\n                          WHEN 'module' THEN (SELECT count(DISTINCT mu.page_id) FROM module_uses mu\n                                              WHERE mu.wiki_id = p.wiki_id AND mu.module_slug = p.slug)\n                        END AS uses\n                 FROM pages p\n                 WHERE p.wiki_id = $1 AND p.namespace = ($4::text)::page_namespace\n                   AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n                   AND (NOT $5 OR COALESCE(p.locale, '') = $2)\n                   AND lower(p.title) >= lower($6)\n               ) s\n               ORDER BY CASE WHEN $7 THEN s.uses END DESC NULLS LAST, lower(s.title), s.slug\n               LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "slug!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "uses?",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "461230e866c6ec471ca50a259f5136701360ce10a3b7e7e15310a250bb8211d0"
+}
