@@ -149,6 +149,52 @@ pub fn clean_snippet(raw: &str) -> String {
     out
 }
 
+/// A `ts_headline` result as a concordance line: the words before its
+/// first match, the match, and the words after, each safe HTML. The match
+/// is the column every line of a result list is aligned on.
+///
+/// The words before are cut to their end and the words after to their
+/// start, at a space where one is near. `None` when nothing matched.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Concordance {
+    pub left: String,
+    pub key: String,
+    pub right: String,
+}
+
+/// Characters kept before and after the match of a concordance line.
+const LEFT_MAX: usize = 90;
+const RIGHT_MAX: usize = 220;
+
+pub fn concordance(raw: &str) -> Option<Concordance> {
+    let open = raw.find(MATCH_OPEN)?;
+    let rest = &raw[open + MATCH_OPEN.len_utf8()..];
+    let close = rest.find(MATCH_CLOSE)?;
+    let key = &rest[..close];
+    if key.trim().is_empty() {
+        return None;
+    }
+    let left: Vec<char> = raw[..open].chars().collect();
+    let mut left = &left[left.len().saturating_sub(LEFT_MAX)..];
+    if left.len() == LEFT_MAX
+        && let Some(space) = left.iter().take(20).position(|c| c.is_whitespace())
+    {
+        left = &left[space + 1..];
+    }
+    let right: Vec<char> = rest[close + MATCH_CLOSE.len_utf8()..].chars().collect();
+    let mut right = &right[..right.len().min(RIGHT_MAX)];
+    if right.len() == RIGHT_MAX
+        && let Some(space) = right.iter().rev().take(20).position(|c| c.is_whitespace())
+    {
+        right = &right[..right.len() - space - 1];
+    }
+    Some(Concordance {
+        left: clean_snippet(&left.iter().collect::<String>()),
+        key: clean_snippet(key),
+        right: clean_snippet(&right.iter().collect::<String>()),
+    })
+}
+
 /// Matching pieces ranked per query, at most. A word on every page of a
 /// huge wiki must not make one query rank the whole index.
 const MATCHED_MAX: i64 = 5000;
@@ -766,6 +812,59 @@ mod tests {
         ] {
             let config = regconfig_for(locale);
             assert!(SHIPPED.contains(&config), "{locale} -> {config}");
+        }
+    }
+
+    #[test]
+    fn a_concordance_line_splits_at_the_first_match() {
+        let line =
+            concordance("old <house> \u{E000}Filian\u{E001} and \u{E000}snackers\u{E001} go")
+                .expect("a match");
+        assert_eq!(line.left, "old &lt;house&gt; ");
+        assert_eq!(line.key, "Filian");
+        assert_eq!(line.right, " and <mark>snackers</mark> go");
+        assert_eq!(concordance("no match here"), None);
+        assert_eq!(concordance("\u{E000} \u{E001} blank"), None);
+        assert_eq!(concordance("\u{E000}never closed"), None);
+    }
+
+    #[test]
+    fn a_concordance_line_is_cut_at_spaces_on_character_boundaries() {
+        let before = "слово ".repeat(40);
+        let after = " ещё".repeat(100);
+        let line = concordance(&format!("{before}\u{E000}ключ\u{E001}{after}")).expect("a match");
+        assert!(line.left.chars().count() <= LEFT_MAX);
+        assert!(line.left.starts_with("слово"), "{:?}", line.left);
+        assert!(line.right.chars().count() <= RIGHT_MAX);
+        assert!(line.right.ends_with("ещё"), "{:?}", line.right);
+    }
+
+    #[test]
+    fn a_concordance_line_lets_no_markup_through() {
+        let raw =
+            "<script>x</script>\u{E000}<img src=x onerror=alert(1)>\u{E001}\u{E001}<b>\u{E000}";
+        let line = concordance(raw).expect("a match");
+        for part in [&line.left, &line.key, &line.right] {
+            let without = part.replace("<mark>", "").replace("</mark>", "");
+            assert!(!without.contains('<'), "{part:?}");
+        }
+        // Random markers and text never panic and keep marks balanced.
+        let pieces = ["\u{E000}", "\u{E001}", "a", " ", "я", "<", "&", "🐳"];
+        let mut seed: u64 = 7;
+        for _ in 0..2000 {
+            let mut raw = String::new();
+            for _ in 0..(seed % 400) {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                raw.push_str(pieces[(seed >> 33) as usize % pieces.len()]);
+            }
+            if let Some(line) = concordance(&raw) {
+                for part in [&line.left, &line.key, &line.right] {
+                    assert_eq!(
+                        part.matches("<mark>").count(),
+                        part.matches("</mark>").count()
+                    );
+                }
+            }
         }
     }
 

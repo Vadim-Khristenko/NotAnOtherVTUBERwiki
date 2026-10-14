@@ -31,7 +31,7 @@
       {% for tab in tabs %}<a class="find-tab" href="{{ tab.href }}" data-scope="{{ tab.id }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }}{% if tab.id != "all" %}<span class="find-count" data-count="{{ tab.id }}"></span>{% endif %}</a>{% endfor %}
     </nav>
     <div class="find-toggles" role="group" aria-label="{{ t('search.filters') }}">
-      {% for f in toggles %}<a class="find-toggle" href="{{ f.href }}" aria-pressed="{{ 'true' if f.on else 'false' }}"><svg class="icon" aria-hidden="true"><use href="#i-{{ 'check' if f.on else 'plus' }}" /></svg>{{ f.label }}</a>{% endfor %}
+      {% for f in toggles %}<a class="find-toggle" href="{{ f.href }}" aria-pressed="{{ 'true' if f.on else 'false' }}"><span class="find-box" aria-hidden="true"><svg class="icon"><use href="#i-check" /></svg></span>{{ f.label }}</a>{% endfor %}
     </div>
   </div>
   {% endif %}

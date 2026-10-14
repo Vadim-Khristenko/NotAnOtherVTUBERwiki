@@ -23,7 +23,7 @@ use tracing::instrument;
 use uuid::Uuid;
 
 use naw_core::error::AppError;
-use naw_core::search::{clean_snippet, normalize, regconfig_for};
+use naw_core::search::{clean_snippet, concordance, normalize, regconfig_for};
 use naw_core::state::AppState;
 
 use crate::auth::session::CurrentUser;
@@ -727,6 +727,7 @@ async fn in_text(
         if pages_found.last().is_none_or(|hit| hit.id != r.id) {
             pages_found.push(TextHit {
                 id: r.id,
+                namespace: r.namespace.clone(),
                 href: page_href(ctx, &r.locale, &path),
                 path,
                 title: r.title.clone(),
@@ -741,6 +742,7 @@ async fn in_text(
             hit.passages.push(minijinja::context! {
                 section => (!r.heading.is_empty()).then(|| r.heading.clone()),
                 href => href,
+                line => concordance(&r.snippet),
                 snippet => clean_snippet(&r.snippet),
             });
         }
@@ -752,6 +754,7 @@ async fn in_text(
                 href => hit.href,
                 title => hit.title,
                 path => hit.path,
+                namespace => hit.namespace,
                 lang => hit.lang,
                 day => hit.day,
                 hits => hit.hits,
@@ -764,6 +767,7 @@ async fn in_text(
 /// One page found by its text, with its passages.
 struct TextHit {
     id: Uuid,
+    namespace: String,
     href: String,
     path: String,
     title: String,
