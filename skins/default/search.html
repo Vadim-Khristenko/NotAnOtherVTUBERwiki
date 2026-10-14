@@ -110,7 +110,7 @@
     timer = setTimeout(function () { run(q); }, 220);
   });
   // Arrow keys walk the results; `/` comes back to the field.
-  function hits() { return Array.prototype.slice.call(results.querySelectorAll("a.find-title")); }
+  function hits() { return Array.prototype.slice.call(results.querySelectorAll("a.find-title, a.find-file")); }
   input.addEventListener("keydown", function (ev) {
     if (ev.key === "ArrowDown") { var h = hits(); if (h.length) { ev.preventDefault(); h[0].focus(); } }
   });

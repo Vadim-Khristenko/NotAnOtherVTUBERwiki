@@ -206,6 +206,10 @@ struct Found {
     sections: Vec<minijinja::Value>,
     total: usize,
     more: bool,
+    /// Pages were found, by title or text: the rest goes in the margin.
+    pages: bool,
+    /// Something besides pages was found.
+    others: bool,
 }
 
 impl Found {
@@ -220,8 +224,12 @@ impl Found {
             return;
         }
         self.total += items.len();
+        let page = matches!(kind, "titles" | "text");
+        self.pages |= page;
+        self.others |= !page;
         self.sections.push(minijinja::context! {
             kind => kind,
+            side => !page,
             heading => ctx.t(&format!("search.section_{kind}")),
             items => items,
             more_href => more_href,
@@ -250,6 +258,8 @@ async fn find(
         sections: Vec::new(),
         total: 0,
         more: false,
+        pages: false,
+        others: false,
     };
     let offset = (asked.page - 1) * ON_TAB;
     let first = asked.page == 1;
@@ -394,6 +404,8 @@ pub async fn search_page(
             sections: Vec::new(),
             total: 0,
             more: false,
+            pages: false,
+            others: false,
         },
     };
     let tabs: Vec<minijinja::Value> = SCOPES
@@ -423,6 +435,18 @@ pub async fn search_page(
         toggle("titles_only", asked.titles_only, Change::TitlesOnly),
         toggle("recent_first", asked.recent, Change::Recent),
     ];
+    // Before a search, what the field understands, each trick a search to try.
+    let tips: Vec<minijinja::Value> = ["stem", "phrase", "or", "not", "typo"]
+        .iter()
+        .map(|tip| {
+            let q = ctx.t(&format!("search.tip_{tip}_q"));
+            minijinja::context! {
+                href => ctx.link(&format!("/search?q={}", pages::urlencode(&q))),
+                q => q,
+                says => ctx.t(&format!("search.tip_{tip}")),
+            }
+        })
+        .collect();
     let text = asked.text.as_deref();
     let can_create = text
         .map(|t| crate::pages::slug_is_valid(&t.to_lowercase().replace(' ', "-")))
@@ -446,7 +470,7 @@ pub async fn search_page(
         .render(minijinja::context! {
             // The page has its own field; the header's would be a second one.
             // Before the chrome, whose value it replaces.
-            ..minijinja::context! { show_search => false },
+            ..minijinja::context! { show_search => false, in_search => true },
             ..ctx.chrome_context(),
             ..minijinja::context! {
                 title => match text {
@@ -459,7 +483,10 @@ pub async fn search_page(
                 scope => asked.scope,
                 tabs => tabs,
                 toggles => toggles,
+                tips => tips,
                 sections => found.sections,
+                // Pages in the main column and the rest beside them, when both.
+                split => found.pages && found.others,
                 total => found.total,
                 page_no => asked.page,
                 counts_href => counts_href,

@@ -2,51 +2,58 @@
   The results of a search, alone: the search page includes it, and the live
   search asks for it as a fragment.
 
-  Pages found by their text are a concordance: every passage is one line,
-  the words before the match, the match, the words after, and the matches
-  of the whole list stand in one column. Everything else is a title, where
-  it lives, and a line of what it says.
+  Pages stand in the main column: the exact title first and larger, then the
+  other titles, then the pages found by their text as a concordance (every
+  passage is one line, the words before the match, the match, the words
+  after, and the matches of the whole list stand in one column). Categories,
+  people, discussions and files stand beside them in the margin. When only
+  one kind was found it takes the whole width.
 
   `snippet`, `line.left`, `line.key` and `line.right` are the only values
   rendered with `| safe`: they come from ts_headline through clean_snippet,
   which leaves only text and <mark>.
 
-  searched, query, sections (kind, heading, items, more_href), total,
-  page_no, prev_href, next_href, create_href
+  A skin's _eggs.html is included with `place = "search"` once a search ran.
+
+  searched, query, tips (href, q, says), sections (kind, side, heading, items, more_href), split,
+  total, page_no, prev_href, next_href, create_href
 #}
 {% macro kind(ns) %}{% if ns == "template" %}<span class="find-kind">{{ t("search.kind_template") }}</span>{% elif ns == "page_template" %}<span class="find-kind">{{ t("search.kind_page_template") }}</span>{% elif ns == "module" %}<span class="find-kind">{{ t("search.kind_module") }}</span>{% endif %}{% endmacro %}
-{% if not searched %}
-<div class="find-intro">
-  <p>{{ t("search.hint") }}</p>
-</div>
-{% elif total == 0 %}
-<div class="find-empty" role="status">
-  <p class="find-empty-head">{{ t("search.nothing", query=query) }}</p>
-  <p>{{ t("search.try_again") }}</p>
-  {% if create_href %}<p><a class="button-save" href="{{ create_href }}"><svg class="icon" aria-hidden="true"><use href="#i-file-plus" /></svg>{{ t("search.create", query=query) }}</a></p>{% endif %}
-</div>
-{% else %}
-{% for section in sections %}
-<section class="find-section find-{{ section.kind }}" aria-labelledby="find-h-{{ section.kind }}">
-  <h2 class="find-section-head" id="find-h-{{ section.kind }}">{{ section.heading }}</h2>
+
+{% macro meta(hit) %}<p class="find-meta"><span class="find-path">/{{ hit.path }}</span>{% if hit.lang %} · <span class="find-lang">{{ hit.lang | upper }}</span>{% endif %}{% if hit.day %} · {{ hit.day }}{% endif %}</p>{% endmacro %}
+
+{% macro section_of(section, wide) %}
+<section class="find-section is-{{ section.kind }}" aria-labelledby="find-h-{{ section.kind }}">
+  <h2 class="find-section-head" id="find-h-{{ section.kind }}">{{ section.heading }}<span class="find-section-n">{{ section.items | length }}{% if section.more_href %}+{% endif %}</span></h2>
 
   {% if section.kind == "titles" %}
-  <ol class="find-list">
-    {% for hit in section.items %}
-    <li class="find-hit{% if hit.exact %} is-exact{% endif %}">
-      <p class="find-line"><a class="find-title" href="{{ hit.href }}">{{ hit.title }}</a>{{ kind(hit.namespace) }}{% if hit.exact %}<span class="find-exact">{{ t("search.exact") }}</span>{% endif %}</p>
-      <p class="find-meta"><span class="find-path">/{{ hit.path }}</span>{% if hit.lang %} · <span class="find-lang">{{ hit.lang | upper }}</span>{% endif %}{% if hit.day %} · {{ hit.day }}{% endif %}</p>
+  {% set first = section.items[0] %}
+  {% if first.exact %}
+  <article class="find-best">
+    <p class="find-best-label">{{ t("search.exact") }}</p>
+    <p class="find-line"><a class="find-title" href="{{ first.href }}">{{ first.title }}</a>{{ kind(first.namespace) }}</p>
+    {{ meta(first) }}
+    {% for p in first.passages %}{% if p.snippet %}<p class="find-summary">{{ p.snippet | safe }}</p>{% endif %}{% endfor %}
+  </article>
+  {% endif %}
+  {% if section.items | length > (1 if first.exact else 0) %}
+  <ol class="find-list find-titles">
+    {% for hit in section.items %}{% if not (loop.first and hit.exact) %}
+    <li class="find-hit">
+      <p class="find-line"><a class="find-title" href="{{ hit.href }}">{{ hit.title }}</a>{{ kind(hit.namespace) }}</p>
+      {{ meta(hit) }}
       {% for p in hit.passages %}{% if p.snippet %}<p class="find-summary">{{ p.snippet | safe }}</p>{% endif %}{% endfor %}
     </li>
-    {% endfor %}
+    {% endif %}{% endfor %}
   </ol>
+  {% endif %}
 
   {% elif section.kind == "text" %}
   <ol class="find-list find-kwic">
     {% for hit in section.items %}
     <li class="find-hit">
       <p class="find-line"><a class="find-title" href="{{ hit.href }}">{{ hit.title }}</a>{{ kind(hit.namespace) }}{% if hit.hits and hit.hits > 1 %}<span class="find-note">{{ tn("search.places", hit.hits) }}</span>{% endif %}</p>
-      <p class="find-meta"><span class="find-path">/{{ hit.path }}</span>{% if hit.lang %} · <span class="find-lang">{{ hit.lang | upper }}</span>{% endif %}{% if hit.day %} · {{ hit.day }}{% endif %}</p>
+      {{ meta(hit) }}
       {% for p in hit.passages %}
       {% if p.line %}
       <a class="kwic" href="{{ p.href or hit.href }}">
@@ -64,10 +71,11 @@
   </ol>
 
   {% elif section.kind == "categories" %}
-  <ol class="find-list find-compact">
+  <ol class="find-list find-cats">
     {% for c in section.items %}
     <li class="find-hit{% if c.exact %} is-exact{% endif %}">
-      <p class="find-line"><a class="find-title" href="{{ c.href }}">{{ c.title }}</a><span class="find-note">{{ tn("system.pages_count", c.pages) }}</span>{% if c.exact %}<span class="find-exact">{{ t("search.exact") }}</span>{% endif %}</p>
+      <a class="find-title" href="{{ c.href }}">{{ c.title }}</a>
+      <span class="find-tally">{{ tn("system.pages_count", c.pages) }}</span>
     </li>
     {% endfor %}
   </ol>
@@ -77,19 +85,19 @@
     {% for p in section.items %}
     <li class="find-hit">
       <span class="find-avatar" aria-hidden="true">{% if p.avatar %}<img src="{{ p.avatar }}" alt="" loading="lazy" />{% else %}{{ (p.display_name or p.username)[:1] | upper }}{% endif %}</span>
-      <p class="find-line"><a class="find-title" href="{{ p.href }}"><bdi>{{ p.display_name or p.username }}</bdi></a>{% if p.role %}<span class="find-kind">{{ t("search.role_" ~ p.role) }}</span>{% endif %}</p>
+      <p class="find-line"><a class="find-title" href="{{ p.href }}"><bdi>{{ p.display_name or p.username }}</bdi></a>{% if p.role %}<span class="find-role">{{ t("search.role_" ~ p.role) }}</span>{% endif %}</p>
       <p class="find-meta">@{{ p.username }} · {{ tn("search.edits", p.edits) }}</p>
     </li>
     {% endfor %}
   </ol>
 
   {% elif section.kind == "discussions" %}
-  <ol class="find-list">
+  <ol class="find-list find-talk">
     {% for topic in section.items %}
     <li class="find-hit">
-      <p class="find-line"><a class="find-title" href="{{ topic.href }}">{{ topic.title }}</a><span class="find-kind{% if topic.status != 'resolved' %} is-open{% endif %}">{{ t("talk.badge_" ~ topic.status) }}</span><span class="find-note">{{ tn("talk.replies", topic.replies) }}</span></p>
-      <p class="find-meta"><a href="{{ topic.page_href }}">{{ topic.page_title }}</a> · {{ topic.day }}</p>
-      {% if topic.snippet %}<p class="find-summary">{{ topic.snippet | safe }}</p>{% endif %}
+      <p class="find-line"><a class="find-title" href="{{ topic.href }}">{{ topic.title }}</a></p>
+      <p class="find-meta"><span class="find-state{% if topic.status != 'resolved' %} is-open{% endif %}">{{ t("talk.badge_" ~ topic.status) }}</span> · {{ tn("talk.replies", topic.replies) }} · <a href="{{ topic.page_href }}">{{ topic.page_title }}</a> · {{ topic.day }}</p>
+      {% if topic.snippet and wide %}<p class="find-summary">{{ topic.snippet | safe }}</p>{% endif %}
     </li>
     {% endfor %}
   </ol>
@@ -97,7 +105,7 @@
   {% elif section.kind == "files" %}
   <ul class="find-files">
     {% for f in section.items %}
-    <li><a class="find-file find-title" href="{{ f.href }}">
+    <li><a class="find-file" href="{{ f.href }}">
       {% if f.preview %}<img src="{{ f.preview }}" alt="" loading="lazy" />{% else %}<span class="find-file-kind">{{ f.kind }}</span>{% endif %}
       <span class="find-file-name">{{ f.title }}</span>
     </a></li>
@@ -107,7 +115,35 @@
 
   {% if section.more_href %}<p class="find-more"><a href="{{ section.more_href }}">{{ t("search.more") }} <svg class="icon" aria-hidden="true"><use href="#i-chevron-right" /></svg></a></p>{% endif %}
 </section>
-{% endfor %}
+{% endmacro %}
+
+{% if searched %}{% with place = "search" %}{% include "_eggs.html" %}{% endwith %}{% endif %}
+{% if not searched %}
+<div class="find-intro">
+  <p class="find-intro-lead">{{ t("search.intro") }}</p>
+  <dl class="find-tips">
+    {% for tip in tips %}<div><dt><a href="{{ tip.href }}"><code>{{ tip.q }}</code></a></dt><dd>{{ tip.says }}</dd></div>
+    {% endfor %}
+    <div class="find-tip-key"><dt><kbd>/</kbd></dt><dd>{{ t("search.tip_key") }}</dd></div>
+  </dl>
+</div>
+{% elif total == 0 %}
+<div class="find-empty" role="status">
+  <p class="find-empty-head">{{ t("search.nothing", query=query) }}</p>
+  <p>{{ t("search.try_again") }}</p>
+  {% if create_href %}<p><a class="button-save" href="{{ create_href }}"><svg class="icon" aria-hidden="true"><use href="#i-file-plus" /></svg>{{ t("search.create", query=query) }}</a></p>{% endif %}
+</div>
+{% else %}
+<div class="find-board{% if split %} is-split{% endif %}">
+  <div class="find-main">
+    {% for section in sections %}{% if not (split and section.side) %}{{ section_of(section, true) }}{% endif %}{% endfor %}
+  </div>
+  {% if split %}
+  <aside class="find-side" aria-label="{{ t('search.margin') }}">
+    {% for section in sections %}{% if section.side %}{{ section_of(section, false) }}{% endif %}{% endfor %}
+  </aside>
+  {% endif %}
+</div>
 
 {% if prev_href or next_href %}
 <nav class="find-pager" aria-label="{{ t('search.pages') }}">

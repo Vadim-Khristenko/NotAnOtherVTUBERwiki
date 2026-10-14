@@ -5,6 +5,7 @@
 search = "Search"
 search_placeholder = "Search"
 search_this = "Search {wiki}"
+in_search = "You're already in the search results!"
 new_page = "New page"
 admin = "Admin"
 about = "About"

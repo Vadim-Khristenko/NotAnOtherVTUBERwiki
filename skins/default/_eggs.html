@@ -1,0 +1,17 @@
+{#
+  Easter eggs. The default skin has none; a skin ships its own _eggs.html to
+  hide some. The engine includes this file with `place` saying where it is,
+  next to everything that page renders with:
+
+    place = "search"   the search results, after every search, also while
+                       the reader types. `query` holds the words asked for.
+
+  Keep an egg small and out of the way: text the reader stumbles on, not a
+  banner. Everything rendered here is escaped as usual.
+
+  Example, an egg for one word in any letter case:
+
+    {% if place == "search" and "snack" in query | lower %}
+    <p class="egg" role="note">You found the snack drawer.</p>
+    {% endif %}
+#}

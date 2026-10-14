@@ -1089,16 +1089,17 @@ details[open] > summary .eb-chevron { transform: rotate(180deg); }
 .search-hit-snippet mark { background: var(--accent-soft); color: var(--ink); font-weight: 700; }
 .search-hit-slug { margin: 0; font-family: var(--font-mono); font-size: 0.8rem; color: var(--faint); }
 /* Search (search.html, _search_results.html). The field is a line to
-   write on, the kinds are words, the filters are boxes to tick. Pages found
-   by their text read as a concordance: one line a passage, and the matches
-   of the whole list stand in one column, so the eye runs down the word it
-   asked for. Nothing here is a card. */
-.find { max-width: 60rem; }
+   write on, the kinds are words, the filters are boxes to tick. Pages stand
+   in the main column, the best match first and larger, and the pages found
+   by their text read as a concordance: one line a passage, the matches of
+   the whole list in one column. Everything else found sits in the margin
+   beside them. */
 .find-heading { margin: 0 0 var(--s2); font-size: 1rem; font-weight: 700; color: var(--muted); }
 .find-bar { display: flex; align-items: end; gap: var(--s3); }
 .find-field { flex: 1; display: flex; align-items: center; gap: 0.7rem; min-width: 0; height: 3.6rem; border-bottom: 2px solid var(--ink); cursor: text; transition: border-color var(--fast) ease-out; }
 .find-field:focus-within { border-bottom-color: var(--accent); }
-.find-field-icon { flex: none; width: 1.35rem; height: 1.35rem; color: var(--muted); }
+.find-field-icon { flex: none; width: 1.35rem; height: 1.35rem; color: var(--muted); transition: color var(--fast) ease-out; }
+.find-field:focus-within .find-field-icon { color: var(--accent); }
 .find-field input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; background: transparent; color: var(--ink); font: inherit; font-size: 1.6rem; font-weight: 600; letter-spacing: -0.01em; }
 .find-field input::placeholder { color: var(--faint); font-weight: 400; }
 .find-field input::-webkit-search-cancel-button { cursor: pointer; filter: grayscale(1); opacity: 0.6; }
@@ -1112,7 +1113,7 @@ details[open] > summary .eb-chevron { transform: rotate(180deg); }
 .find-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s1) var(--s4); margin: var(--s3) 0 0; }
 .find-tabs { display: flex; gap: 0.15rem 1.1rem; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .find-tabs::-webkit-scrollbar { display: none; }
-.content a.find-tab { display: inline-flex; align-items: baseline; gap: 0.3rem; padding: 0.5rem 0 0.35rem; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 600; text-decoration: none; white-space: nowrap; transition: color var(--fast) ease-out; }
+.content a.find-tab { display: inline-flex; align-items: baseline; gap: 0.3rem; padding: 0.5rem 0 0.35rem; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 600; text-decoration: none; white-space: nowrap; transition: color var(--fast) ease-out, border-color var(--fast) ease-out; }
 .content a.find-tab:hover { color: var(--ink); }
 .content a.find-tab[aria-current] { border-bottom-color: currentColor; color: var(--ink); }
 .find-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 0.2rem; }
@@ -1131,64 +1132,116 @@ details[open] > summary .eb-chevron { transform: rotate(180deg); }
 .find-toggle[aria-pressed="true"] .find-box .icon { opacity: 1; }
 .find-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 0.2rem; }
 
-.find-results { transition: opacity var(--fast) ease-out; }
+/* The board: pages on the left, the margin on the right, once both exist. */
+.find-results { margin-top: var(--s4); transition: opacity var(--fast) ease-out; }
 .find-results[aria-busy="true"] { opacity: 0.45; }
-.find-section { margin: var(--s5) 0 0; }
-.find-section-head { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s1); color: var(--muted); font-size: 0.82rem; font-weight: 700; }
-.find-section-head::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.find-board.is-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(15rem, 19rem); gap: var(--s5); align-items: start; }
+.find-side { position: sticky; top: var(--s4); display: grid; gap: var(--s4); padding: var(--s4); border-radius: var(--radius); background: var(--surface-sunken); }
+.find-section + .find-section { margin-top: var(--s5); }
+.find-side .find-section + .find-section { margin-top: 0; }
+.find-section-head { display: flex; align-items: baseline; gap: 0.45rem; margin: 0 0 var(--s2); color: var(--ink); font-size: 0.95rem; font-weight: 800; }
+.find-section-head::after { content: ""; flex: 1; align-self: center; height: 1px; background: var(--line); }
+.find-section-n { order: 2; color: var(--accent-2, var(--accent)); font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.find-section-head::after { order: 3; }
+.find-side .find-section-head { font-size: 0.85rem; }
 .find-list { list-style: none; margin: 0; padding: 0; }
-.find-hit { padding: 0.8rem 0; }
-.find-hit + .find-hit { border-top: 1px solid var(--line); }
+.find-hit { padding: 0.75rem 0; }
 .find-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.6rem; margin: 0; }
-.content a.find-title { color: var(--accent); font-size: 1.1rem; font-weight: 700; text-decoration: none; overflow-wrap: anywhere; }
-.content a.find-title:hover { text-decoration: underline; text-underline-offset: 0.15em; }
+.content a.find-title { color: var(--accent); font-size: 1.08rem; font-weight: 700; text-decoration: none; overflow-wrap: anywhere; }
+.content a.find-title:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.18em; }
 .content a.find-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 0.2rem; }
 .find-kind, .find-note { color: var(--muted); font-size: 0.8rem; }
-.find-kind.is-open, .find-exact { color: var(--accent); font-size: 0.8rem; font-weight: 700; }
-.find-meta { margin: 0.1rem 0 0; color: var(--muted); font-family: var(--font-mono); font-size: 0.76rem; overflow-wrap: anywhere; }
+.find-meta { margin: 0.1rem 0 0; color: var(--muted); font-family: var(--font-mono); font-size: 0.74rem; overflow-wrap: anywhere; }
 .content .find-meta a { color: var(--muted); }
+.content .find-meta a:hover { color: var(--accent); }
 .find-lang { color: var(--ink-soft); }
 .find-summary { display: -webkit-box; max-width: 72ch; margin: 0.35rem 0 0; overflow: hidden; color: var(--ink-soft); line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .content a.find-anchor { color: var(--muted); font-size: 0.82rem; font-weight: 600; text-decoration: none; }
 .content a.find-anchor:hover { color: var(--accent); }
-.content .find-results mark, html[data-theme] .content .find-results mark { padding: 0; border-radius: 0; background: none; color: var(--ink); font-weight: 700; text-decoration: underline 2px var(--accent); text-underline-offset: 0.2em; text-decoration-skip-ink: none; }
-.find-hit.is-exact { padding: 0.4rem 0 1rem; }
-.content .find-hit.is-exact a.find-title { font-size: 1.55rem; letter-spacing: -0.01em; }
-.find-compact .find-hit { padding: 0.5rem 0; }
+/* Found words are marked as with a highlighter: a flat wash of the accent. */
+.content .find-results mark, html[data-theme] .content .find-results mark { padding: 0 0.12em; border-radius: 0.2em; background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--ink); font-weight: 700; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+
+/* The best match: the page whose title is the query, larger and first. */
+.find-best { margin: 0 0 var(--s3); padding: var(--s4) var(--s4) var(--s4); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.find-best-label { margin: 0 0 0.3rem; color: var(--accent); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.content .find-best a.find-title { font-size: clamp(1.45rem, 1.1rem + 1.2vw, 2rem); letter-spacing: -0.015em; line-height: 1.15; }
+.find-best .find-meta { margin-top: 0.3rem; }
+.find-best .find-summary { margin-top: 0.6rem; font-size: 1.02rem; -webkit-line-clamp: 3; }
+
+/* The other titles: two or three to a row, a ruled index. */
+.find-titles { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); column-gap: var(--s5); }
+.find-titles .find-hit { border-bottom: 1px solid var(--line); }
 
 /* The concordance. The list owns the columns (where, before, the match,
    after) and every line takes them through subgrid, so the matches of all
    the pages line up. Before is cut at its start and after at its end. */
-.find-kwic { display: grid; grid-template-columns: minmax(0, 9rem) minmax(0, 2fr) auto minmax(0, 3fr); column-gap: 0.45rem; }
+.find-kwic { display: grid; grid-template-columns: minmax(0, 8rem) minmax(0, 2fr) auto minmax(0, 3fr); column-gap: 0.45rem; }
 .find-kwic > .find-hit, .kwic { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; }
+.find-kwic > .find-hit + .find-hit { border-top: 1px solid var(--line); }
 .find-kwic .find-line, .find-kwic .find-meta, .find-kwic .find-summary { grid-column: 1 / -1; }
-.find-kwic .find-meta { margin-bottom: 0.3rem; }
-.content a.kwic { align-items: baseline; margin: 0 -0.5rem; padding: 0.22rem 0.5rem; border-radius: var(--radius-sm); color: var(--ink-soft); font-size: 0.94rem; text-decoration: none; transition: background var(--fast) ease-out; }
+.find-kwic .find-meta { margin-bottom: 0.35rem; }
+.content a.kwic { align-items: baseline; margin: 0 -0.5rem; padding: 0.24rem 0.5rem; border-radius: var(--radius-sm); color: var(--ink-soft); font-size: 0.94rem; text-decoration: none; transition: background var(--fast) ease-out, color var(--fast) ease-out; }
 .content a.kwic:hover { background: var(--surface-sunken); color: var(--ink); }
 .content a.kwic:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
 .kwic-where { overflow: hidden; color: var(--muted); font-size: 0.78rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .kwic-left { display: flex; justify-content: flex-end; overflow: hidden; white-space: nowrap; -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5rem); mask-image: linear-gradient(to right, transparent, #000 2.5rem); }
 .kwic-left > span { flex: none; }
 .kwic-right { overflow: hidden; white-space: nowrap; -webkit-mask-image: linear-gradient(to left, transparent, #000 2.5rem); mask-image: linear-gradient(to left, transparent, #000 2.5rem); }
-.content .find-results .kwic-key, .content .find-results .kwic-key mark { color: var(--accent); font-weight: 800; text-decoration: none; white-space: nowrap; }
+.content .find-results .kwic-key { padding: 0.05em 0.35em; border-radius: 0.25em; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 800; white-space: nowrap; transition: background var(--fast) ease-out, color var(--fast) ease-out; }
+.content .find-results .kwic-key mark { padding: 0; background: none; color: inherit; }
+.content a.kwic:hover .kwic-key { background: var(--accent); color: var(--accent-ink); }
 @supports not (grid-template-columns: subgrid) {
-  .find-kwic > .find-hit, .kwic { grid-template-columns: minmax(0, 9rem) minmax(0, 2fr) auto minmax(0, 3fr); column-gap: 0.45rem; }
+  .find-kwic > .find-hit, .kwic { grid-template-columns: minmax(0, 8rem) minmax(0, 2fr) auto minmax(0, 3fr); column-gap: 0.45rem; }
 }
 
-.find-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); column-gap: var(--s4); }
-.find-people .find-hit { display: grid; grid-template-columns: 2rem 1fr; column-gap: 0.7rem; align-items: center; padding: 0.55rem 0; border-top: 0; border-bottom: 1px solid var(--line); }
-.find-people .find-line, .find-people .find-meta { grid-column: 2; }
-.find-avatar { grid-row: span 2; display: grid; place-items: center; width: 2rem; height: 2rem; overflow: hidden; border-radius: 50%; background: var(--surface-sunken); color: var(--ink-soft); font-size: 0.85rem; font-weight: 800; }
+/* Categories: a ruled list, the number of pages at the right. */
+.find-cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); column-gap: var(--s5); }
+.find-cats .find-hit { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+.find-cats .find-hit.is-exact a.find-title { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.18em; }
+.find-tally { flex: none; color: var(--muted); font-family: var(--font-mono); font-size: 0.74rem; font-variant-numeric: tabular-nums; }
+
+/* People: a face, a name, a role. Alone they are a roster of tiles. */
+.find-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--s3); }
+.find-people .find-hit { display: grid; grid-template-columns: 3rem minmax(0, 1fr); column-gap: 0.8rem; align-items: center; padding: var(--s3); border: 1px solid var(--line); border-radius: var(--radius); transition: border-color var(--fast) ease-out, transform var(--fast) ease-out; }
+.find-people .find-hit:hover { border-color: var(--accent); }
+.find-people .find-hit:has(a:active) { transform: translateY(1px); }
+.find-people .find-line, .find-people .find-meta { grid-column: 2; min-width: 0; }
+.find-people .find-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.find-avatar { grid-row: span 2; display: grid; place-items: center; width: 3rem; height: 3rem; overflow: hidden; border-radius: 50%; background: color-mix(in srgb, var(--accent) 16%, var(--surface-sunken)); color: var(--accent); font-size: 1.15rem; font-weight: 800; }
 .find-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.find-files { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: var(--s2); }
-.find-file { display: grid; gap: 0.35rem; }
-.content a.find-file { font-size: 0.9rem; }
-.find-file img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-sm); }
-.find-file-kind { display: grid; place-items: center; aspect-ratio: 4 / 3; border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--muted); font-family: var(--font-mono); font-weight: 700; text-transform: uppercase; }
-.find-file-name { overflow-wrap: anywhere; }
-.find-more { margin: var(--s1) 0 0; }
-.find-more a { display: inline-flex; align-items: center; gap: 0.2rem; font-size: 0.9rem; font-weight: 600; }
-.find-more .icon { width: 0.9rem; height: 0.9rem; }
+.find-role { padding: 0.05rem 0.4rem; border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--ink-soft); font-size: 0.72rem; font-weight: 700; }
+
+/* Discussions: the topic, then its state and where it is held. */
+.find-talk .find-hit + .find-hit { border-top: 1px solid var(--line); }
+.find-state { color: var(--muted); font-family: var(--font-body); font-weight: 700; }
+.find-state.is-open { color: var(--accent); }
+
+/* Files: thumbnails, four by three. */
+.find-files { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: var(--s3); }
+.find-file { display: grid; gap: 0.35rem; color: var(--ink-soft); font-size: 0.86rem; text-decoration: none; }
+.content a.find-file { color: var(--ink-soft); text-decoration: none; }
+.content a.find-file:hover { color: var(--accent); }
+.find-file img, .find-file-kind { width: 100%; aspect-ratio: 4 / 3; border-radius: var(--radius-sm); transition: transform var(--fast) ease-out; }
+.find-file img { object-fit: cover; }
+.find-file:hover img, .find-file:hover .find-file-kind { transform: scale(1.02); }
+.find-file-kind { display: grid; place-items: center; background: var(--surface-sunken); color: var(--muted); font-family: var(--font-mono); font-weight: 700; text-transform: uppercase; }
+.find-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* In the margin everything is one column and smaller. */
+.find-side .find-cats, .find-side .find-people, .find-side .find-files { grid-template-columns: minmax(0, 1fr); }
+.find-side .find-hit { padding: 0.45rem 0; }
+.content .find-side a.find-title { font-size: 0.95rem; }
+.find-side .find-cats .find-hit { padding: 0.4rem 0; }
+.find-side .find-people { gap: 0; }
+.find-side .find-people .find-hit { grid-template-columns: 2rem minmax(0, 1fr); column-gap: 0.6rem; padding: 0.45rem 0; border: 0; border-radius: 0; }
+.find-side .find-people .find-hit + .find-hit { border-top: 1px solid var(--line); }
+.find-side .find-avatar { width: 2rem; height: 2rem; font-size: 0.85rem; }
+.find-side .find-files { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+
+.find-more { margin: var(--s2) 0 0; }
+.find-more a { display: inline-flex; align-items: center; gap: 0.2rem; font-size: 0.9rem; font-weight: 700; }
+.find-more .icon { width: 0.9rem; height: 0.9rem; transition: transform var(--fast) ease-out; }
+.find-more a:hover .icon { transform: translateX(2px); }
 .find-pager { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin: var(--s5) 0 var(--s4); padding-top: var(--s3); border-top: 2px solid var(--ink); }
 .find-pager-link { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.4rem 0; color: var(--ink); font-weight: 700; text-decoration: none; }
 .content a.find-pager-link { color: var(--ink); }
@@ -1196,9 +1249,51 @@ details[open] > summary .eb-chevron { transform: rotate(180deg); }
 .find-pager-link.is-off { color: var(--faint); }
 .find-pager-link .icon { width: 1rem; height: 1rem; }
 .find-page-no { color: var(--muted); font-family: var(--font-mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
-.find-intro, .find-empty { max-width: 46rem; margin: var(--s5) 0; color: var(--ink-soft); }
+
+/* Before a search: what the field understands, each trick a link to try. */
+.find-intro { margin: var(--s5) 0 0; color: var(--ink-soft); }
+.find-intro-lead { max-width: 46rem; margin: 0 0 var(--s4); }
+.find-tips { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: var(--s3) var(--s5); margin: 0; }
+.find-tips > div { display: grid; gap: 0.3rem; padding-top: var(--s2); border-top: 1px solid var(--line); }
+.find-tips dt { margin: 0; }
+.content .find-tips a { color: var(--ink); text-decoration: none; }
+.find-tips code, .find-tips kbd { display: inline-block; padding: 0.1rem 0.45rem; border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--ink); font-family: var(--font-mono); font-size: 0.9rem; transition: background var(--fast) ease-out, color var(--fast) ease-out; }
+.content .find-tips a:hover code { background: var(--accent); color: var(--accent-ink); }
+.find-tips dd { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.find-empty { max-width: 46rem; margin: var(--s5) 0; color: var(--ink-soft); }
 .find-empty-head { margin: 0 0 var(--s1); color: var(--ink); font-size: 1.15rem; }
-@media (hover: none) { .find-key { display: none; } }
+
+/* An easter egg a skin hides (_eggs.html): a note from the brand mark. */
+.egg { display: flex; align-items: center; gap: var(--s3); margin: 0 0 var(--s4); padding: var(--s3) var(--s4); border: 1px dashed var(--accent); border-radius: var(--radius); color: var(--ink); font-weight: 600; animation: egg-in 420ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both; }
+.egg-mark { flex: none; display: grid; place-items: center; width: 2.6rem; height: 2.6rem; color: var(--accent); animation: egg-nod 2.4s ease-in-out 420ms infinite; transform-origin: 50% 80%; }
+.egg-mark svg { width: 100%; height: 100%; }
+@keyframes egg-in { from { opacity: 0; transform: translateY(-0.4rem) scale(0.97); } }
+@keyframes egg-nod { 0%, 70%, 100% { transform: rotate(0); } 78% { transform: rotate(-9deg); } 88% { transform: rotate(7deg); } }
+
+/* Results arrive with a short rise, one after another, as the reader types. */
+.find-main .find-best, .find-main .find-hit, .find-side .find-section { animation: find-in 260ms ease-out both; }
+.find-main .find-hit:nth-child(2) { animation-delay: 30ms; }
+.find-main .find-hit:nth-child(3) { animation-delay: 60ms; }
+.find-main .find-hit:nth-child(4) { animation-delay: 90ms; }
+.find-main .find-hit:nth-child(5) { animation-delay: 120ms; }
+.find-main .find-hit:nth-child(n+6) { animation-delay: 150ms; }
+.find-side .find-section { animation-delay: 80ms; }
+@keyframes find-in { from { opacity: 0; transform: translateY(0.35rem); } }
+
+/* The header on the search page says where the reader already is. */
+.header-here { display: flex; align-items: center; gap: var(--s2); flex: 1 1 22rem; min-width: 0; max-width: 40rem; margin: 0 auto 0 var(--s2); padding: var(--s2) var(--s4); border: 1px dashed var(--border-strong); border-radius: 999px; color: var(--muted); font-size: 0.92rem; cursor: pointer; transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease); }
+.header-here span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.header-here:hover { border-color: var(--accent); color: var(--ink); }
+.header-here:hover .icon { animation: egg-nod 900ms ease-in-out; }
+
+@media (hover: none) { .find-key, .find-tip-key { display: none; } }
+@media (max-width: 64rem) {
+  .find-board.is-split { display: block; }
+  .find-side { position: static; margin-top: var(--s5); }
+  .find-side .find-people, .find-side .find-cats { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); column-gap: var(--s4); }
+  .find-side .find-files { grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); }
+}
+@media (max-width: 46rem) { .header-here { display: none; } }
 @media (max-width: 40rem) {
   .find-field { height: 3.1rem; }
   .find-field input { font-size: 1.25rem; }
@@ -1207,14 +1302,18 @@ details[open] > summary .eb-chevron { transform: rotate(180deg); }
   .find-go-text, .find-key { display: none; }
   .find-controls { display: block; }
   .find-toggles { flex-wrap: wrap; }
+  .find-best { padding: var(--s3); }
+  .find-side { padding: var(--s3); }
   .find-kwic, .find-kwic > .find-hit, .kwic { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.5fr); column-gap: 0.35rem; }
   .kwic-where { grid-column: 1 / -1; }
   .kwic-where:empty { display: none; }
   .content a.kwic { padding-block: 0.3rem; font-size: 0.9rem; }
-  .content .find-hit.is-exact a.find-title { font-size: 1.3rem; }
+  .find-people { grid-template-columns: minmax(0, 1fr); }
+  .egg { align-items: flex-start; padding: var(--s3); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .find-field, .find-go, .find-tab, .find-count, .find-box, .find-results, .kwic { transition: none; }
+  .find-field, .find-field-icon, .find-go, .find-tab, .find-count, .find-box, .find-results, .kwic, .kwic-key, .find-people .find-hit, .find-file img, .find-more .icon, .header-here { transition: none; }
+  .find-main .find-best, .find-main .find-hit, .find-side .find-section, .egg, .egg-mark, .header-here:hover .icon { animation: none; }
 }
 /* The admin tables share one table skin. */
 .admin-table { border-collapse: collapse; width: 100%; font-size: 0.9rem; display: block; overflow-x: auto; }

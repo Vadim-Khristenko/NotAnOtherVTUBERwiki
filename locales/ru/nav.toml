@@ -5,6 +5,7 @@
 search = "Поиск"
 search_placeholder = "Поиск"
 search_this = "Поиск по {wiki}"
+in_search = "Вы уже в результатах поиска!"
 new_page = "Новая страница"
 admin = "Админка"
 about = "О проекте"

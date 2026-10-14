@@ -31,6 +31,8 @@ const TEMPLATES: &[&str] = &[
     "message.html",
     "search.html",
     "_search_results.html",
+    // Easter eggs a skin hides; the default skin ships an empty one.
+    "_eggs.html",
     "file.html",
     "system.html",
     "landing.html",
@@ -258,6 +260,34 @@ mod tests {
             head.rfind("--accent: #ff3d8b") > head.find("--accent: #0b5fff"),
             "the theme must come after the default styles to win"
         );
+    }
+
+    /// The default skin hides nothing; the Filian skin answers its name in
+    /// either alphabet and any letter case, and nothing close to it.
+    #[test]
+    fn the_filian_skin_hides_an_egg_in_the_search_for_its_name() {
+        let egg = |skin: &str, query: &str, lang: &str| {
+            let env = load_templates_with_fallback(skin, &default_skin(), &locales())
+                .expect("skin loads");
+            env.get_template("_eggs.html")
+                .expect("every skin has one")
+                .render(minijinja::context! { place => "search", query => query, lang => lang })
+                .expect("renders")
+                .contains("class=\"egg\"")
+        };
+        let snackers = format!("{}/../../skins/snackers", env!("CARGO_MANIFEST_DIR"));
+        for (query, lang) in [
+            ("filian", "en"),
+            ("FILIAN lore", "en"),
+            ("ФИЛИАН", "ru"),
+            ("кто такая Филиан", "ru"),
+        ] {
+            assert!(egg(&snackers, query, lang), "no egg for {query:?}");
+        }
+        for query in ["filan", "snackers", ""] {
+            assert!(!egg(&snackers, query, "en"), "an egg for {query:?}");
+        }
+        assert!(!egg(&default_skin(), "filian", "en"));
     }
 
     #[test]

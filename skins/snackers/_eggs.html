@@ -1,0 +1,28 @@
+{#
+  FilianWIKI's easter eggs (see the default skin's _eggs.html for how they
+  are included). Search for Filian, in any letter case, in English or in
+  Russian, and the cat from the banner has a word for you. Which word
+  depends on how long the query is, so typing on changes it.
+#}
+{% if place == "search" %}
+{% set q = query | lower %}
+{% if "filian" in q or "филиан" in q %}
+{% set n = (query | length) % 4 %}
+<p class="egg" role="note">
+  <span class="egg-mark">{% include "_brand.html" %}</span>
+  <span class="egg-text">
+  {% if lang == "ru" %}
+    {% if n == 0 %}Филиан найдена! Ну, почти: здесь вики о ней, а сама она, скорее всего, на стриме.
+    {% elif n == 1 %}Снакеры, тревога: кто-то ищет Филиан. Сохраняйте спокойствие и читайте статьи ниже.
+    {% elif n == 2 %}Найти Филиан здесь заняло ноль секунд. Застать её в эфире бывает сложнее.
+    {% else %}Тут есть всё про Филиан, кроме самой Филиан. Её ищите на Twitch.{% endif %}
+  {% else %}
+    {% if n == 0 %}Filian found! Well, almost: this is a wiki about her, and she is probably streaming.
+    {% elif n == 1 %}Snackers, alert: someone is looking for Filian. Stay calm and read the pages below.
+    {% elif n == 2 %}Finding Filian here took no time at all. Catching her live is harder.
+    {% else %}Everything about Filian is here, except Filian herself. She is on Twitch.{% endif %}
+  {% endif %}
+  </span>
+</p>
+{% endif %}
+{% endif %}

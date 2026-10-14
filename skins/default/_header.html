@@ -49,6 +49,10 @@
              value="{% if query is defined %}{{ query }}{% endif %}" />
       <button type="submit" class="header-search-go">{{ t("nav.search") }}</button>
     </form>
+    {% elif in_search is defined and in_search %}
+    {# On the search page the header has no field of its own: it says so, and a
+       click on it goes to the page's field. #}
+    <label class="header-here" for="search-q"><svg class="icon" aria-hidden="true"><use href="#i-search" /></svg><span>{{ t("nav.in_search") }}</span></label>
     {% endif %}
 
     <div class="header-actions">

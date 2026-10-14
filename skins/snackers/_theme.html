@@ -112,8 +112,12 @@ html[data-theme="dark"] .content mark.mark-gray { background: #4a2d55; color: #f
 }
 
 /* Search and the special pages carry the two colours of the banner: pink
-   for the words asked for and what is chosen, violet for what is counted. */
+   for the words asked for and what is chosen, violet for what is counted
+   and for the highlighter. Flat colours, no gradients. */
 .content a.find-tab[aria-current] { border-bottom-color: var(--accent); }
-.find-count, .sys-figure, .stat-top b { color: var(--accent-2); }
-.content .find-results mark, html[data-theme] .content .find-results mark { text-decoration-color: var(--accent-2); }
+.find-count, .sys-figure { color: var(--accent-2); }
+.content .find-results mark, html[data-theme] .content .find-results mark { background: color-mix(in srgb, var(--accent-2) 30%, transparent); }
+.find-best { background: color-mix(in srgb, var(--accent-2) 13%, transparent); }
+.find-best-label { color: var(--accent-2); }
+.find-side { background: color-mix(in srgb, var(--accent-2) 7%, var(--surface-sunken)); }
 </style>
