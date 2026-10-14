@@ -30,6 +30,7 @@
     <ul class="sys-rows" role="list">
       {% for e in g.entries %}
       <li><a class="sys-row{% if e.attention %} needs-work{% endif %}" href="{{ e.href }}">
+        <svg class="icon sys-icon" aria-hidden="true"><use href="#i-{{ e.icon }}" /></svg>
         <span class="sys-name">{{ e.title }}</span>
         {% if e.figure is not none %}<span class="sys-figure" title="{{ e.figure_label }}">{{ e.figure }}</span>{% endif %}
         <span class="sys-about">{{ e.about }}</span>
@@ -65,6 +66,7 @@
 {% endif %}
   <li class="rc-item{% if c.is_minor %} is-minor{% endif %}">
     <span class="rc-time">{{ c.time }}</span>
+    <span class="rc-node{% if c.is_new %} is-new{% elif c.is_minor %} is-minor{% endif %}" aria-hidden="true"></span>
     <span class="rc-main">
       <a class="rc-title" href="{{ c.href }}">{{ c.title }}</a>
       {%- if c.is_new %} <span class="rc-tag rc-new">{{ t("system.rc_new") }}</span>{% endif -%}
@@ -74,6 +76,7 @@
       <span class="rc-meta">{% if c.author %}<a href="/user/{{ c.author }}"><bdi>{{ c.author }}</bdi></a>{% else %}{{ t("history.anonymous") }}{% endif %}{% if c.summary %} · <span class="rc-summary-text">{{ c.summary }}</span>{% endif %}</span>
     </span>
     <span class="rc-size {% if c.delta > 0 %}is-plus{% elif c.delta < 0 %}is-minus{% else %}is-zero{% endif %}{% if c.delta_big %} is-big{% endif %}">
+      <span class="rc-bar" aria-hidden="true"><span style="width: {{ c.bar }}%"></span></span>
       <span class="rc-bytes">{%- if c.delta > 0 %}+{{ c.delta }}{% elif c.delta < 0 %}&minus;{{ c.delta | abs }}{% else %}0{% endif -%}</span>
     </span>
     <span class="rc-actions">
@@ -165,11 +168,11 @@
 <div class="stat-tops">
   <section class="stat-group">
     <h2>{{ t("system.stat_top_editors") }}</h2>
-    {% if editors %}<ol class="stat-top">{% for e in editors %}<li><a href="{{ e.href }}"><bdi>{{ e.name }}</bdi></a><b>{{ e.edits }}</b></li>{% endfor %}</ol>{% else %}<p class="muted-cell">{{ t("system.nothing_yet") }}</p>{% endif %}
+    {% if editors %}<ol class="stat-top">{% for e in editors %}<li><a href="{{ e.href }}"><bdi>{{ e.name }}</bdi></a><span class="stat-meter" aria-hidden="true"><span style="width: {{ e.share }}%"></span></span><b>{{ e.edits }}</b></li>{% endfor %}</ol>{% else %}<p class="muted-cell">{{ t("system.nothing_yet") }}</p>{% endif %}
   </section>
   <section class="stat-group">
     <h2>{{ t("system.stat_busiest") }}</h2>
-    {% if busiest %}<ol class="stat-top">{% for p in busiest %}<li><a href="{{ p.href }}">{{ p.name }}</a><b>{{ p.edits }}</b></li>{% endfor %}</ol>{% else %}<p class="muted-cell">{{ t("system.nothing_yet") }}</p>{% endif %}
+    {% if busiest %}<ol class="stat-top">{% for p in busiest %}<li><a href="{{ p.href }}">{{ p.name }}</a><span class="stat-meter" aria-hidden="true"><span style="width: {{ p.share }}%"></span></span><b>{{ p.edits }}</b></li>{% endfor %}</ol>{% else %}<p class="muted-cell">{{ t("system.nothing_yet") }}</p>{% endif %}
   </section>
 </div>
 
