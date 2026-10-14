@@ -83,6 +83,8 @@ pub struct Ctx {
     pub origin: String,
     /// The wiki's documents changed since this reader last saw them (legal.rs).
     pub policy_notice: bool,
+    /// Sign-in is switched on for this install, so the header may offer it.
+    pub sign_in: bool,
 }
 
 /// Where the article language of a request came from.
@@ -333,6 +335,7 @@ impl Ctx {
             languages => offered,
             language_options => language_options,
             signed_in => self.actor.is_signed_in(),
+            sign_in => self.sign_in,
             username => self.actor.username.clone(),
             display_name => self.actor.display_name.clone().or_else(|| self.actor.username.clone()),
             avatar_url => self.actor.avatar_url.clone(),
@@ -422,6 +425,7 @@ pub async fn context(
         unread,
         origin,
         policy_notice,
+        sign_in: state.config.auth.enabled,
     }))
 }
 
