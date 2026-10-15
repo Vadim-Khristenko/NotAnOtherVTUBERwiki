@@ -32,11 +32,15 @@ pub(crate) async fn expand(state: &AppState, ctx: &Ctx, html: String) -> Result<
             wanted.push(target);
         }
     }
-    if wanted.is_empty() || wanted.len() > CHECKED_MAX {
+    let any_impossible = anchors(&html).filter_map(href).any(impossible_address);
+    if (wanted.is_empty() && !any_impossible) || wanted.len() > CHECKED_MAX {
         return Ok(html);
     }
     let (namespaces, slugs): (Vec<String>, Vec<String>) = wanted.iter().cloned().unzip();
-    let found = sqlx::query!(
+    let found: Vec<(String, String)> = if wanted.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query!(
         r#"SELECT w.namespace AS "namespace!", w.slug AS "slug!"
            FROM unnest($2::text[], $3::text[]) AS w(namespace, slug)
            WHERE EXISTS (SELECT 1 FROM pages p
@@ -49,23 +53,30 @@ pub(crate) async fn expand(state: &AppState, ctx: &Ctx, html: String) -> Result<
         &slugs
     )
     .fetch_all(&state.db)
-    .await?;
-    let existing: HashSet<(String, String)> =
-        found.into_iter().map(|r| (r.namespace, r.slug)).collect();
-    if existing.len() == wanted.len() {
+    .await?
+    .into_iter()
+    .map(|r| (r.namespace, r.slug))
+    .collect()
+    };
+    let existing: HashSet<(String, String)> = found.into_iter().collect();
+    if existing.len() == wanted.len() && !any_impossible {
         return Ok(html);
     }
     let title = naw_core::html::escape(&ctx.t("page.missing_title"));
+    let bad_title = naw_core::html::escape(&ctx.t("page.bad_address"));
     let mut out = String::with_capacity(html.len() + 64);
     let mut rest = html.as_str();
     while let Some(at) = rest.find("<a ") {
         out.push_str(&rest[..at]);
         let end = rest[at..].find('>').map_or(rest.len(), |e| at + e);
         let tag = &rest[at..end];
-        let missing = href(tag)
-            .and_then(page_target)
-            .is_some_and(|target| !existing.contains(&target));
+        let impossible = href(tag).is_some_and(impossible_address);
+        let missing = impossible
+            || href(tag)
+                .and_then(page_target)
+                .is_some_and(|target| !existing.contains(&target));
         if missing && !tag.contains(" class=") {
+            let title = if impossible { &bad_title } else { &title };
             out.push_str(&format!("<a class=\"{CLASS}\" title=\"{title}\" "));
             out.push_str(&tag["<a ".len()..]);
         } else {
@@ -89,6 +100,26 @@ fn href(tag: &str) -> Option<&str> {
     let start = tag.find(" href=\"")? + " href=\"".len();
     let end = tag[start..].find('"')?;
     Some(&tag[start..start + end])
+}
+
+/// A bare relative link whose address no page can ever have: what
+/// `[[Some Title]]` or `[[Страница]]` renders to, since page addresses are
+/// lowercase Latin letters, digits and dashes. Such a link always ends in
+/// "nothing here", so it is marked like a missing page.
+fn impossible_address(href: &str) -> bool {
+    if href.is_empty() || href.starts_with(['/', '#', '.', '?']) || href.contains(['?', '#', '/']) {
+        return false;
+    }
+    let decoded = crate::media::percent_decode(href);
+    // a scheme (https:, mailto:, tg:) or a namespace other than a page's
+    if let Some((prefix, _)) = decoded.split_once(':') {
+        let prefix = prefix.to_ascii_lowercase();
+        return matches!(
+            prefix.as_str(),
+            "template" | "page_template" | "page-template" | "module"
+        ) && !crate::pages::slug_is_valid(&decoded);
+    }
+    !crate::pages::slug_is_valid(&decoded) && !decoded.trim().is_empty()
 }
 
 /// The page an internal link leads to, as namespace and slug: `bao`,
@@ -195,6 +226,40 @@ mod tests {
                 s.push_str(pieces[(seed >> 33) as usize % pieces.len()]);
             }
             let _ = page_target(&s);
+        }
+    }
+
+    #[test]
+    fn a_link_to_an_address_no_page_can_have_is_told_apart() {
+        // what [[Some Title]] and [[Нет такой страницы]] render to
+        assert!(impossible_address("Some%20Title"));
+        assert!(impossible_address(
+            "%D0%9D%D0%B5%D1%82%20%D1%81%D1%82%D1%80%D0%B0%D0%BD%D0%B8%D1%86%D1%8B"
+        ));
+        assert!(impossible_address("Bao"));
+        // a page address, missing or not, is the other check's business
+        assert!(!impossible_address("bao-the-whale"));
+        assert!(!impossible_address("template:infobox"));
+        // and nothing that leads somewhere else is touched
+        for href in [
+            "https://example.com/x",
+            "//evil.example/x",
+            "/ru/lore",
+            "#trivia",
+            "/search?q=x",
+            "image:bao.png",
+            "file:bao.png",
+            "category:vtubers",
+            "./category:vtubers",
+            "mailto:a@b",
+            "tel:+1",
+            "tg://user?id=1",
+            "javascript:alert(1)",
+            "",
+            "bao/edit",
+            "lore#arg",
+        ] {
+            assert!(!impossible_address(href), "{href}");
         }
     }
 

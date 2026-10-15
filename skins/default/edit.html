@@ -168,6 +168,17 @@
 <div class="editor-status" id="editor-status" aria-live="off" data-format="{{ t('editor.status', words='{words}', chars='{chars}', line='{line}', col='{col}') }}"></div>
 </div>
 <p class="field-note editor-media-note"><a href="{{ base }}/media" target="_blank" rel="noopener">{{ t("media.upload_link") }}</a> · <a href="{{ base }}/emotes" target="_blank" rel="noopener">{{ t("emotes.title") }}</a> <span class="editor-media-status" id="image-status" role="status"></span></p>
+{# Filled and shown by the editor script when a save would leave links to
+   pages that do not exist. #}
+<div class="redlink-warn" id="redlink-warn" role="alertdialog" aria-labelledby="redlink-warn-title" data-more="{{ t('editor.redlinks_more', n='{n}') }}" data-bad="{{ t('editor.redlinks_bad') }}" hidden>
+  <p class="redlink-warn-title" id="redlink-warn-title"><svg class="icon" aria-hidden="true"><use href="#i-link" /></svg>{{ t("editor.redlinks_title") }}</p>
+  <ul data-redlink-list></ul>
+  <p class="field-note">{{ t("editor.redlinks_note") }}</p>
+  <div class="redlink-warn-actions">
+    <button class="button-save" type="button" data-redlink-save>{{ t("editor.redlinks_save") }}</button>
+    <button class="button-preview" type="button" data-redlink-fix>{{ t("editor.redlinks_fix") }}</button>
+  </div>
+</div>
 <div class="form-actions">
 <button class="button-save" type="submit">{{ t("editor.save") }}</button>
 {% if not fixed_title or translation_of %}
@@ -728,6 +739,90 @@
     timer = setTimeout(livePreview, 400);
   });
   livePreview();
+
+  // Before a save, links to pages that do not exist are listed, so a typo in
+  // a [[link]] is caught. A red link can be meant (it asks for an article),
+  // so this only asks; "save anyway" goes on, and a failed check never stops
+  // a save.
+  var form = area.form;
+  var warn = document.getElementById("redlink-warn");
+  if (form && warn) {
+    var checked = null;
+    var save = function (submitter) {
+      checked = area.value;
+      if (form.requestSubmit) form.requestSubmit(submitter || undefined);
+      else form.submit();
+    };
+    warn.querySelector("[data-redlink-save]").addEventListener("click", function () {
+      warn.hidden = true;
+      save(form.querySelector(".form-actions .button-save"));
+    });
+    warn.querySelector("[data-redlink-fix]").addEventListener("click", function () {
+      warn.hidden = true;
+      area.focus();
+    });
+    form.addEventListener("submit", function (ev) {
+      var by = ev.submitter;
+      if (by && by.getAttribute("formaction")) return;
+      if (checked === area.value) return;
+      ev.preventDefault();
+      var body = new URLSearchParams();
+      body.set("title", "Preview");
+      body.set("body_md", area.value);
+      var slugField = form.elements.namedItem("slug");
+      if (slugField && slugField.value) body.set("slug", slugField.value);
+      fetch("/preview?fragment=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString()
+      }).then(function (res) {
+        if (!res.ok) throw new Error("preview " + res.status);
+        return res.text();
+      }).then(function (html) {
+        var doc = new DOMParser().parseFromString(html, "text/html");
+        var seen = {};
+        var links = [];
+        doc.querySelectorAll("a.wikilink-new").forEach(function (a) {
+          var href = a.getAttribute("href") || "";
+          if (seen[href]) return;
+          seen[href] = true;
+          links.push({ href: href, text: (a.textContent || href).trim() });
+        });
+        if (!links.length) return save(by);
+        var list = warn.querySelector("[data-redlink-list]");
+        list.textContent = "";
+        links.slice(0, 12).forEach(function (l) {
+          var li = document.createElement("li");
+          var a = document.createElement("a");
+          a.href = l.href;
+          a.target = "_blank";
+          a.rel = "noopener";
+          a.className = "wikilink-new";
+          a.textContent = l.text;
+          li.appendChild(a);
+          var address = l.href.replace(/^\.?\//, "");
+          try { address = decodeURIComponent(address); } catch (e) {}
+          // an address no page can have gets the reason; another one is
+          // shown only when it differs from the link's text
+          var note = /^[a-z0-9-]+(:[a-z0-9-]+)?$/.test(address) ? (address !== l.text ? address : "") : warn.dataset.bad;
+          if (note) {
+            var small = document.createElement("small");
+            small.textContent = " " + note;
+            li.appendChild(small);
+          }
+          list.appendChild(li);
+        });
+        if (links.length > 12) {
+          var more = document.createElement("li");
+          more.textContent = warn.dataset.more.replace("{n}", String(links.length - 12));
+          list.appendChild(more);
+        }
+        warn.hidden = false;
+        warn.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        warn.querySelector("[data-redlink-fix]").focus();
+      }).catch(function () { save(by); });
+    });
+  }
 })();
 </script>
 {% set editor_js = asset("scripts/editor.js") %}

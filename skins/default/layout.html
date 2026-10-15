@@ -320,6 +320,16 @@ html.menu-open { overflow: hidden; }
 .field-body { font-family: var(--font-mono); line-height: 1.5; }
 .button-save { background: var(--accent); color: var(--accent-ink); border: none; border-radius: var(--radius); padding: 0.7rem 1.6rem; font: inherit; font-weight: 700; cursor: pointer; }
 .form-actions { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+/* Links to missing pages, asked about before a save */
+.redlink-warn { margin: 0 0 0.9rem; padding: 0.8rem 1rem; border: 1px solid var(--link-new, #e5484d); border-left-width: 4px;
+  border-radius: var(--radius, 8px); background: color-mix(in srgb, var(--link-new, #e5484d) 7%, var(--surface)); }
+.redlink-warn[hidden] { display: none; }
+.redlink-warn-title { display: flex; align-items: center; gap: 0.45rem; margin: 0 0 0.4rem; font-weight: 650; }
+.redlink-warn ul { margin: 0 0 0.5rem; padding-left: 1.2rem; }
+.redlink-warn li { margin: 0.15rem 0; overflow-wrap: anywhere; }
+.redlink-warn li a { color: var(--link-new, #e5484d); text-decoration-style: dashed; }
+.redlink-warn li small { color: var(--muted); }
+.redlink-warn-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 /* Buttons written as links. `.content a` sets the link colour with a higher
  * specificity than a bare class, which painted the label in the accent colour
  * on an accent background: a button that looked empty. Naming the element in

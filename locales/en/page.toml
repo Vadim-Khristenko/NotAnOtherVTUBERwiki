@@ -24,3 +24,4 @@ missing_create = "Create the page"
 # A diagram drawn from a ```mermaid or ```dot block, and its folded source.
 diagram_alt = "Diagram"
 diagram_source = "Diagram source"
+bad_address = "No page can have this address: page addresses are Latin letters with dashes, like [[bao-the-whale|Bao]]"
