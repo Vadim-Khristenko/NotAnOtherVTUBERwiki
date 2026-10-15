@@ -12,3 +12,4 @@ license = "License"
 
 domains = "Our addresses:"
 domains_rest = "Sites at any other address are not us."
+api = "API"

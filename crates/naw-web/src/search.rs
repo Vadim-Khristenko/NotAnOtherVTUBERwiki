@@ -190,7 +190,7 @@ fn namespaces(scope: &str) -> &'static [&'static str] {
 }
 
 /// `q` as an ILIKE pattern piece: its wildcards match themselves.
-fn like(q: &str) -> String {
+pub(crate) fn like(q: &str) -> String {
     let mut out = String::with_capacity(q.len() + 2);
     for c in q.chars() {
         if matches!(c, '%' | '_' | '\\') {

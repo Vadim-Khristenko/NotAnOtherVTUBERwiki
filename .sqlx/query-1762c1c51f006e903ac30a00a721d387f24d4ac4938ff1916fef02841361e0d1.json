@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT slug FROM pages WHERE wiki_id = $1 AND namespace = 'main' AND deleted_at IS NULL\n             AND current_revision_id IS NOT NULL AND COALESCE(locale, '') = COALESCE($2, '')\n           ORDER BY updated_at DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1762c1c51f006e903ac30a00a721d387f24d4ac4938ff1916fef02841361e0d1"
+}

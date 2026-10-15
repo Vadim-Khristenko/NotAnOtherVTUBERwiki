@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.locale, p.title FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace::text = $2 AND p.slug = $3\n             AND COALESCE(p.locale, '') <> COALESCE($4, '')\n             AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n           ORDER BY p.locale",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "locale",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "locale"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "5f464ebddeb2bc2015b03703f62b7622482274ca5546ab36390fea12d17a4007"
+}

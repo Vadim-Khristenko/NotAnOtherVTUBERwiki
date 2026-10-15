@@ -1,0 +1,92 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH q AS (SELECT websearch_to_tsquery($2::text::regconfig, $3) AS tsq)\n           SELECT p.namespace::text AS \"namespace!\", p.slug, p.title, p.locale, p.updated_at,\n                  ((lower(p.title) = lower($3))::int * 5\n                   + (p.title ILIKE $4 || '%')::int * 2\n                   + ts_rank(p.search_vector, q.tsq) * 3\n                   + similarity(p.title, $3))::float8 AS \"score!\",\n                  ts_headline($2::text::regconfig, coalesce(c.body, ''), q.tsq,\n                    'MaxWords=30, MinWords=12, ShortWord=3, MaxFragments=1, StartSel=' || chr(57344) || ', StopSel=' || chr(57345)\n                  ) AS \"snippet!\"\n           FROM pages p\n           CROSS JOIN q\n           LEFT JOIN search_chunks c ON c.page_id = p.id AND c.chunk_no = 1\n           WHERE p.wiki_id = $1 AND p.namespace = 'main'\n             AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n             AND ($5 OR COALESCE(p.locale, '') = COALESCE($6, ''))\n             AND (p.title ILIKE '%' || $4 || '%' OR p.title % $3 OR p.search_vector @@ q.tsq)\n           ORDER BY 6 DESC, p.updated_at DESC\n           LIMIT $7 OFFSET $8",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "locale",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "locale"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "score!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "snippet!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false,
+      true,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "4eaa430282a81cda4bf3161d3dbbae59d15a15992cb0d30016f5594c434f163b"
+}

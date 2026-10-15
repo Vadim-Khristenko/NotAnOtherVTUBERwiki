@@ -16,6 +16,7 @@ mod account;
 mod admin;
 mod admin_user;
 mod alerts;
+mod api;
 mod audit;
 mod auth;
 pub mod bootstrap;
@@ -297,6 +298,16 @@ fn routes(state: AppState) -> Router {
         .route("/drafts/{id}/delete", post(drafts::discard))
         .route("/drafts/review/{id}/withdraw", post(review::withdraw))
         .route("/api/complete", get(complete::complete))
+        .route("/api", get(api::docs))
+        .route("/api/v1", get(api::index))
+        .route("/api/v1/openapi.json", get(api::openapi))
+        .route("/api/v1/pages", get(api::list))
+        .route("/api/v1/pages/{path}", get(api::page))
+        .route("/api/v1/pages/{path}/history", get(api::history))
+        .route("/api/v1/revisions/{id}", get(api::revision))
+        .route("/api/v1/search", get(api::search))
+        .route("/api/v1/recent", get(api::recent))
+        .route("/api/v1/categories/{key}", get(api::category))
         .route("/discord/interactions", post(discord::interactions))
         .route("/notifications", get(notify::list))
         .route("/watchlist", get(notify::watchlist))

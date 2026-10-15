@@ -1,0 +1,81 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.namespace::text AS \"namespace!\", p.slug, p.title, p.locale,\n                  COALESCE(pc.sort_key, p.title) AS \"sort!\", pc.name\n           FROM page_categories pc\n           JOIN pages p ON p.id = pc.page_id\n           WHERE pc.wiki_id = $1 AND pc.category = $2\n             AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n             AND COALESCE(pc.sort_key, p.title) > $3\n           ORDER BY 5, p.slug\n           LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "locale",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "locale"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "sort!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "page_categories",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false,
+      true,
+      null,
+      false
+    ]
+  },
+  "hash": "6c10cff29e7b57fbfdf6ddebc0a58deffacb483863f82c9b15f82a12f327247a"
+}

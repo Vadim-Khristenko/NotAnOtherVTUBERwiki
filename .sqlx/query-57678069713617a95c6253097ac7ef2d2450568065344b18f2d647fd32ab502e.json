@@ -1,0 +1,163 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.created_at, r.summary, r.is_minor, r.body_md, r.imported_author, r.imported_from,\n                  p.namespace::text AS \"namespace!\", p.slug, p.title, p.locale, (p.current_revision_id = r.id) AS \"current!\",\n                  u.username AS \"username?\", u.display_name AS \"display_name?\"\n           FROM revisions r\n           JOIN pages p ON p.id = r.page_id\n           LEFT JOIN users u ON u.id = r.author_id\n           WHERE r.id = $1 AND p.wiki_id = $2 AND p.deleted_at IS NULL AND r.review_status = 'accepted'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "summary",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "is_minor",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "is_minor"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "body_md",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "body_md"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "imported_author",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "imported_author"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "imported_from",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "imported_from"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "namespace!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "locale",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "locale"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "current!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "username?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      null,
+      false,
+      false,
+      true,
+      null,
+      true,
+      true
+    ]
+  },
+  "hash": "57678069713617a95c6253097ac7ef2d2450568065344b18f2d647fd32ab502e"
+}

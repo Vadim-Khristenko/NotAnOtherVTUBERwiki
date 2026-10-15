@@ -1,0 +1,126 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.created_at, r.summary, r.is_minor, r.bytes AS \"bytes!\", r.imported_author, r.imported_from,\n                  u.username AS \"username?\", u.display_name AS \"display_name?\"\n           FROM revisions r LEFT JOIN users u ON u.id = r.author_id\n           WHERE r.page_id = $1 AND r.review_status = 'accepted'\n             AND ($2::timestamptz IS NULL OR r.created_at < $2)\n           ORDER BY r.created_at DESC\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "summary",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "is_minor",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "is_minor"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "bytes!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "imported_author",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "imported_author"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "imported_from",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "imported_from"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "username?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "6262dd0a7be10724d190d76208e01c71a8bb08a12beb90f84d073cfcaa1ac3c6"
+}

@@ -1683,6 +1683,26 @@ details[open] > summary .eb-chevron { transform: rotate(180deg); }
 
 /* Reports: the form, and the queue as cards, which read on a phone too. */
 .lede { font-size: 1.05rem; color: var(--ink-soft); max-width: 44rem; }
+/* The API page */
+.api-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.8rem; margin: 1.2rem 0 1.6rem; }
+.api-facts > div { display: grid; gap: 0.25rem; padding: 0.85rem 1rem; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--bg-elevated); }
+.api-facts strong { font-size: 1rem; }
+.api-facts span { color: var(--ink-soft); font-size: 0.92rem; }
+.api-links { columns: 2 16rem; }
+.api-links a { font-family: var(--font-mono); font-size: 0.9em; overflow-wrap: anywhere; }
+.api-endpoints { border-collapse: collapse; width: 100%; }
+.api-endpoints :is(th, td) { border: 1px solid var(--line); padding: 0.45rem 0.7rem; text-align: left; vertical-align: top; }
+.api-endpoints thead { background: var(--bg-elevated); }
+.api-endpoints td:first-child code { white-space: nowrap; }
+.api-endpoints td:last-child code { display: inline-block; margin: 0 0.2rem 0.2rem 0; }
+@media (max-width: 40rem) {
+  .api-endpoints thead { display: none; }
+  .api-endpoints, .api-endpoints tbody, .api-endpoints tr, .api-endpoints td { display: block; }
+  .api-endpoints tr { border: 1px solid var(--line); border-radius: var(--radius, 8px); margin-bottom: 0.7rem; padding: 0.6rem 0.8rem; background: var(--bg-elevated); }
+  .api-endpoints td { border: 0; padding: 0.15rem 0; }
+  .api-endpoints td:first-child code { white-space: normal; overflow-wrap: anywhere; font-weight: 650; }
+  .api-endpoints td:empty { display: none; }
+}
 .report-form { max-width: 48rem; }
 .report-form fieldset { margin: 0 0 var(--s4); padding: 0; border: none; }
 .report-form legend { font-weight: 700; margin-bottom: var(--s2); }

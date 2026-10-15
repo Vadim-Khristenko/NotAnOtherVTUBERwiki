@@ -1,0 +1,91 @@
+{% extends "layout.html" %}
+{#
+  The public API explained for people: what it gives, how to call it, how
+  lists page and what an error looks like. Examples use a real page of this
+  wiki (api_sample), so every link works as is.
+#}
+{% block body %}
+<h1>{{ t("api.title") }}</h1>
+<p class="lede">{{ t("api.lede") }}</p>
+
+<div class="api-facts" role="list">
+  <div role="listitem"><strong>{{ t("api.fact_read") }}</strong><span>{{ t("api.fact_read_note") }}</span></div>
+  <div role="listitem"><strong>{{ t("api.fact_key") }}</strong><span>{{ t("api.fact_key_note") }}</span></div>
+  <div role="listitem"><strong>{{ t("api.fact_cors") }}</strong><span>{{ t("api.fact_cors_note") }}</span></div>
+</div>
+
+<h2>{{ t("api.base") }}</h2>
+<pre><code>{{ api_base }}</code></pre>
+<p>{{ t("api.base_note") }} <a href="{{ api_base }}/openapi.json">openapi.json</a></p>
+
+<h2>{{ t("api.endpoints") }}</h2>
+<table class="api-endpoints">
+  <thead><tr><th>{{ t("api.col_path") }}</th><th>{{ t("api.col_what") }}</th><th>{{ t("api.col_params") }}</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /</code></td><td>{{ t("api.ep_index") }}</td><td></td></tr>
+    <tr><td><code>GET /pages</code></td><td>{{ t("api.ep_pages") }}</td><td><code>ns</code> <code>locale</code> <code>limit</code> <code>after</code></td></tr>
+    <tr><td><code>GET /pages/{path}</code></td><td>{{ t("api.ep_page") }}</td><td><code>locale</code> <code>format=markdown|html|both</code></td></tr>
+    <tr><td><code>GET /pages/{path}/history</code></td><td>{{ t("api.ep_history") }}</td><td><code>locale</code> <code>limit</code> <code>before</code></td></tr>
+    <tr><td><code>GET /revisions/{id}</code></td><td>{{ t("api.ep_revision") }}</td><td></td></tr>
+    <tr><td><code>GET /search</code></td><td>{{ t("api.ep_search") }}</td><td><code>q</code> <code>locale</code> <code>all</code> <code>limit</code> <code>offset</code></td></tr>
+    <tr><td><code>GET /recent</code></td><td>{{ t("api.ep_recent") }}</td><td><code>locale</code> <code>limit</code> <code>before</code></td></tr>
+    <tr><td><code>GET /categories/{key}</code></td><td>{{ t("api.ep_category") }}</td><td><code>limit</code> <code>after</code></td></tr>
+  </tbody>
+</table>
+
+<h2>{{ t("api.try") }}</h2>
+<p>{{ t("api.try_note") }}</p>
+<ul class="api-links">
+  <li><a href="{{ api_base }}/pages/{{ api_sample }}">/pages/{{ api_sample }}</a></li>
+  <li><a href="{{ api_base }}/pages/{{ api_sample }}?format=html">/pages/{{ api_sample }}?format=html</a></li>
+  <li><a href="{{ api_base }}/pages/{{ api_sample }}/history?limit=5">/pages/{{ api_sample }}/history?limit=5</a></li>
+  <li><a href="{{ api_base }}/search?q={{ api_sample }}">/search?q={{ api_sample }}</a></li>
+  <li><a href="{{ api_base }}/recent?limit=10">/recent?limit=10</a></li>
+</ul>
+
+<h3>curl</h3>
+<pre><code>curl -s "{{ api_base }}/pages/{{ api_sample }}" | jq '.title, .revision.created_at'</code></pre>
+<h3>JavaScript</h3>
+<pre><code>const res = await fetch("{{ api_base }}/search?q=" + encodeURIComponent("{{ api_sample }}"));
+const { items } = await res.json();
+for (const hit of items) console.log(hit.title, hit.url);</code></pre>
+
+<h2>{{ t("api.answer") }}</h2>
+<p>{{ t("api.answer_note") }}</p>
+<pre><code>{
+  "path": "{{ api_sample }}",
+  "title": "…",
+  "locale": "{{ lang }}",
+  "url": "…",
+  "revision": { "id": "…", "created_at": "…", "author": { "name": "…" } },
+  "categories": [{ "key": "…", "name": "…", "url": "…" }],
+  "translations": [{ "locale": "…", "title": "…", "url": "…" }],
+  "markdown": "…",
+  "license": "{{ api_license }}"
+}</code></pre>
+
+<h2>{{ t("api.paging") }}</h2>
+<p>{{ t("api.paging_note") }}</p>
+<pre><code>{ "items": [ … ], "next": "…" }
+GET /pages?after=…
+GET /pages/{path}/history?before=…</code></pre>
+
+<h2>{{ t("api.errors") }}</h2>
+<p>{{ t("api.errors_note") }}</p>
+<pre><code>{ "error": { "code": "not_found", "message": "no such page" } }</code></pre>
+<table>
+  <thead><tr><th>HTTP</th><th>{{ t("api.col_when") }}</th></tr></thead>
+  <tbody>
+    <tr><td><code>400</code></td><td>{{ t("api.err_400") }}</td></tr>
+    <tr><td><code>404</code></td><td>{{ t("api.err_404") }}</td></tr>
+    <tr><td><code>429</code></td><td>{{ t("api.err_429") }}</td></tr>
+  </tbody>
+</table>
+
+<h2>{{ t("api.rules") }}</h2>
+<ul>
+  <li>{{ t("api.rule_license", url=api_license) }}</li>
+  <li>{{ t("api.rule_cache") }}</li>
+  <li>{{ t("api.rule_fan") }}</li>
+</ul>
+{% endblock %}

@@ -73,6 +73,8 @@ fn is_exempt(path: &str) -> bool {
 fn is_heavy(path: &str) -> bool {
     path == "/search"
         || path == "/media"
+        || path == "/api/v1/search"
+        || path == "/api/v1/recent"
         || path.ends_with("/history")
         || path.ends_with("/diff")
         || path.contains("/rev/")

@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.created_at, r.summary, r.is_minor, r.imported_author, r.imported_from,\n                  u.username AS \"username?\", u.display_name AS \"display_name?\"\n           FROM revisions r LEFT JOIN users u ON u.id = r.author_id\n           WHERE r.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "summary",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "is_minor",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "is_minor"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "imported_author",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "imported_author"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "imported_from",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "revisions",
+            "name": "imported_from"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "username?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3d313e563f2b87ac14cf592a95e8039fe8e45f6236a704ca78c79a609785b736"
+}

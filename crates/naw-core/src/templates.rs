@@ -54,6 +54,7 @@ const TEMPLATES: &[&str] = &[
     "category.html",
     "_categories.html",
     "admin.html",
+    "api.html",
 ];
 
 /// Fills templates a custom skin does not ship.

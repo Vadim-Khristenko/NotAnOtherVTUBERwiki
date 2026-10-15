@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.slug, p.title, p.locale, p.updated_at, p.current_revision_id AS \"revision!\"\n           FROM pages p\n           WHERE p.wiki_id = $1 AND p.namespace::text = $2\n             AND COALESCE(p.locale, '') = COALESCE($3, '')\n             AND p.deleted_at IS NULL AND p.current_revision_id IS NOT NULL\n             AND p.slug > $4\n           ORDER BY p.slug\n           LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "locale",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "locale"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "revision!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "pages",
+            "name": "current_revision_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "7f020e1c170b07683637e7de4023e8325ce94d79e33fbd71a4a50029f60aaa7a"
+}
