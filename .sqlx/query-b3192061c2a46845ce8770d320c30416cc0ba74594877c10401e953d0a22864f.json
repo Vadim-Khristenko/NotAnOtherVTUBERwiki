@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.title, p.slug, p.namespace::text AS \"namespace!\", count(*) AS \"edits!\"\n           FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND r.review_status = 'accepted'\n             AND r.created_at > now() - interval '30 days'\n           GROUP BY p.id ORDER BY 4 DESC, p.title LIMIT 10",
+  "query": "SELECT p.title, p.slug, p.namespace::text AS \"namespace!\",\n                  COALESCE(p.locale, '') AS \"locale!\", count(*) AS \"edits!\"\n           FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND r.review_status = 'accepted'\n             AND r.created_at > now() - interval '30 days'\n           GROUP BY p.id ORDER BY 4 DESC, p.title LIMIT 10",
   "describe": {
     "columns": [
       {
@@ -33,6 +33,12 @@
       },
       {
         "ordinal": 3,
+        "name": "locale!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
         "name": "edits!",
         "type_info": "Int8",
         "origin": "Expression"
@@ -47,8 +53,9 @@
       false,
       false,
       null,
+      null,
       null
     ]
   },
-  "hash": "93789fb2e411b901028aca5be8824f813e8676c7e5353f9c535616e1ece12b6d"
+  "hash": "b3192061c2a46845ce8770d320c30416cc0ba74594877c10401e953d0a22864f"
 }

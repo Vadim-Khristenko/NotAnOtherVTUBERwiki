@@ -295,8 +295,13 @@ fn all_pages_of(ctx: &Ctx, name: &str) -> String {
 
 /// Where a page of any namespace lives.
 fn href_of(ctx: &Ctx, namespace: &str, slug: &str) -> String {
+    href_in(ctx, "", namespace, slug)
+}
+
+/// [`href_of`] for a page stored in `locale`, in a list of every language.
+fn href_in(ctx: &Ctx, locale: &str, namespace: &str, slug: &str) -> String {
     match pages::path_of(namespace, slug) {
-        Some(path) => ctx.link(&format!("/{path}")),
+        Some(path) => ctx.link_in(locale, &format!("/{path}")),
         None => format!("/user/{slug}"),
     }
 }
@@ -449,25 +454,28 @@ async fn recent_changes(
     let items: Vec<minijinja::Value> = rows
         .into_iter()
         .map(|row| {
-            let href = href_of(ctx, &row.namespace, &row.slug);
+            // Every link names the page's own language: the list has them all,
+            // and a Russian revision does not exist under the English page.
+            let link = |path: String| ctx.link_in(&row.locale, &path);
+            let href = href_in(ctx, &row.locale, &row.namespace, &row.slug);
             let delta = row.bytes - row.prev_bytes.unwrap_or(0);
             // A diff lives under the page's own path, which for a profile is not here.
             let path = pages::path_of(&row.namespace, &row.slug);
             let diff = match (&path, row.prev_id) {
                 (Some(path), Some(prev)) => {
-                    Some(ctx.link(&format!("/{path}/diff?from={prev}&to={}", row.id)))
+                    Some(link(format!("/{path}/diff?from={prev}&to={}", row.id)))
                 }
                 _ => None,
             };
             // The topic about this change; with several, the page's topics.
             let talk = match (&path, row.thread) {
                 (Some(path), Some(thread)) if row.threads == 1 => {
-                    Some(ctx.link(&format!("/{path}/talk/{thread}")))
+                    Some(link(format!("/{path}/talk/{thread}")))
                 }
-                (Some(path), Some(_)) => Some(ctx.link(&format!("/{path}/talk"))),
+                (Some(path), Some(_)) => Some(link(format!("/{path}/talk"))),
                 _ => None,
             };
-            let history = path.map(|path| ctx.link(&format!("/{path}/history")));
+            let history = path.map(|path| link(format!("/{path}/history")));
             minijinja::context! {
                 title => row.title,
                 href => href,
@@ -913,7 +921,8 @@ async fn statistics(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, App
         })
         .collect::<Vec<_>>();
     let busiest = sqlx::query!(
-        r#"SELECT p.title, p.slug, p.namespace::text AS "namespace!", count(*) AS "edits!"
+        r#"SELECT p.title, p.slug, p.namespace::text AS "namespace!",
+                  COALESCE(p.locale, '') AS "locale!", count(*) AS "edits!"
            FROM revisions r JOIN pages p ON p.id = r.page_id
            WHERE p.wiki_id = $1 AND p.deleted_at IS NULL AND r.review_status = 'accepted'
              AND r.created_at > now() - interval '30 days'
@@ -927,7 +936,7 @@ async fn statistics(state: &AppState, ctx: &Ctx) -> Result<minijinja::Value, App
         .into_iter()
         .map(|r| {
             minijinja::context! {
-                href => href_of(ctx, &r.namespace, &r.slug),
+                href => href_in(ctx, &r.locale, &r.namespace, &r.slug),
                 name => r.title,
                 edits => r.edits,
                 share => share(r.edits, top),

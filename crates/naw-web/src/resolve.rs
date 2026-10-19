@@ -158,6 +158,17 @@ impl Ctx {
         }
     }
 
+    /// A local path on a page stored in `locale`, which a list of pages in
+    /// every language (recent changes) must not take from the request:
+    /// a Russian edit seen from English links to `/ru/...`. A page with no
+    /// language (a template) stays in the request's language.
+    pub fn link_in(&self, locale: &str, path: &str) -> String {
+        match other_locale(locale, &self.content_locale) {
+            Some(locale) => self.link_for(locale, path),
+            None => self.link(path),
+        }
+    }
+
     /// The prefix [`Ctx::link`] adds: "" or "/ru".
     pub fn base(&self) -> String {
         if self.locale_via == LocaleVia::Path && self.content_locale != self.wiki.default_locale {
@@ -512,10 +523,24 @@ pub fn resolve_wiki<'a>(host: Option<&str>, wikis: &'a [WikiRef]) -> Option<&'a 
     wikis.iter().find(|w| w.is_default)
 }
 
+/// The page's language when a link to it must name it: set, and not the
+/// language the request is already in.
+fn other_locale<'a>(page: &'a str, here: &str) -> Option<&'a str> {
+    (!page.is_empty() && page != here).then_some(page)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_page_in_another_language_links_in_its_own() {
+        assert_eq!(other_locale("ru", "en"), Some("ru"));
+        assert_eq!(other_locale("en", "ru"), Some("en"));
+        assert_eq!(other_locale("en", "en"), None, "the request's own language");
+        assert_eq!(other_locale("", "ru"), None, "a template has no language");
+    }
 
     #[test]
     fn absolute_links_start_at_the_wiki_domain() {
