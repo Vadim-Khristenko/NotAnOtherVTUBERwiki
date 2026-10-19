@@ -445,6 +445,8 @@ pub async fn page(
             "author": author(rev.username, rev.display_name, rev.imported_author, rev.imported_from),
         },
         "categories": categories,
+        // the site shows such a page behind a warning first
+        "not_for_all_ages": crate::nfaa::marked(&rendered.categories),
         "translations": translations.iter().map(|t| {
             let loc = t.locale.clone().unwrap_or_default();
             json!({ "locale": t.locale, "title": t.title, "url": page_url(&ctx, &loc, &path) })

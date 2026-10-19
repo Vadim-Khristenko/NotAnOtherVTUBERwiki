@@ -108,6 +108,24 @@
   <span>{{ t("translate.stale", source=stale.source_name) }}
   <a href="{{ stale.diff_href }}">{{ t("translate.stale_diff") }}</a> · <a href="{{ stale.source_href }}">{{ t("translate.stale_source") }}</a></span></p>
 {% endif %}
+{% if nfaa_gate is defined and nfaa_gate %}
+{# "Not for all ages": the warning stands in for the text until the reader
+   continues; their choice is kept for a month (nfaa.rs). #}
+<section class="nfaa-gate" role="alertdialog" aria-labelledby="nfaa-gate-title" aria-describedby="nfaa-gate-text">
+  <span class="nfaa-mark" aria-hidden="true">NFAA</span>
+  <p class="nfaa-page">{{ title }}</p>
+  <h1 id="nfaa-gate-title">{{ t("page.nfaa_title") }}</h1>
+  <p id="nfaa-gate-text">{{ t("page.nfaa_body") }}</p>
+  <div class="nfaa-actions">
+    <a class="nfaa-go" href="{{ nfaa_accept }}" rel="nofollow">{{ t("page.nfaa_continue") }}</a>
+    <a class="nfaa-back" href="{{ base }}/">{{ t("page.nfaa_back") }}</a>
+  </div>
+  <p class="field-note">{{ t("page.nfaa_note") }}</p>
+</section>
+{% else %}
+{% if nfaa is defined and nfaa %}
+<p class="notice nfaa-notice" role="note"><span class="nfaa-mark" aria-hidden="true">NFAA</span><span>{{ t("page.nfaa_notice") }}</span></p>
+{% endif %}
 {# An article carries its heading in the text; a template page gets one. #}
 {% if template is defined and template %}<h1 class="template-heading">{% if template.starter %}{{ t("template.page_heading", name=title) }}{% else %}{{ t("template.heading", name=title) }}{% endif %}</h1>{% endif %}
 {% if template is defined and template and template.starter %}
@@ -121,6 +139,7 @@
 <div lang="{{ content_lang }}">{{ body | safe }}</div>
 {% else %}
 {{ body | safe }}
+{% endif %}
 {% endif %}
 {% if about is defined and about %}{% include "_about_facts.html" %}{% endif %}
 {% if template is defined and template %}

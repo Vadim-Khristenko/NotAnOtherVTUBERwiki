@@ -839,6 +839,9 @@ pub struct PageQuery {
     /// After an edit that went to the review queue, to say so.
     #[serde(default)]
     pending: Option<String>,
+    /// `yes`: the reader continues past a "not for all ages" warning.
+    #[serde(default)]
+    nfaa: Option<String>,
     /// The old address a reader came from, after a page was renamed.
     #[serde(default)]
     redirected: Option<String>,
@@ -1018,6 +1021,13 @@ pub async fn page(
     } = cached_body_full(&state, &ctx, &slug, &found.body_md).await?;
     // A template edit can change a page's categories without a save.
     crate::categories::sync(&state.db, ctx.wiki.id, found.id, &categories).await;
+    // "Not for all ages": a warning first, until the reader continues once.
+    let nfaa = crate::nfaa::marked(&categories);
+    let page_href = ctx.link(&format!("/{slug}"));
+    if nfaa && query.nfaa.as_deref() == Some("yes") {
+        return Ok(crate::nfaa::accept(&page_href));
+    }
+    let nfaa_gate = nfaa && !crate::nfaa::accepted(&headers);
     // A page template's categories are for the pages started from it.
     let category_links = if split_path(&slug).0 == "page_template" {
         Vec::new()
@@ -1182,6 +1192,9 @@ pub async fn page(
                 slug => slug.clone(),
                 template => template,
                 categories => category_links,
+                nfaa => nfaa,
+                nfaa_gate => nfaa_gate,
+                nfaa_accept => format!("{page_href}?nfaa=yes"),
                 review => review,
                 just_sent => query.pending.is_some(),
                 redirected_from => query
@@ -2639,6 +2652,7 @@ mod tests {
             ns: None,
             all: None,
             pending: None,
+            nfaa: None,
             redirected: None,
             days: None,
             hide_minor: None,

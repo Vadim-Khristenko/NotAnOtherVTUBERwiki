@@ -52,6 +52,7 @@ mod monitoring;
 mod moving;
 mod net;
 mod newcomer;
+mod nfaa;
 mod notify;
 mod observe;
 mod pages;
