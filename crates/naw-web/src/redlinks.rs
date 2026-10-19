@@ -140,6 +140,8 @@ fn page_target(href: &str) -> Option<(String, String)> {
         return None;
     }
     match crate::pages::split_path(path) {
+        // `/media`, `/emotes` and the rest are the engine's own pages
+        ("main", slug) if crate::pages::RESERVED.contains(&slug) => None,
         (namespace @ ("main" | "template" | "page_template" | "module"), slug) => {
             Some((namespace.to_string(), slug.to_string()))
         }
@@ -167,6 +169,10 @@ mod tests {
         assert_eq!(t("image:bao.png"), None);
         assert_eq!(t("/search?q=x"), None);
         assert_eq!(t("Bao the Whale"), None);
+        // the engine's own pages are never missing articles
+        assert_eq!(t("/media"), None);
+        assert_eq!(t("/emotes"), None);
+        assert_eq!(t("search"), None);
     }
 
     #[test]
