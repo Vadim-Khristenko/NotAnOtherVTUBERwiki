@@ -12,6 +12,11 @@ ignore = [
   # engine uses only to verify provider ID tokens against public keys, so the
   # vulnerable path never runs. No fixed release exists; revisit when one does.
   { id = "RUSTSEC-2023-0071", reason = "only public key verification is used" },
+  # Timing leaks in crypto-bigint arithmetic on secret integers. It arrives
+  # through jsonwebtoken's p256 and p384, where the engine only verifies
+  # signatures: key, signature and token are all public. The fix is in 0.7.6,
+  # which elliptic-curve 0.13 cannot take; revisit when jsonwebtoken moves on.
+  { id = "RUSTSEC-2026-0387", reason = "only public key verification is used" },
 ]
 
 [licenses]
