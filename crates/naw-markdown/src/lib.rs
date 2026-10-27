@@ -1524,25 +1524,67 @@ fn postprocess_inline_spans(html: &str) -> String {
         Pass::Kbd,
         Pass::Emoji,
     ] {
+        // A pass changes nothing where its delimiter never appears.
+        let trigger = match pass {
+            Pass::Delimited(d, ..) => d,
+            Pass::MarkColor => "==",
+            Pass::Kbd => "((",
+            Pass::Emoji => ":",
+        };
+        if !current.contains(trigger) {
+            continue;
+        }
         let segments = split_protected_html(&current);
         let mut next = String::with_capacity(current.len());
         for seg in segments {
-            if seg.protected {
+            if seg.protected || !seg.text.contains(trigger) {
                 next.push_str(seg.text);
             } else {
-                match pass {
-                    Pass::Delimited(d, open, close) => {
-                        next.push_str(&replace_delimited(seg.text, d, open, close));
-                    }
-                    Pass::MarkColor => next.push_str(&replace_mark_color(seg.text)),
-                    Pass::Kbd => next.push_str(&replace_kbd(seg.text)),
-                    Pass::Emoji => next.push_str(&replace_emoji(seg.text)),
-                }
+                on_lines_with(seg.text, trigger, &mut next, |line| match pass {
+                    Pass::Delimited(d, open, close) => replace_delimited(line, d, open, close),
+                    Pass::MarkColor => replace_mark_color(line),
+                    Pass::Kbd => replace_kbd(line),
+                    Pass::Emoji => replace_emoji(line),
+                });
             }
         }
         current = next;
     }
     current
+}
+
+/// Runs `pass` on each line of `text` that holds `trigger` and copies the
+/// rest. No inline span crosses a line break, and a break inside a tag never
+/// ends a line here, so the result matches one run over the whole text.
+fn on_lines_with(text: &str, trigger: &str, out: &mut String, pass: impl Fn(&str) -> String) {
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'<' => {
+                i = text[i..].find('>').map_or(bytes.len(), |p| i + p + 1);
+                continue;
+            }
+            b'\n' => {
+                let line = &text[start..=i];
+                if line.contains(trigger) {
+                    out.push_str(&pass(line));
+                } else {
+                    out.push_str(line);
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let line = &text[start..];
+    if line.contains(trigger) {
+        out.push_str(&pass(line));
+    } else {
+        out.push_str(line);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1649,8 +1691,10 @@ fn split_protected_html(html: &str) -> Vec<HtmlSegment<'_>> {
             i += len;
             normal_start = i;
         } else {
-            // Step by character: `&html[i..]` must stay on a char boundary.
-            i += rest.chars().next().map_or(1, char::len_utf8);
+            // Only a tag starts a guard, so jump to the next `<`, past this
+            // character first so a letter never splits.
+            let step = rest.chars().next().map_or(1, char::len_utf8);
+            i += step + rest[step..].find('<').unwrap_or(rest.len() - step);
         }
     }
     if normal_start < html.len() {
@@ -2045,11 +2089,11 @@ fn dedupe_ids(html: &str) -> String {
             out.push_str(&rest[..val_start]);
             out.push_str(&new_id);
             let context = &rest[..pos];
-            let tail = if context.len() > 64 {
-                &context[context.len() - 64..]
-            } else {
-                context
-            };
+            let mut from = context.len().saturating_sub(64);
+            while !context.is_char_boundary(from) {
+                from -= 1;
+            }
+            let tail = &context[from..];
             if tail.contains("<div class=\"footnote-definition\"") {
                 renames.push((id.to_string(), new_id));
             }
@@ -2479,7 +2523,7 @@ pub fn slugify(text: &str) -> String {
 
 /// Render pipeline version, part of the `render_cache` key. Bump it whenever
 /// the output changes for the same input.
-pub const RENDERER_VERSION: i32 = 29;
+pub const RENDERER_VERSION: i32 = 30;
 
 /// A rendered body fragment and its cache key.
 pub struct RenderedBody {
@@ -3398,6 +3442,50 @@ mod non_ascii {
         );
         assert!(html.contains("Примечание на русском"), "{html}");
         assert!(html.contains("footnote-backref"), "{html}");
+    }
+
+    #[test]
+    fn repeated_id_after_cyrillic_text() {
+        // Both parities, so the 64-byte look-back lands inside a letter once.
+        for pad in ["", "x"] {
+            let html = format!(
+                "<h2 id=\"a\">A</h2><p>{pad}{}</p><h2 id=\"a\">A</h2>",
+                "я".repeat(40)
+            );
+            assert!(super::dedupe_ids(&html).contains("id=\"a-2\""));
+        }
+    }
+
+    #[test]
+    fn line_by_line_passes_match_one_run() {
+        let inputs = [
+            "<a title=\"x\n==y\">==a==</a>\n==b==\n",
+            "||а\n||б|| ((Ctrl))\n:fire: x:fire:\n<b\n>==c==",
+            "==red|красный== ++под++\n((Alt\n+F4)) ||спойлер||",
+        ];
+        type Pass = (&'static str, fn(&str) -> String);
+        let passes: [Pass; 4] = [
+            ("||", |s| super::replace_delimited(s, "||", "<s>", "</s>")),
+            ("==", super::replace_mark_color),
+            ("((", super::replace_kbd),
+            (":", super::replace_emoji),
+        ];
+        for input in inputs {
+            for (trigger, pass) in passes {
+                let mut split = String::new();
+                super::on_lines_with(input, trigger, &mut split, pass);
+                assert_eq!(split, pass(input), "{trigger} on {input:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn cyrillic_right_after_code() {
+        let html = render_html("`код`Привет ==метка== и `ещё`ёж ||тайна||");
+        assert!(html.contains("<code>код</code>Привет"), "{html}");
+        assert!(html.contains("<mark>метка</mark>"), "{html}");
+        assert!(html.contains("<code>ещё</code>ёж"), "{html}");
+        assert!(html.contains("class=\"spoiler\""), "{html}");
     }
 
     #[test]
