@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.second_factor_bot, c.secret_enc AS \"secret_enc?\", c.confirmed_at,\n                  (EXISTS (SELECT 1 FROM telegram_links t WHERE t.user_id = u.id)\n                   OR EXISTS (SELECT 1 FROM discord_links d WHERE d.user_id = u.id)) AS \"chat!\",\n                  (SELECT count(*) FROM recovery_codes r\n                   WHERE r.user_id = u.id AND r.used_at IS NULL) AS \"codes_left!\"\n           FROM users u LEFT JOIN totp_credentials c ON c.user_id = u.id\n           WHERE u.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "second_factor_bot",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "second_factor_bot"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "secret_enc?",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "totp_credentials",
+            "name": "secret_enc"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "confirmed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "totp_credentials",
+            "name": "confirmed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "chat!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "codes_left!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "93c21b199cd1ca9a585f79b00863859557f5592429b6487aa1c91f9fa132ec1f"
+}

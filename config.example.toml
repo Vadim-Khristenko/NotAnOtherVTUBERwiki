@@ -69,6 +69,12 @@ reserved_usernames = ["vai", "snacker", "filian", "admin", "moderator", "wiki", 
 # Steam uses an API key for the profile lookup only.
 # steam_api_key = ""
 
+# A server secret of at least 32 characters (`openssl rand -hex 32`) that
+# encrypts the keys of two-step sign-in in the database. Without it the step
+# cannot be turned on. Losing or changing it locks out everyone who has the
+# step on until an admin turns it off for them. Or set NAW_SECRET_KEY.
+# secret_key = ""
+
 # Outbound mail: "log" prints to the log (and /dev/mailbox in dev),
 # "smtp" sends through smtp_url (Mailpit in the compose stack).
 [auth.mail]

@@ -103,6 +103,13 @@ minijinja = "2.24.0"
 # second dependency tree and the history view diffs by line.
 similar = { version = "3.2.0", default-features = false, features = ["std", "text"] }
 sha2 = "0.10"
+# Two-factor codes (TOTP, RFC 6238) are an HMAC-SHA1, as authenticator apps
+# expect, and the setup page shows the key as a QR code drawn as SVG.
+hmac = "0.13"
+sha1 = "0.11"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+# Two-step keys are kept encrypted under the server's `auth.secret_key`.
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
 hex = "0.4"
 object_store = { version = "0.14.1", features = ["fs"] }
 pulldown-cmark = { version = "0.13.6", default-features = false, features = [

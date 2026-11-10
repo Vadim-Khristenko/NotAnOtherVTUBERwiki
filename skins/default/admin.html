@@ -1024,6 +1024,9 @@
         {% if s_sessions > 0 %}
         <form method="post" action="/admin/user/{{ u_name }}/end-sessions"><button class="button-preview" type="submit">{{ t("admin.au_end_sessions") }}</button></form>
         {% endif %}
+        {% if u_two_factor %}
+        <form method="post" action="/admin/user/{{ u_name }}/two-factor/off"><button class="button-preview" type="submit" title="{{ t('admin.au_two_factor_off_note') }}">{{ t("admin.au_two_factor_off") }}</button></form>
+        {% endif %}
         {% if u_avatar %}
         <form method="post" action="/admin/user/{{ u_name }}/avatar/remove"><button class="button-preview" type="submit">{{ t("admin.au_remove_avatar") }}</button></form>
         {% endif %}

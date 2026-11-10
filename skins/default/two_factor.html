@@ -1,0 +1,133 @@
+{% extends "layout.html" %}
+{#
+  Two-step sign-in, one template for every step.
+
+  `mode`  "login"     the code a fresh session owes; `next` is where it goes,
+                      `app` and `bot` the ways the account has, `sent` when the
+                      bot just sent a code
+          "overview"  the settings: `app_since` (a date, or none), whether an
+                      app can be set up here (`app_possible`), the bot way
+                      (`bot`, `bot_works`, `bot_possible`, `chat` linked),
+                      `any_on`, `codes_left`, `sent`
+          "setup"     a new app key: `qr` (an SVG) and `key` (the same as text)
+          "codes"     fresh recovery `codes`, shown this once; `first` when
+                      the step was just turned on
+  `error`, `done`  finished messages, never text from the request
+#}
+{% macro code_field(label, numeric=false) %}
+<label class="field">{{ label }}
+  <input class="field-input two-factor-code" name="code" required maxlength="32" autocomplete="one-time-code"{% if numeric %} inputmode="numeric"{% endif %} />
+</label>
+{% endmacro %}
+{% block body %}
+<div class="auth-card two-factor">
+  <h1>{{ t("twofactor.title") }}</h1>
+  {% if error %}<p class="notice notice-warn" role="alert">{{ error }}</p>{% endif %}
+  {% if done %}<p class="notice notice-ok" role="status">{{ done }}</p>{% endif %}
+  {% if sent %}<p class="notice notice-ok" role="status">{{ t("twofactor.sent") }}</p>{% endif %}
+
+  {% if mode == "login" %}
+  <p class="auth-lede">{% if app and bot %}{{ t("twofactor.login_lede_both") }}{% elif bot %}{{ t("twofactor.login_lede_bot") }}{% else %}{{ t("twofactor.login_lede") }}{% endif %}</p>
+  <form class="auth-form" method="post" action="/login/code">
+    <input type="hidden" name="next" value="{{ next }}" />
+    <label class="field">{{ t("twofactor.code") }}
+      <input class="field-input two-factor-code" name="code" required maxlength="32" autocomplete="one-time-code" autofocus />
+      <span class="field-note">{{ t("twofactor.code_note") }}</span>
+    </label>
+    <div class="form-actions">
+      <button class="button-save" type="submit">{{ t("twofactor.continue") }}</button>
+    </div>
+  </form>
+  {% if bot %}
+  <form method="post" action="/login/code/send" class="auth-alt">
+    <input type="hidden" name="next" value="{{ next }}" />
+    <button class="link-button" type="submit">{% if sent %}{{ t("twofactor.send_again") }}{% else %}{{ t("twofactor.send") }}{% endif %}</button>
+  </form>
+  {% endif %}
+  <form method="post" action="/logout" class="auth-alt">
+    <button class="link-button" type="submit">{{ t("account.sign_out_instead") }}</button>
+  </form>
+
+  {% elif mode == "overview" %}
+  <p class="auth-lede">{% if any_on %}{{ t("twofactor.status_on") }}{% else %}{{ t("twofactor.off_lede") }}{% endif %}</p>
+
+  <section class="two-factor-way" aria-labelledby="tf-app">
+    <h2 id="tf-app">{{ t("twofactor.app_title") }}</h2>
+    {% if app_since %}
+    <p class="field-note">{{ t("twofactor.on_lede", date=app_since) }}</p>
+    <form class="auth-form" method="post" action="/settings/two-factor/disable">
+      {{ code_field(t("twofactor.off_code")) }}
+      <div class="form-actions"><button class="button-danger" type="submit">{{ t("twofactor.turn_off") }}</button></div>
+    </form>
+    {% elif app_possible %}
+    <p class="field-note">{{ t("twofactor.app_note") }}</p>
+    <form method="post" action="/settings/two-factor/start">
+      <button class="button-save" type="submit">{{ t("twofactor.set_up") }}</button>
+    </form>
+    {% else %}
+    <p class="field-note">{{ t("twofactor.unavailable") }}</p>
+    {% endif %}
+  </section>
+
+  <section class="two-factor-way" aria-labelledby="tf-bot">
+    <h2 id="tf-bot">{{ t("twofactor.bot_title") }}</h2>
+    {% if bot %}
+    <p class="field-note">{% if bot_works %}{{ t("twofactor.bot_on") }}{% else %}{{ t("twofactor.bot_idle") }}{% endif %}</p>
+    <form class="auth-form" method="post" action="/settings/two-factor/bot/off">
+      {{ code_field(t("twofactor.off_code")) }}
+      <div class="form-actions"><button class="button-danger" type="submit">{{ t("twofactor.turn_off") }}</button></div>
+    </form>
+    {% elif not bot_possible %}
+    <p class="field-note">{{ t("twofactor.bot_none") }}</p>
+    {% elif not chat %}
+    <p class="field-note">{{ t("twofactor.bot_link_first") }}</p>
+    <p><a class="button-preview" href="/settings#s-telegram">{{ t("twofactor.bot_link") }}</a></p>
+    {% else %}
+    <p class="field-note">{{ t("twofactor.bot_note") }}</p>
+    <form method="post" action="/settings/two-factor/bot/on">
+      <button class="button-save" type="submit">{{ t("twofactor.turn_on") }}</button>
+    </form>
+    {% endif %}
+  </section>
+
+  {% if any_on %}
+  <section class="two-factor-way" aria-labelledby="tf-codes">
+    <h2 id="tf-codes">{{ t("twofactor.codes_title") }}</h2>
+    <p class="field-note">{{ tn("twofactor.codes_left", codes_left) }}</p>
+    <form class="auth-form" method="post" action="/settings/two-factor/codes">
+      {{ code_field(t("twofactor.change_code"), numeric=true) }}
+      <div class="form-actions"><button class="button-preview" type="submit">{{ t("twofactor.renew_codes") }}</button></div>
+    </form>
+  </section>
+  {% if bot_works %}
+  <form method="post" action="/settings/two-factor/send" class="auth-alt">
+    <button class="link-button" type="submit">{{ t("twofactor.send") }}</button>
+  </form>
+  {% endif %}
+  {% endif %}
+  <p class="auth-alt"><a href="/settings#two-factor">{{ t("twofactor.back") }}</a></p>
+
+  {% elif mode == "setup" %}
+  <p class="auth-lede">{{ t("twofactor.setup_lede") }}</p>
+  {% if qr %}<div class="two-factor-qr">{{ qr | safe }}</div>{% endif %}
+  <p class="field-note">{{ t("twofactor.key_note") }}</p>
+  <p><code class="two-factor-key">{{ key }}</code></p>
+  <form class="auth-form" method="post" action="/settings/two-factor/enable">
+    {{ code_field(t("twofactor.setup_code"), numeric=true) }}
+    <div class="form-actions">
+      <button class="button-save" type="submit">{{ t("twofactor.turn_on") }}</button>
+    </div>
+  </form>
+  <form method="post" action="/settings/two-factor/cancel" class="auth-alt">
+    <button class="link-button" type="submit">{{ t("twofactor.cancel") }}</button>
+  </form>
+
+  {% elif mode == "codes" %}
+  <p class="auth-lede">{% if first %}{{ t("twofactor.codes_first") }} {% endif %}{{ t("twofactor.codes_lede") }}</p>
+  <ol class="two-factor-codes">
+    {% for c in codes %}<li><code>{{ c }}</code></li>{% endfor %}
+  </ol>
+  <p class="auth-alt"><a class="button-save" href="/settings/two-factor">{{ t("twofactor.codes_saved") }}</a></p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT r.id, r.created_at, r.summary, r.review_title, r.base_revision_id,\n                  octet_length(r.body_md) AS \"bytes!\",\n                  (SELECT octet_length(b.body_md) FROM revisions b WHERE b.id = r.base_revision_id) AS \"base_bytes?\",\n                  (SELECT u.username FROM users u WHERE u.id = r.author_id) AS \"author?\",\n                  p.slug, p.namespace::text AS \"namespace!\", p.title, COALESCE(p.locale, '') AS \"locale!\",\n                  p.current_revision_id\n           FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND r.review_status = 'pending' AND p.deleted_at IS NULL\n           ORDER BY r.created_at\n           LIMIT $2",
+  "query": "SELECT r.id, r.created_at, r.summary, r.review_title, r.base_revision_id,\n                  octet_length(r.body_md) AS \"bytes!\",\n                  (SELECT octet_length(b.body_md) FROM revisions b WHERE b.id = r.base_revision_id) AS \"base_bytes?\",\n                  (SELECT u.username FROM users u WHERE u.id = r.author_id) AS \"author?\",\n                  (SELECT cu.username FROM curatorships c JOIN users cu ON cu.id = c.curator_id\n                     WHERE c.wiki_id = p.wiki_id AND c.user_id = r.author_id) AS \"curator?\",\n                  p.slug, p.namespace::text AS \"namespace!\", p.title, COALESCE(p.locale, '') AS \"locale!\",\n                  p.current_revision_id\n           FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND r.review_status = 'pending' AND p.deleted_at IS NULL\n             AND ($3::uuid IS NULL\n                  OR EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id\n                               AND c.user_id = r.author_id AND c.curator_id = $3)\n                  OR ($4 AND NOT EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id\n                                           AND c.user_id = r.author_id)))\n           ORDER BY r.created_at\n           LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -78,6 +78,12 @@
       },
       {
         "ordinal": 8,
+        "name": "curator?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
         "name": "slug",
         "type_info": "Text",
         "origin": {
@@ -88,13 +94,13 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "namespace!",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "title",
         "type_info": "Text",
         "origin": {
@@ -105,13 +111,13 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "locale!",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "current_revision_id",
         "type_info": "Uuid",
         "origin": {
@@ -125,7 +131,9 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Int8"
+        "Int8",
+        "Uuid",
+        "Bool"
       ]
     },
     "nullable": [
@@ -137,6 +145,7 @@
       null,
       null,
       null,
+      null,
       false,
       null,
       false,
@@ -144,5 +153,5 @@
       true
     ]
   },
-  "hash": "ff262c5cacded0cdcdd59c785a5c16738548945c44c517c724f29ffce41c8ba8"
+  "hash": "9f0e58606ba7b303986f991c086bed12fd41913a01f9fdd362af1d7385edd57b"
 }

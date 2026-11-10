@@ -76,6 +76,7 @@ pub async fn start(
     let user_id = if linking {
         session::load_from_cookie(&state, &headers)
             .await
+            .filter(|user| !user.second_factor_pending)
             .map(|user| user.id)
     } else {
         None

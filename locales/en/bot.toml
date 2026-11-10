@@ -24,6 +24,7 @@ reset_link = "<b>{wiki}</b>\nA link to choose a new password for <b>{user}</b>. 
 reset_link_web = "<b>{wiki}</b>\nSomebody asked to reset the password of <b>{user}</b> from {device}. The link works once, for {minutes} minutes:\n{url}\n\n<i>If it was not you, do nothing: the password stays as it is.</i>"
 reset_button = "Choose a new password"
 alert_sign_in = "<b>{wiki}</b>\nNew sign-in to <b>{user}</b>: {device}, {when}.\n\n<i>Not you? Change the password and sign out the other devices in your settings.</i>"
+second_factor_code = "<b>{wiki}</b>\nYour sign-in code: <code>{code}</code>\nIt works for {minutes} minutes.\n\n<i>Not signing in? Someone has your password: change it in your settings.</i>"
 alert_password_changed = "<b>{wiki}</b>\nThe password of <b>{user}</b> was changed, {when}. Every other device was signed out.\n\n<i>Not you? Reset the password with /reset at once.</i>"
 alert_password_reset = "<b>{wiki}</b>\nThe password of <b>{user}</b> was reset with a link, {when}. Every device was signed out.\n\n<i>Not you? Reset it again with /reset and tell the wiki's admins.</i>"
 device_unknown = "an unknown device"

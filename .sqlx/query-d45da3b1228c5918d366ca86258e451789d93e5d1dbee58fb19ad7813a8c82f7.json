@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT secret_enc, last_step FROM totp_credentials WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "secret_enc",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "totp_credentials",
+            "name": "secret_enc"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "last_step",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "totp_credentials",
+            "name": "last_step"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "d45da3b1228c5918d366ca86258e451789d93e5d1dbee58fb19ad7813a8c82f7"
+}

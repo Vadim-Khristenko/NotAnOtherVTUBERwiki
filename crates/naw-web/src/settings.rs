@@ -82,7 +82,9 @@ pub async fn page(
 
     let account = sqlx::query!(
         r#"SELECT created_at, (password_hash IS NOT NULL) AS "has_password!",
-                  password_changed_at
+                  password_changed_at,
+                  (second_factor_bot OR EXISTS (SELECT 1 FROM totp_credentials t
+                          WHERE t.user_id = users.id AND t.confirmed_at IS NOT NULL)) AS "two_factor!"
            FROM users WHERE id = $1"#,
         user.id
     )
@@ -175,6 +177,7 @@ pub async fn page(
                 email => user.email.clone(),
                 email_verified => user.email_verified,
                 has_password => account.has_password,
+                two_factor => account.two_factor,
                 password_changed => account.password_changed_at.map(|t| t.format("%Y-%m-%d").to_string()),
                 chosen_locale => chosen,
                 my_display_name => user.display_name.clone(),

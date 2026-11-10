@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO recovery_codes (id, user_id, code_hash)\n         SELECT gen_random_uuid(), $1, unnest($2::bytea[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9a39d7afeb3839681fcdc1b8829be6a68451b5b94e53549190bddeb8a6224040"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at AS \"created_at!\",\n                  u.must_change_password, (u.password_hash IS NOT NULL) AS \"has_password!\",\n                  (SELECT c.username FROM users c WHERE c.id = u.created_by) AS \"created_by?\"\n           FROM users u\n           WHERE u.id = $1",
+  "query": "SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at AS \"created_at!\",\n                  u.must_change_password, (u.password_hash IS NOT NULL) AS \"has_password!\",\n                  (SELECT c.username FROM users c WHERE c.id = u.created_by) AS \"created_by?\",\n                  (u.second_factor_bot OR EXISTS (SELECT 1 FROM totp_credentials t\n                          WHERE t.user_id = u.id AND t.confirmed_at IS NOT NULL)) AS \"two_factor!\"\n           FROM users u\n           WHERE u.id = $1",
   "describe": {
     "columns": [
       {
@@ -80,6 +80,12 @@
         "name": "created_by?",
         "type_info": "Text",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "two_factor!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -95,8 +101,9 @@
       false,
       false,
       null,
+      null,
       null
     ]
   },
-  "hash": "9a56cb87d1fd496cd1272447f77475bcb1c0f029f48408cd3cc424a7ab147bdf"
+  "hash": "f8f66d4e01994dcf784b287d9058521517f1d3469123a620387b7db5e89d2e47"
 }

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO totp_credentials (user_id, secret_enc, confirmed_at) VALUES ($1, $2, now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "848f6d5944e8fc808eb8a83ea92e30d24bfdf65eb074f7b2f19c07db625a1918"
+}

@@ -20,6 +20,7 @@ const TEMPLATES: &[&str] = &[
     "edit.html",
     "login.html",
     "password.html",
+    "two_factor.html",
     "settings.html",
     "profile.html",
     "untranslated.html",

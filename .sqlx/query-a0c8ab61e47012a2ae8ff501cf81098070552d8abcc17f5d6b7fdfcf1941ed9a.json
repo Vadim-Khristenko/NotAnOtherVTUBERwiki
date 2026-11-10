@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE totp_credentials SET confirmed_at = now() WHERE user_id = $1 AND confirmed_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a0c8ab61e47012a2ae8ff501cf81098070552d8abcc17f5d6b7fdfcf1941ed9a"
+}

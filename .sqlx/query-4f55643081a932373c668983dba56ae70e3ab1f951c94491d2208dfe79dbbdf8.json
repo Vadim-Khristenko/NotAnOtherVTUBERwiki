@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT created_at, (password_hash IS NOT NULL) AS \"has_password!\",\n                  password_changed_at\n           FROM users WHERE id = $1",
+  "query": "SELECT created_at, (password_hash IS NOT NULL) AS \"has_password!\",\n                  password_changed_at,\n                  (second_factor_bot OR EXISTS (SELECT 1 FROM totp_credentials t\n                          WHERE t.user_id = users.id AND t.confirmed_at IS NOT NULL)) AS \"two_factor!\"\n           FROM users WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -30,6 +30,12 @@
             "name": "password_changed_at"
           }
         }
+      },
+      {
+        "ordinal": 3,
+        "name": "two_factor!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -40,8 +46,9 @@
     "nullable": [
       false,
       null,
-      true
+      true,
+      null
     ]
   },
-  "hash": "a69d3a7918b857bc9739799ed60ebfd11119265cb5522b77e8aac8362655e533"
+  "hash": "4f55643081a932373c668983dba56ae70e3ab1f951c94491d2208dfe79dbbdf8"
 }

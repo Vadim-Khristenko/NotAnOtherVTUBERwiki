@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             (SELECT count(*) FROM notifications\n              WHERE user_id = $1 AND wiki_id = $2 AND read_at IS NULL) AS \"unread!\",\n             (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id\n              WHERE r.author_id = $1 AND r.review_status = 'pending'\n                AND p.wiki_id = $2 AND p.deleted_at IS NULL) AS \"waiting!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "unread!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "waiting!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "536ff9850b0d0960f58b327f3b3f2f9324e4cf1cebc642031228eb5275ac9918"
+}

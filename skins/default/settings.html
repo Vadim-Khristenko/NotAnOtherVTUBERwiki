@@ -105,6 +105,12 @@
     </a>
   </section>
 
+  <section class="settings-card" aria-labelledby="s-two-factor" id="two-factor">
+    <h2 id="s-two-factor"><svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>{{ t("twofactor.title") }}</h2>
+    <p class="field-note">{% if two_factor %}{{ t("twofactor.status_on") }}{% else %}{{ t("twofactor.status_off") }}{% endif %}</p>
+    <a class="button-preview" href="/settings/two-factor">{% if two_factor %}{{ t("twofactor.manage") }}{% else %}{{ t("twofactor.set_up") }}{% endif %}</a>
+  </section>
+
   {% if telegram %}
   {# The wiki's bot: password recovery, sign-in alerts and, if wanted, the
      notifications. Only when the install has a bot. #}

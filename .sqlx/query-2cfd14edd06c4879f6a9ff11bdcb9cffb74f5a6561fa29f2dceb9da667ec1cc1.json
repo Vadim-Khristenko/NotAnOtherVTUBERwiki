@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT r.id, r.created_at, r.summary,\n                  (SELECT u.username FROM users u WHERE u.id = r.author_id) AS \"author?\",\n                  (SELECT r2.id FROM revisions r2 WHERE r2.page_id = r.page_id\n                     AND r2.review_status = 'accepted' AND (r2.created_at, r2.id) < (r.created_at, r.id)\n                     ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1) AS \"prev_id?\",\n                  p.slug, p.namespace::text AS \"namespace!\", p.title, COALESCE(p.locale, '') AS \"locale!\"\n           FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND r.review_status = 'accepted' AND NOT r.is_patrolled\n             AND p.deleted_at IS NULL AND r.created_at > now() - make_interval(days => $3)\n           ORDER BY r.created_at DESC\n           LIMIT $2",
+  "query": "SELECT r.id, r.created_at, r.summary,\n                  (SELECT u.username FROM users u WHERE u.id = r.author_id) AS \"author?\",\n                  (SELECT r2.id FROM revisions r2 WHERE r2.page_id = r.page_id\n                     AND r2.review_status = 'accepted' AND (r2.created_at, r2.id) < (r.created_at, r.id)\n                     ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1) AS \"prev_id?\",\n                  p.slug, p.namespace::text AS \"namespace!\", p.title, COALESCE(p.locale, '') AS \"locale!\"\n           FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND r.review_status = 'accepted' AND NOT r.is_patrolled\n             AND p.deleted_at IS NULL AND r.created_at > now() - make_interval(days => $3)\n             AND ($4::uuid IS NULL\n                  OR EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id\n                               AND c.user_id = r.author_id AND c.curator_id = $4)\n                  OR ($5 AND NOT EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id\n                                           AND c.user_id = r.author_id)))\n           ORDER BY r.created_at DESC\n           LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -87,7 +87,9 @@
       "Left": [
         "Uuid",
         "Int8",
-        "Int4"
+        "Int4",
+        "Uuid",
+        "Bool"
       ]
     },
     "nullable": [
@@ -102,5 +104,5 @@
       null
     ]
   },
-  "hash": "28772e8408748a204a15d16fdd8d37e21c3564e63f835b8d609c542c354436f5"
+  "hash": "2cfd14edd06c4879f6a9ff11bdcb9cffb74f5a6561fa29f2dceb9da667ec1cc1"
 }

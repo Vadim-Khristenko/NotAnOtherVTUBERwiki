@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT curator_id FROM curatorships WHERE wiki_id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "curator_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "curatorships",
+            "name": "curator_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "92800665599f2122c77687df4783d564d1b9273817bd2df16cb5a8c810027e8a"
+}

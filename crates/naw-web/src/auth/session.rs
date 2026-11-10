@@ -63,6 +63,8 @@ pub struct CurrentUser {
     pub locale: String,
     /// An admin-issued password not replaced yet; only the change page is open.
     pub must_change_password: bool,
+    /// Signed in, but the two-step code is still owed; only that page is open.
+    pub second_factor_pending: bool,
     /// The version of the wiki's documents last accepted (see legal.rs).
     pub policy_version: i32,
 }
@@ -121,7 +123,7 @@ pub const ACTIVE_DAYS: i64 = 14;
 pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
     let row = sqlx::query!(
         r#"
-        SELECT s.expires_at, s.last_seen_at, u.id AS user_id, u.username,
+        SELECT s.expires_at, s.last_seen_at, s.second_factor_pending, u.id AS user_id, u.username,
                u.email AS email_opt,
                (u.email_verified_at IS NOT NULL) AS email_verified,
                u.global_role, u.locale, u.must_change_password, u.display_name,
@@ -169,6 +171,7 @@ pub async fn load(state: &AppState, session_id: Uuid) -> Option<CurrentUser> {
         global_role: row.global_role,
         locale: row.locale,
         must_change_password: row.must_change_password,
+        second_factor_pending: row.second_factor_pending,
         policy_version: row.policy_version,
     })
 }
@@ -188,13 +191,23 @@ pub async fn create(
     let token = crate::auth::random_token();
     let id = id_of(&token);
     let expires = chrono::Duration::hours(state.config.auth.session_ttl_hours);
+    // Whoever turned on two-step sign-in owes the code, whatever way in: an
+    // app's, or the bot's while a chat is linked and the server runs a bot.
     sqlx::query!(
-        "INSERT INTO sessions (id, user_id, expires_at, ip, user_agent) VALUES ($1, $2, $3, $4::inet, $5)",
+        "INSERT INTO sessions (id, user_id, expires_at, ip, user_agent, second_factor_pending)
+         VALUES ($1, $2, $3, $4::inet, $5,
+                 EXISTS (SELECT 1 FROM totp_credentials
+                         WHERE user_id = $2 AND confirmed_at IS NOT NULL)
+                 OR ($6 AND EXISTS (
+                   SELECT 1 FROM users u WHERE u.id = $2 AND u.second_factor_bot
+                     AND (EXISTS (SELECT 1 FROM telegram_links t WHERE t.user_id = u.id)
+                          OR EXISTS (SELECT 1 FROM discord_links d WHERE d.user_id = u.id)))))",
         id,
         user_id,
         chrono::Utc::now() + expires,
         ip.map(ipnetwork::IpNetwork::from),
-        user_agent
+        user_agent,
+        crate::bots::any()
     )
     .execute(&state.db)
     .await?;
@@ -263,8 +276,17 @@ pub async fn delete(state: &AppState, session_id: Uuid) {
 
 /// Inserts `Option<CurrentUser>` into every request's extensions.
 pub async fn layer(State(app): State<AppState>, mut req: Request<Body>, next: Next) -> Response {
-    let user = load_from_cookie(&app, req.headers()).await;
+    let mut user = load_from_cookie(&app, req.headers()).await;
     let path = req.uri().path().to_string();
+    // Until the two-step code is given, the session is nobody's: it reaches
+    // the code page and the way out, and anything else leads to the code.
+    if user.as_ref().is_some_and(|u| u.second_factor_pending) {
+        if !reachable_before_second_factor(&path) {
+            let target = detour(SECOND_FACTOR_PAGE, req.uri());
+            return axum::response::Redirect::to(&target).into_response();
+        }
+        user = None;
+    }
     // Until an admin-issued password is replaced, the session can only replace it.
     if user.as_ref().is_some_and(|u| u.must_change_password) && !reachable_before_change(&path) {
         let target = password_page_for(req.uri());
@@ -306,20 +328,32 @@ fn reachable_before_change(path: &str) -> bool {
     )
 }
 
+/// What a session that still owes the two-step code may reach.
+fn reachable_before_second_factor(path: &str) -> bool {
+    path == SECOND_FACTOR_PAGE
+        || path.strip_prefix(SECOND_FACTOR_PAGE) == Some("/send")
+        || (path != PASSWORD_PAGE && reachable_before_change(path))
+}
+
 /// Where a password change happens.
 pub const PASSWORD_PAGE: &str = "/settings/password";
 
+/// Where the two-step code is asked for after signing in.
+pub const SECOND_FACTOR_PAGE: &str = "/login/code";
+
 /// The change password page, keeping a local destination.
 fn password_page_for(uri: &axum::http::Uri) -> String {
+    detour(PASSWORD_PAGE, uri)
+}
+
+/// `page`, keeping the local destination that was asked for.
+fn detour(page: &str, uri: &axum::http::Uri) -> String {
     let wanted = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
     let next = super::redirect::safe_next(Some(wanted));
     if next == "/" {
-        PASSWORD_PAGE.to_string()
+        page.to_string()
     } else {
-        format!(
-            "{PASSWORD_PAGE}?next={}",
-            super::redirect::encode_component(&next)
-        )
+        format!("{page}?next={}", super::redirect::encode_component(&next))
     }
 }
 
@@ -334,6 +368,18 @@ mod tests {
         assert!(!reachable_before_change("/"));
         assert!(!reachable_before_change("/admin"));
         assert!(!reachable_before_change("/settings/password/extra"));
+    }
+
+    #[test]
+    fn a_session_owing_its_code_reaches_only_the_code_and_the_way_out() {
+        assert!(reachable_before_second_factor("/login/code"));
+        assert!(reachable_before_second_factor("/login/code/send"));
+        assert!(!reachable_before_second_factor("/login/codex"));
+        assert!(reachable_before_second_factor("/logout"));
+        assert!(!reachable_before_second_factor("/settings/password"));
+        assert!(!reachable_before_second_factor("/settings/two-factor"));
+        assert!(!reachable_before_second_factor("/admin"));
+        assert!(!reachable_before_second_factor("/"));
     }
 
     #[test]

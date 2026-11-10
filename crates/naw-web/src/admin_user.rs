@@ -81,7 +81,9 @@ pub async fn show(
     let account = sqlx::query!(
         r#"SELECT u.display_name, u.avatar_key, u.email, u.email_verified_at, u.created_at AS "created_at!",
                   u.must_change_password, (u.password_hash IS NOT NULL) AS "has_password!",
-                  (SELECT c.username FROM users c WHERE c.id = u.created_by) AS "created_by?"
+                  (SELECT c.username FROM users c WHERE c.id = u.created_by) AS "created_by?",
+                  (u.second_factor_bot OR EXISTS (SELECT 1 FROM totp_credentials t
+                          WHERE t.user_id = u.id AND t.confirmed_at IS NOT NULL)) AS "two_factor!"
            FROM users u
            WHERE u.id = $1"#,
         t.id
@@ -266,6 +268,7 @@ pub async fn show(
             u_name => t.username.clone(),
             u_display => account.display_name,
             u_avatar => account.avatar_key.as_deref().map(crate::media::url_for_key),
+            u_two_factor => account.two_factor,
             // An address is for whoever may act on the account, not every admin.
             u_email => account.email.filter(|_| account_reach.is_ok()),
             u_email_hidden => account_reach.is_err(),
@@ -662,6 +665,33 @@ pub async fn end_sessions(
     )
     .await?;
     Ok(back(&t, "sessions_ended"))
+}
+
+/// POST /admin/user/{name}/two-factor/off: for someone who lost both their
+/// phone and their recovery codes. Their sessions end too, so whoever holds
+/// one signs in again.
+pub async fn two_factor_off(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    Path(name): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let (ctx, t) = or_respond!(resolve_account(&state, &headers, user.as_ref(), &name).await?);
+    crate::two_factor::turn_off(&state.db, t.id).await?;
+    let ended = crate::auth::session::delete_others(&state, t.id, None).await?;
+    audit::record(
+        &state.db,
+        audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: ctx.actor.user_id,
+            action: "admin.user.two_factor_off",
+            entity_type: "user",
+            entity_id: Some(t.id),
+            meta: json!({ "ended": ended }),
+        },
+    )
+    .await?;
+    Ok(back(&t, "two_factor_off"))
 }
 
 /// POST /admin/user/{name}/avatar/remove

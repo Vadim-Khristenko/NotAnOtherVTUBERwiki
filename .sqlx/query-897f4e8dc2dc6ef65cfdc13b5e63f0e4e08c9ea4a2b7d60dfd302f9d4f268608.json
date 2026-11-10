@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sessions SET second_factor_pending = false WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "897f4e8dc2dc6ef65cfdc13b5e63f0e4e08c9ea4a2b7d60dfd302f9d4f268608"
+}

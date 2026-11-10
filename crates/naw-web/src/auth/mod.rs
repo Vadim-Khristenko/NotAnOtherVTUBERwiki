@@ -14,6 +14,7 @@ pub mod session;
 pub mod state_store;
 pub mod store;
 pub mod throttle;
+pub mod totp;
 pub mod types;
 pub mod username;
 

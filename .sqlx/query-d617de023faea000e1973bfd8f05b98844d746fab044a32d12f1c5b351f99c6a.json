@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT s.expires_at, s.last_seen_at, u.id AS user_id, u.username,\n               u.email AS email_opt,\n               (u.email_verified_at IS NOT NULL) AS email_verified,\n               u.global_role, u.locale, u.must_change_password, u.display_name,\n               u.avatar_key, u.policy_version\n        FROM sessions s\n        JOIN users u ON u.id = s.user_id\n        WHERE s.id = $1\n          -- A deleted account signs in nowhere, even with a session left over.\n          AND u.deleted_at IS NULL\n          -- An install-wide ban ends the sessions where they stand.\n          AND NOT EXISTS (\n            SELECT 1 FROM sanctions b\n            WHERE b.user_id = u.id AND b.wiki_id IS NULL AND b.kind = 'ban'\n              AND b.lifted_at IS NULL AND (b.expires_at IS NULL OR b.expires_at > now()))\n        ",
+  "query": "\n        SELECT s.expires_at, s.last_seen_at, s.second_factor_pending, u.id AS user_id, u.username,\n               u.email AS email_opt,\n               (u.email_verified_at IS NOT NULL) AS email_verified,\n               u.global_role, u.locale, u.must_change_password, u.display_name,\n               u.avatar_key, u.policy_version\n        FROM sessions s\n        JOIN users u ON u.id = s.user_id\n        WHERE s.id = $1\n          -- A deleted account signs in nowhere, even with a session left over.\n          AND u.deleted_at IS NULL\n          -- An install-wide ban ends the sessions where they stand.\n          AND NOT EXISTS (\n            SELECT 1 FROM sanctions b\n            WHERE b.user_id = u.id AND b.wiki_id IS NULL AND b.kind = 'ban'\n              AND b.lifted_at IS NULL AND (b.expires_at IS NULL OR b.expires_at > now()))\n        ",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,17 @@
       },
       {
         "ordinal": 2,
+        "name": "second_factor_pending",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "second_factor_pending"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "user_id",
         "type_info": "Uuid",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "username",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "email_opt",
         "type_info": "Text",
         "origin": {
@@ -59,13 +70,13 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "email_verified",
         "type_info": "Bool",
         "origin": "Expression"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "global_role",
         "type_info": "Text",
         "origin": {
@@ -76,7 +87,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "locale",
         "type_info": "Text",
         "origin": {
@@ -87,7 +98,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "must_change_password",
         "type_info": "Bool",
         "origin": {
@@ -98,7 +109,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "display_name",
         "type_info": "Text",
         "origin": {
@@ -109,7 +120,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "avatar_key",
         "type_info": "Text",
         "origin": {
@@ -120,7 +131,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "policy_version",
         "type_info": "Int4",
         "origin": {
@@ -141,6 +152,7 @@
       false,
       false,
       false,
+      false,
       true,
       null,
       false,
@@ -151,5 +163,5 @@
       false
     ]
   },
-  "hash": "9e79b7c86ae38dc6d7b61df122805116caaaa8ccaba636b7c223667dcd2da9f9"
+  "hash": "d617de023faea000e1973bfd8f05b98844d746fab044a32d12f1c5b351f99c6a"
 }

@@ -252,6 +252,13 @@ The part that makes it a wiki rather than a blog.
       with the changes and a preview, refusing an accept that would drop a later edit, a list
       of edits nobody checked, and a one-click rollback of the last author. Authors see
       their own waiting and turned-down edits with the reason, and can take one back
+- [x] Whose edits a curator checks, as the wiki chooses: everyone's, the people they look
+      after plus anyone nobody looks after, or only the people they look after. Authors
+      find their waiting edits in the menu with a count and keep editing a new page while
+      it waits
+- [x] Two-step sign-in for every way in: a code from an authenticator app (the key kept
+      encrypted under a server secret) or from the wiki's bot on a linked Telegram or
+      Discord, with one-time recovery codes, and an admin who can take it off a lost account
 - [x] Maintenance notices as templates (Update, Stub, Sources needed, Citation needed,
       Cleanup, Disputed, In progress, Spoiler, Speculation) that file pages under
       Maintenance/..., and infoboxes for streams, songs and events with page templates

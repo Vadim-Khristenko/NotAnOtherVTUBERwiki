@@ -381,6 +381,14 @@ a.button-save, a.button-preview { display: inline-flex; align-items: center; jus
 .auth-closed p { margin: 0 0 var(--s2); }
 .auth-closed p:last-child { margin-bottom: 0; }
 .auth-alt { margin-top: var(--s4); text-align: center; }
+/* Two-step sign-in. The QR code sits on white in every theme, so a camera reads it. */
+.two-factor-qr { display: inline-block; padding: var(--s2); background: #fff; border-radius: var(--radius); line-height: 0; }
+.two-factor-qr svg { width: 12rem; height: 12rem; }
+.two-factor-key { font-size: 1.05rem; letter-spacing: 0.05em; word-break: break-all; }
+.two-factor-code { font-variant-numeric: tabular-nums; letter-spacing: 0.15em; }
+.two-factor-codes { columns: 2; padding-left: 1.5em; font-size: 1.05rem; }
+.two-factor-way { border-top: 1px solid var(--line); padding-top: var(--s4); margin-top: var(--s5); }
+.two-factor-way h2 { font-size: 1.1rem; margin: 0 0 var(--s2); }
 .link-button { background: none; border: none; padding: 0; font: inherit; color: var(--muted); text-decoration: underline; text-underline-offset: 0.15em; cursor: pointer; }
 .link-button:hover { color: var(--ink); }
 /* Settings: a head with the account, then cards. */

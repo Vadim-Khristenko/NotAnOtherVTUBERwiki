@@ -77,6 +77,7 @@ mod telegram;
 mod templates;
 mod thumbs;
 mod translate;
+mod two_factor;
 
 /// Starts the work that runs beside the server: the metrics writer and the
 /// alerts, the Telegram bot when a token is set, and the diagram runner when
@@ -129,6 +130,12 @@ fn routes(state: AppState) -> Router {
             get(account::login_page).post(account::login_submit),
         )
         .route("/login/password", post(account::password_login))
+        .route(
+            "/login/code",
+            get(two_factor::login_page).post(two_factor::login_submit),
+        )
+        .route("/login/code/send", post(two_factor::login_send))
+        .route("/settings/two-factor/bot/on", post(two_factor::bot_on))
         .route("/login/relay", get(relay::page))
         .route("/login/relay/start", post(relay::start))
         .route(
@@ -147,6 +154,14 @@ fn routes(state: AppState) -> Router {
         )
         .route("/logout", post(auth::routes::logout))
         .route("/settings", get(settings::page))
+        .route("/settings/two-factor", get(two_factor::settings_page))
+        .route("/settings/two-factor/start", post(two_factor::start))
+        .route("/settings/two-factor/cancel", post(two_factor::cancel))
+        .route("/settings/two-factor/enable", post(two_factor::enable))
+        .route("/settings/two-factor/codes", post(two_factor::renew_codes))
+        .route("/settings/two-factor/disable", post(two_factor::disable))
+        .route("/settings/two-factor/bot/off", post(two_factor::bot_off))
+        .route("/settings/two-factor/send", post(two_factor::send))
         .route("/settings/language", post(settings::set_language))
         .route("/settings/telegram", post(settings::telegram_prefs))
         .route("/settings/telegram/link", post(settings::telegram_link))
@@ -208,6 +223,10 @@ fn routes(state: AppState) -> Router {
         .route(
             "/admin/user/{name}/avatar/remove",
             post(admin_user::remove_avatar),
+        )
+        .route(
+            "/admin/user/{name}/two-factor/off",
+            post(admin_user::two_factor_off),
         )
         .route(
             "/admin/user/{name}/end-sessions",

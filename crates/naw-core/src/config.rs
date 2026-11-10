@@ -279,6 +279,13 @@ pub struct AuthConfig {
     pub discord_app_id: Option<String>,
     #[serde(default = "default_mail")]
     pub mail: MailConfig,
+    /// A server secret, at least 32 characters (`openssl rand -hex 32`), that
+    /// encrypts what must not sit in the database in the clear: the keys of
+    /// two-step sign-in. Without it two-step sign-in cannot be turned on;
+    /// losing or changing it locks out everyone who has the step on until an
+    /// admin turns it off for them.
+    #[serde(default)]
+    pub secret_key: Option<String>,
 }
 
 impl AuthConfig {
@@ -306,6 +313,13 @@ impl AuthConfig {
             .is_some_and(|t| t.trim().is_empty())
         {
             self.telegram_bot_token = None;
+        }
+        if self
+            .secret_key
+            .as_deref()
+            .is_some_and(|k| k.trim().is_empty())
+        {
+            self.secret_key = None;
         }
         if self
             .steam_api_key
@@ -359,6 +373,7 @@ impl Default for AuthConfig {
             discord_public_key: None,
             discord_app_id: None,
             mail: default_mail(),
+            secret_key: None,
         }
     }
 }
@@ -518,6 +533,7 @@ impl fmt::Debug for AuthConfig {
             .field("discord_public_key", &self.discord_public_key)
             .field("discord_app_id", &self.discord_app_id)
             .field("mail", &self.mail)
+            .field("secret_key", &creds(&self.secret_key))
             .finish()
     }
 }
@@ -781,6 +797,11 @@ fn apply_auth_env(auth: &mut AuthConfig) -> Result<(), AppError> {
         && !value.trim().is_empty()
     {
         auth.telegram_bot_token = Some(value.trim().to_string());
+    }
+    if let Ok(value) = std::env::var("NAW_SECRET_KEY")
+        && !value.trim().is_empty()
+    {
+        auth.secret_key = Some(value.trim().to_string());
     }
     for (slot, name) in [
         (&mut auth.discord_bot_token, "NAW_DISCORD_BOT_TOKEN"),

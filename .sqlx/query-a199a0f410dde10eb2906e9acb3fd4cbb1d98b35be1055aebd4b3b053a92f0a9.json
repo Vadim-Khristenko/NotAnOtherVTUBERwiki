@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sessions (id, user_id, expires_at, ip, user_agent, second_factor_pending)\n         VALUES ($1, $2, $3, $4::inet, $5,\n                 EXISTS (SELECT 1 FROM totp_credentials\n                         WHERE user_id = $2 AND confirmed_at IS NOT NULL)\n                 OR ($6 AND EXISTS (\n                   SELECT 1 FROM users u WHERE u.id = $2 AND u.second_factor_bot\n                     AND (EXISTS (SELECT 1 FROM telegram_links t WHERE t.user_id = u.id)\n                          OR EXISTS (SELECT 1 FROM discord_links d WHERE d.user_id = u.id)))))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz",
+        "Inet",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a199a0f410dde10eb2906e9acb3fd4cbb1d98b35be1055aebd4b3b053a92f0a9"
+}
