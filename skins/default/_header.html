@@ -188,6 +188,9 @@
         {% if can_admin is defined and can_admin %}
         <a class="menu-link" href="{{ base }}/admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>{{ t("nav.admin") }}</a>
         {% endif %}
+        {% if review_queue is defined and review_queue %}
+        <a class="menu-link" href="{{ base }}/admin/review"><svg class="icon" aria-hidden="true"><use href="#i-clipboard-check" /></svg>{{ t("nav.review_queue") }} <b class="menu-count">{{ review_queue }}</b></a>
+        {% endif %}
         {% if can_reports is defined and can_reports %}
         <a class="menu-link" href="{{ base }}/admin/reports"><svg class="icon" aria-hidden="true"><use href="#i-flag" /></svg>{{ t("nav.reports") }}</a>
         {% endif %}

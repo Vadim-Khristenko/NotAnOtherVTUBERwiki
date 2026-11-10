@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE notifications SET read_at = now()\n         WHERE wiki_id = $1 AND kind = 'edit_waiting' AND read_at IS NULL\n           AND NOT EXISTS (SELECT 1 FROM revisions r JOIN pages p ON p.id = r.page_id\n                           WHERE p.wiki_id = $1 AND r.review_status = 'pending'\n                             AND p.deleted_at IS NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e85f61d673aa9b53b7342670d01bcdd67feca0c73b76db0209519ef2ff251fc9"
+}

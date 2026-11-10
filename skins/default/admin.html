@@ -435,11 +435,24 @@
     <a class="chip" href="/admin/review?tab=patrol" {% if tab == "patrol" %}aria-current="true"{% endif %}>{{ t("review.tab_patrol") }}</a>
   </nav>
   {% if tab == "pending" %}
+  <nav class="filter-chips" aria-label="{{ t('review.show') }}">
+    {% for s in shows %}{% if s != "wards" or has_wards %}
+    <a class="chip" href="/admin/review{% if s != 'all' %}?show={{ s }}{% endif %}" {% if show == s %}aria-current="true"{% endif %}>{{ t("review.show_" ~ s) }}</a>
+    {% endif %}{% endfor %}
+  </nav>
   {% if pending %}
+  {# Ticked edits are decided together; each one is still checked on its own. #}
+  <form method="post" action="/admin/review/bulk" class="review-bulk">
+  <div class="review-bulk-bar">
+    <input class="field-input" type="text" name="note" maxlength="500" placeholder="{{ t('review.bulk_note') }}" aria-label="{{ t('review.decide_note') }}" />
+    <button class="button-save" type="submit" name="action" value="accept">{{ t("review.bulk_accept") }}</button>
+    <button class="button-preview" type="submit" name="action" value="reject">{{ t("review.bulk_reject") }}</button>
+  </div>
   <ul class="report-cards" role="list">
     {% for r in pending %}
     <li class="report-card{% if r.outdated %} is-dismissed{% endif %}">
       <div class="report-card-head">
+        <input class="review-pick" type="checkbox" name="id" value="{{ r.id }}" aria-label="{{ t('review.pick', title=r.title) }}"{% if r.outdated %} disabled{% endif %} />
         {% if r.is_new %}<span class="tag tag-new">{{ t("review.new_page") }}</span>{% else %}<span class="tag">{{ t("review.edit") }}</span>{% endif %}
         {% if r.outdated %}<span class="tag tag-warn">{{ t("review.outdated_tag") }}</span>{% endif %}
         {% if r.locale %}<span class="tag">{{ r.locale }}</span>{% endif %}
@@ -456,6 +469,7 @@
     </li>
     {% endfor %}
   </ul>
+  </form>
   {% else %}
   <p class="empty-state">{{ t("review.queue_empty") }}</p>
   {% endif %}
@@ -496,17 +510,16 @@
     {% if outdated %}<p class="notice notice-warn">{{ t("review.outdated") }}</p>{% endif %}
     {% if not_ward %}<p class="notice">{{ t("review.not_ward") }}</p>{% endif %}
     {% if may_decide %}
-    <div class="review-actions">
-      <form method="post" action="/admin/review/{{ id }}/accept" class="inline-form">
+    {# One note for either answer: thanks with an accept, the reason with a reject. #}
+    <form method="post" action="/admin/review/{{ id }}/accept" class="stack-form review-decide">
+      <label class="field">{{ t("review.decide_note") }}
+        <input class="field-input" type="text" name="note" maxlength="500" placeholder="{{ t('review.decide_hint') }}" />
+      </label>
+      <p class="review-actions">
         <button class="button-save" type="submit"{% if outdated %} disabled{% endif %}>{{ t("review.accept") }}</button>
-      </form>
-      <form method="post" action="/admin/review/{{ id }}/reject" class="stack-form review-reject">
-        <label class="field">{{ t("review.reject_note") }}
-          <input class="field-input" type="text" name="note" maxlength="500" placeholder="{{ t('review.reject_hint') }}" />
-        </label>
-        <p><button class="button-preview" type="submit">{{ t("review.reject") }}</button></p>
-      </form>
-    </div>
+        <button class="button-preview" type="submit" formaction="/admin/review/{{ id }}/reject">{{ t("review.reject") }}</button>
+      </p>
+    </form>
     {% endif %}
   </article>
 
@@ -703,6 +716,10 @@
       {% for s in ["all", "assigned", "assigned_only"] %}
       <label class="check"><input type="radio" name="review_scope" value="{{ s }}" {% if review_scope == s %}checked{% endif %} /> {{ t("review.scope_" ~ s) }}</label>
       {% endfor %}
+      <label class="field">{{ t("review.trust_after") }}
+        <input class="field-input" type="number" name="review_trust_after" min="0" max="10000" value="{{ review_trust_after }}" />
+        <span class="field-note">{{ t("review.trust_after_note") }}</span>
+      </label>
     </fieldset>
 
     <div class="form-actions">

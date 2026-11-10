@@ -241,6 +241,90 @@ pub(crate) async fn page_edited(
     }
 }
 
+/// Where a reviewer opens the edits that wait.
+pub(crate) const QUEUE_LINK: &str = "/admin/review";
+
+/// Tells the reviewers of an edit by `author` that it waits: the author's
+/// curator when they have one, else the wiki's curators and up (moderators
+/// and up only, where curators check nobody but their wards). Each keeps one
+/// unread entry, refreshed with the newest title, so a busy day is one line.
+pub(crate) async fn waiting(
+    db: &sqlx::PgPool,
+    ctx: &Ctx,
+    author: Option<Uuid>,
+    title: &str,
+    summary: Option<&str>,
+) {
+    let curators_count = ctx.actor.rules.review_scope != crate::perm::ReviewScope::AssignedOnly;
+    waiting_on(db, ctx.wiki.id, curators_count, author, title, summary).await;
+}
+
+/// [`waiting`] for a wiki where curators do or do not check people nobody
+/// looks after.
+async fn waiting_on(
+    db: &sqlx::PgPool,
+    wiki_id: Uuid,
+    curators_count: bool,
+    author: Option<Uuid>,
+    title: &str,
+    summary: Option<&str>,
+) {
+    let summary = summary.map(clip).filter(|s| !s.is_empty());
+    let result = sqlx::query!(
+        "WITH assigned AS (
+           SELECT curator_id AS user_id FROM curatorships WHERE wiki_id = $1 AND user_id = $2
+         ), reviewers AS (
+           SELECT user_id FROM assigned
+           UNION
+           SELECT m.user_id FROM wiki_memberships m
+           WHERE m.wiki_id = $1 AND NOT EXISTS (SELECT 1 FROM assigned)
+             AND (m.role::text IN ('moderator', 'admin', 'owner')
+                  OR ($3 AND m.role::text = 'curator'))
+         ), recipients AS (
+           SELECT user_id FROM reviewers WHERE user_id IS DISTINCT FROM $2
+         ), refreshed AS (
+           UPDATE notifications n SET actor_id = $2, title = $4, note = $5, created_at = now()
+           FROM recipients r
+           WHERE n.user_id = r.user_id AND n.wiki_id = $1 AND n.kind = 'edit_waiting'
+             AND n.read_at IS NULL
+           RETURNING n.user_id
+         )
+         INSERT INTO notifications (id, user_id, wiki_id, kind, actor_id, title, link, note)
+         SELECT gen_random_uuid(), r.user_id, $1, 'edit_waiting', $2, $4, $6, $5
+         FROM recipients r
+         WHERE r.user_id NOT IN (SELECT user_id FROM refreshed)",
+        wiki_id,
+        author,
+        curators_count,
+        title,
+        summary,
+        QUEUE_LINK
+    )
+    .execute(db)
+    .await;
+    if let Err(err) = result {
+        tracing::warn!(error = %err, "could not tell the reviewers of a waiting edit");
+    }
+}
+
+/// Once nothing waits in the wiki, the reviewers' unread "edits wait" lines
+/// are read: there is nothing left to open.
+pub(crate) async fn waiting_settled(db: &sqlx::PgPool, wiki_id: Uuid) {
+    let result = sqlx::query!(
+        "UPDATE notifications SET read_at = now()
+         WHERE wiki_id = $1 AND kind = 'edit_waiting' AND read_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM revisions r JOIN pages p ON p.id = r.page_id
+                           WHERE p.wiki_id = $1 AND r.review_status = 'pending'
+                             AND p.deleted_at IS NULL)",
+        wiki_id
+    )
+    .execute(db)
+    .await;
+    if let Err(err) = result {
+        tracing::warn!(error = %err, "could not settle the waiting notifications");
+    }
+}
+
 /// What a watcher opens for a change: the page's history in that language.
 pub(crate) fn history_link(ctx: &Ctx, locale: &str, path: &str) -> String {
     ctx.link_for(locale, &format!("/{path}/history"))
@@ -460,11 +544,18 @@ mod db_tests {
     use sqlx::PgPool;
 
     /// The kinds of notification, as the table's check spells them.
-    const KINDS: [&str; 4] = [
+    const KINDS: [&str; 11] = [
         "page_edited",
         "edit_accepted",
         "edit_rejected",
         "report_answered",
+        "edit_waiting",
+        "edit_trusted",
+        "discussion_new",
+        "discussion_change",
+        "discussion_reply",
+        "discussion_mention",
+        "discussion_resolved",
     ];
 
     #[test]
@@ -653,6 +744,70 @@ mod db_tests {
             notes(&db, alice).await.len(),
             1 + KINDS.len(),
             "every kind passes the check"
+        );
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_waiting_edit_reaches_its_curator_or_else_the_staff(db: PgPool) {
+        let w = wiki(&db, "rv").await;
+        let (author, loose, curator, other, moderator) = (
+            user(&db, "author").await,
+            user(&db, "loose").await,
+            user(&db, "curator").await,
+            user(&db, "other").await,
+            user(&db, "moderator").await,
+        );
+        for (who, role) in [
+            (curator, "curator"),
+            (other, "curator"),
+            (moderator, "moderator"),
+        ] {
+            sqlx::query(
+                "INSERT INTO wiki_memberships (user_id, wiki_id, role) VALUES ($1, $2, ($3::text)::user_wiki_role)",
+            )
+            .bind(who)
+            .bind(w)
+            .bind(role)
+            .execute(&db)
+            .await
+            .expect("member");
+        }
+        sqlx::query("INSERT INTO curatorships (wiki_id, user_id, curator_id) VALUES ($1, $2, $3)")
+            .bind(w)
+            .bind(author)
+            .bind(curator)
+            .execute(&db)
+            .await
+            .expect("curatorship");
+        let waiting_for = |who: Uuid| {
+            let db = db.clone();
+            async move {
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT count(*) FROM notifications WHERE user_id = $1 AND kind = 'edit_waiting' AND read_at IS NULL",
+                )
+                .bind(who)
+                .fetch_one(&db)
+                .await
+                .expect("count")
+            }
+        };
+        waiting_on(&db, w, true, Some(author), "A", None).await;
+        waiting_on(&db, w, true, Some(author), "B", None).await;
+        assert_eq!(waiting_for(curator).await, 1, "one line, refreshed");
+        assert_eq!(
+            waiting_for(other).await + waiting_for(moderator).await,
+            0,
+            "a ward goes to their curator"
+        );
+        waiting_on(&db, w, true, Some(loose), "C", None).await;
+        assert_eq!(waiting_for(other).await, 1, "nobody's: every curator");
+        assert_eq!(waiting_for(moderator).await, 1);
+        assert_eq!(waiting_for(loose).await, 0, "never the author");
+        waiting_settled(&db, w).await;
+        assert_eq!(
+            waiting_for(curator).await,
+            0,
+            "nothing waits in the wiki, so it is read"
         );
     }
 }

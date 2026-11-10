@@ -218,7 +218,18 @@ pub struct QueueQuery {
     tab: Option<String>,
     #[serde(default)]
     done: Option<String>,
+    /// Which waiting edits: all, new pages, edits, or the reviewer's wards.
+    #[serde(default)]
+    show: Option<String>,
+    /// After a bulk decision: how many went through and how many were skipped.
+    #[serde(default)]
+    n: Option<u32>,
+    #[serde(default)]
+    skipped: Option<u32>,
 }
+
+/// The queue's filters, as `show` spells them.
+const SHOWS: [&str; 4] = ["all", "new", "edits", "wards"];
 
 /// GET /admin/review
 pub async fn queue(
@@ -234,7 +245,22 @@ pub async fn queue(
         Some("patrol") => "patrol",
         _ => "pending",
     };
-    let pending = pending_rows(&state, &ctx).await?;
+    let show = query
+        .show
+        .as_deref()
+        .filter(|s| SHOWS.contains(s))
+        .unwrap_or("all");
+    let pending = pending_rows(&state, &ctx, show).await?;
+    let has_wards = match ctx.actor.user_id {
+        Some(me) => sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM curatorships WHERE wiki_id = $1 AND curator_id = $2) AS "x!""#,
+            ctx.wiki.id,
+            me
+        )
+        .fetch_one(&state.db)
+        .await?,
+        None => false,
+    };
     let patrol = if tab == "patrol" {
         patrol_rows(&state, &ctx).await?
     } else {
@@ -243,14 +269,35 @@ pub async fn queue(
     let done = query
         .done
         .as_deref()
-        .filter(|d| ["accepted", "rejected", "rolled_back"].contains(d))
-        .map(|d| ctx.t(&format!("review.done_{d}")));
+        .filter(|d| {
+            [
+                "accepted",
+                "rejected",
+                "rolled_back",
+                "bulk_accepted",
+                "bulk_rejected",
+            ]
+            .contains(d)
+        })
+        .map(|d| {
+            let n = query.n.unwrap_or(0).to_string();
+            let skipped = query.skipped.unwrap_or(0);
+            let mut text = ctx.t_with(&format!("review.done_{d}"), &[("n", &n)]);
+            if skipped > 0 {
+                text.push(' ');
+                text.push_str(&ctx.t_with("review.done_skipped", &[("n", &skipped.to_string())]));
+            }
+            text
+        });
     crate::admin::render(
         &ctx,
         "review",
         &ctx.t("review.title"),
         minijinja::context! {
             tab => tab,
+            show => show,
+            shows => SHOWS,
+            has_wards => has_wards,
             pending_count => pending.len(),
             pending => pending,
             patrol => patrol,
@@ -314,7 +361,36 @@ fn bound_params(ctx: &Ctx) -> (Option<Uuid>, bool) {
         .map_or((None, true), |(me, unassigned)| (Some(me), unassigned))
 }
 
-async fn pending_rows(state: &AppState, ctx: &Ctx) -> Result<Vec<minijinja::Value>, AppError> {
+/// How many edits wait for a reviewer bound as
+/// [`crate::perm::Actor::review_bound`] says, for the menu's count.
+pub(crate) async fn queue_count(
+    db: &sqlx::PgPool,
+    wiki_id: Uuid,
+    bound: Option<(Uuid, bool)>,
+) -> Result<i64, AppError> {
+    let (bound, unassigned) = bound.map_or((None, true), |(me, u)| (Some(me), u));
+    Ok(sqlx::query_scalar!(
+        r#"SELECT count(*) AS "n!"
+           FROM revisions r JOIN pages p ON p.id = r.page_id
+           WHERE p.wiki_id = $1 AND r.review_status = 'pending' AND p.deleted_at IS NULL
+             AND ($2::uuid IS NULL
+                  OR EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id
+                               AND c.user_id = r.author_id AND c.curator_id = $2)
+                  OR ($3 AND NOT EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id
+                                           AND c.user_id = r.author_id)))"#,
+        wiki_id,
+        bound,
+        unassigned
+    )
+    .fetch_one(db)
+    .await?)
+}
+
+async fn pending_rows(
+    state: &AppState,
+    ctx: &Ctx,
+    show: &str,
+) -> Result<Vec<minijinja::Value>, AppError> {
     let (bound, unassigned) = bound_params(ctx);
     let rows = sqlx::query!(
         r#"SELECT r.id, r.created_at, r.summary, r.review_title, r.base_revision_id,
@@ -332,12 +408,21 @@ async fn pending_rows(state: &AppState, ctx: &Ctx) -> Result<Vec<minijinja::Valu
                                AND c.user_id = r.author_id AND c.curator_id = $3)
                   OR ($4 AND NOT EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id
                                            AND c.user_id = r.author_id)))
+             AND CASE $5::text
+                   WHEN 'new' THEN r.base_revision_id IS NULL
+                   WHEN 'edits' THEN r.base_revision_id IS NOT NULL
+                   WHEN 'wards' THEN EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id
+                                               AND c.user_id = r.author_id AND c.curator_id = $6)
+                   ELSE true
+                 END
            ORDER BY r.created_at
            LIMIT $2"#,
         ctx.wiki.id,
         QUEUE_SHOWN,
         bound,
-        unassigned
+        unassigned,
+        show,
+        ctx.actor.user_id
     )
     .fetch_all(&state.db)
     .await?;
@@ -550,45 +635,81 @@ pub async fn show(
     )
 }
 
-/// POST /admin/review/{id}/accept
-pub async fn accept(
-    State(state): State<AppState>,
-    Extension(user): Extension<Option<CurrentUser>>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Result<Response, AppError> {
-    let ctx = or_respond!(
-        crate::admin::gate_for(&state, &headers, user.as_ref(), Capability::RevisionPatrol).await
-    );
-    let Some(rev) = (match pages::parse_uuid(&id) {
-        Some(id) => load(&state.db, ctx.wiki.id, id).await?,
-        None => None,
-    }) else {
-        return Ok(crate::errors::not_found());
-    };
-    let back = format!("/admin/review/{}", rev.id);
+/// What deciding one waiting edit came to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Decided {
+    Done,
+    /// Somebody decided it already, or its author took it back.
+    NotPending,
+    /// The page is protected above this reviewer.
+    NotYours,
+    /// Not among the edits this reviewer checks.
+    NotWard,
+    /// The page moved on since the edit was written.
+    Outdated,
+}
+
+impl Decided {
+    /// The refusal for one edit: its status code and message key.
+    fn refusal(self) -> Option<(StatusCode, &'static str)> {
+        match self {
+            Self::Done | Self::NotPending => None,
+            Self::NotYours => Some((StatusCode::FORBIDDEN, "review.not_yours")),
+            Self::NotWard => Some((StatusCode::FORBIDDEN, "review.not_ward")),
+            Self::Outdated => Some((StatusCode::CONFLICT, "review.outdated")),
+        }
+    }
+}
+
+/// A reviewer's note, cleaned and bounded.
+fn clean_note(ctx: &Ctx, raw: &str) -> String {
+    raw.trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(ctx.limits.file_note_chars.max(500))
+        .collect()
+}
+
+/// Whether this reviewer may decide `rev` at all.
+async fn may_decide(state: &AppState, ctx: &Ctx, rev: &Pending) -> Result<Decided, AppError> {
     if rev.status != "pending" {
-        return Ok(pages::see_other(&back));
+        return Ok(Decided::NotPending);
     }
-    if !rev.reviewer_may_edit(&ctx) {
-        return refuse(&ctx, &back, StatusCode::FORBIDDEN, "review.not_yours");
+    if !rev.reviewer_may_edit(ctx) {
+        return Ok(Decided::NotYours);
     }
-    if !checks(&state.db, &ctx, rev.author_id).await? {
-        return refuse(&ctx, &back, StatusCode::FORBIDDEN, "review.not_ward");
+    if !checks(&state.db, ctx, rev.author_id).await? {
+        return Ok(Decided::NotWard);
+    }
+    Ok(Decided::Done)
+}
+
+/// Accepts `rev`: it becomes the page as a save would, its watchers and its
+/// author hear of it, and an author with enough accepted edits gets the pass.
+async fn accept_one(
+    state: &AppState,
+    ctx: &Ctx,
+    rev: &Pending,
+    note: &str,
+) -> Result<Decided, AppError> {
+    let allowed = may_decide(state, ctx, rev).await?;
+    if allowed != Decided::Done {
+        return Ok(allowed);
     }
     if rev.outdated() {
-        return refuse(&ctx, &back, StatusCode::CONFLICT, "review.outdated");
+        return Ok(Decided::Outdated);
     }
     let path = rev.path();
     let title = rev.title.clone().unwrap_or_else(|| rev.page_title.clone());
-    let prepared = pages::prepare(&state, &ctx, &path, &rev.body_md).await?;
+    let prepared = pages::prepare(state, ctx, &path, &rev.body_md).await?;
     let mut tx = state.db.begin().await?;
     let marked = sqlx::query!(
         "UPDATE revisions SET review_status = 'accepted', reviewed_by = $2, reviewed_at = now(),
-                              is_patrolled = true
+                              is_patrolled = true, review_note = $3
          WHERE id = $1 AND review_status = 'pending'",
         rev.id,
-        ctx.actor.user_id
+        ctx.actor.user_id,
+        (!note.is_empty()).then_some(note)
     )
     .execute(&mut *tx)
     .await?;
@@ -603,12 +724,15 @@ pub async fn accept(
     )
     .execute(&mut *tx)
     .await?;
-    if marked.rows_affected() == 0 || swapped.rows_affected() == 0 {
-        return refuse(&ctx, &back, StatusCode::CONFLICT, "review.outdated");
+    if marked.rows_affected() == 0 {
+        return Ok(Decided::NotPending);
+    }
+    if swapped.rows_affected() == 0 {
+        return Ok(Decided::Outdated);
     }
     pages::index(
         &mut tx,
-        &ctx,
+        ctx,
         rev.page_id,
         &rev.locale,
         &title,
@@ -617,20 +741,20 @@ pub async fn accept(
     )
     .await?;
     tx.commit().await?;
-    pages::after_save(&state, &ctx, rev.page_id, &prepared).await;
+    pages::after_save(state, ctx, rev.page_id, &prepared).await;
     if rev.namespace == "template" {
-        crate::indexing::refresh_users_of(&state, &ctx, &rev.slug);
+        crate::indexing::refresh_users_of(state, ctx, &rev.slug);
     }
     audit(
-        &state,
-        &ctx,
+        state,
+        ctx,
         "revision.accept",
-        &rev,
-        json!({ "path": path, "new_page": rev.base.is_none() }),
+        rev,
+        json!({ "path": path, "new_page": rev.base.is_none(), "note": note }),
     )
     .await;
     // Watchers hear of the edit now that readers see it; its author hears it
-    // went through.
+    // went through, with the reviewer's word if there was one.
     crate::notify::page_edited(
         &state.db,
         ctx.wiki.id,
@@ -638,12 +762,12 @@ pub async fn accept(
         rev.author_id,
         ctx.actor.user_id,
         &title,
-        &crate::notify::history_link(&ctx, &rev.locale, &path),
+        &crate::notify::history_link(ctx, &rev.locale, &path),
         rev.summary.as_deref(),
     )
     .await;
     if let Some(author) = rev.author_id {
-        let (_, href) = page_link(&ctx, &rev.namespace, &rev.slug, &rev.locale);
+        let (_, href) = page_link(ctx, &rev.namespace, &rev.slug, &rev.locale);
         crate::notify::push(
             &state.db,
             author,
@@ -653,67 +777,93 @@ pub async fn accept(
                 actor_id: ctx.actor.user_id,
                 title: &title,
                 link: &href,
+                note: (!note.is_empty()).then_some(note),
+            },
+        )
+        .await;
+        trust_if_earned(state, ctx, author).await?;
+    }
+    crate::notify::waiting_settled(&state.db, ctx.wiki.id).await;
+    Ok(Decided::Done)
+}
+
+/// Gives `author` the pass once the wiki's `review.trust_after` edits of
+/// theirs were accepted, unless somebody set the pass for them by hand.
+async fn trust_if_earned(state: &AppState, ctx: &Ctx, author: Uuid) -> Result<(), AppError> {
+    let needed = ctx.actor.rules.review_trust_after;
+    if needed == 0 {
+        return Ok(());
+    }
+    let granted = sqlx::query_scalar!(
+        r#"INSERT INTO user_capabilities (user_id, wiki_id, capability, allowed, set_by)
+           SELECT $1, $2, 'edit.unreviewed', true, NULL
+           WHERE (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id
+                  WHERE r.author_id = $1 AND p.wiki_id = $2
+                    AND r.review_status = 'accepted' AND r.reviewed_by IS NOT NULL) >= $3
+           ON CONFLICT (user_id, wiki_id, capability) DO NOTHING
+           RETURNING user_id"#,
+        author,
+        ctx.wiki.id,
+        i64::from(needed)
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    if granted.is_some() {
+        crate::audit::record_or_log(
+            &state.db,
+            crate::audit::Entry {
+                wiki_id: Some(ctx.wiki.id),
+                user_id: None,
+                action: "user.trusted",
+                entity_type: "user",
+                entity_id: Some(author),
+                meta: json!({ "accepted": needed }),
+            },
+        )
+        .await;
+        crate::notify::push(
+            &state.db,
+            author,
+            ctx.wiki.id,
+            &crate::notify::Note {
+                kind: "edit_trusted",
+                actor_id: None,
+                title: &ctx.wiki.name,
+                link: "",
                 note: None,
             },
         )
         .await;
     }
-    Ok(pages::see_other("/admin/review?done=accepted"))
+    Ok(())
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct RejectForm {
-    #[serde(default)]
-    note: String,
-}
-
-/// POST /admin/review/{id}/reject: the edit stays in the history as
-/// rejected, with the reviewer's note for its author. A new page that had
-/// nothing but rejected edits is removed, so its address is free again.
-pub async fn reject(
-    State(state): State<AppState>,
-    Extension(user): Extension<Option<CurrentUser>>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-    Form(form): Form<RejectForm>,
-) -> Result<Response, AppError> {
-    let ctx = or_respond!(
-        crate::admin::gate_for(&state, &headers, user.as_ref(), Capability::RevisionPatrol).await
-    );
-    let Some(rev) = (match pages::parse_uuid(&id) {
-        Some(id) => load(&state.db, ctx.wiki.id, id).await?,
-        None => None,
-    }) else {
-        return Ok(crate::errors::not_found());
-    };
-    let back = format!("/admin/review/{}", rev.id);
-    if rev.status != "pending" {
-        return Ok(pages::see_other(&back));
+/// Rejects `rev` with `note` for its author. A new page that had nothing
+/// but rejected edits is removed, so its address is free again.
+async fn reject_one(
+    state: &AppState,
+    ctx: &Ctx,
+    rev: &Pending,
+    note: &str,
+) -> Result<Decided, AppError> {
+    let allowed = may_decide(state, ctx, rev).await?;
+    if allowed != Decided::Done {
+        return Ok(allowed);
     }
-    if !rev.reviewer_may_edit(&ctx) {
-        return refuse(&ctx, &back, StatusCode::FORBIDDEN, "review.not_yours");
-    }
-    if !checks(&state.db, &ctx, rev.author_id).await? {
-        return refuse(&ctx, &back, StatusCode::FORBIDDEN, "review.not_ward");
-    }
-    let note: String = form
-        .note
-        .trim()
-        .chars()
-        .filter(|c| !c.is_control())
-        .take(ctx.limits.file_note_chars.max(500))
-        .collect();
     let mut tx = state.db.begin().await?;
-    sqlx::query!(
+    let marked = sqlx::query!(
         "UPDATE revisions SET review_status = 'rejected', reviewed_by = $2, reviewed_at = now(),
                               review_note = $3
          WHERE id = $1 AND review_status = 'pending'",
         rev.id,
         ctx.actor.user_id,
-        (!note.is_empty()).then_some(note.as_str())
+        (!note.is_empty()).then_some(note)
     )
     .execute(&mut *tx)
     .await?;
+    if marked.rows_affected() == 0 {
+        return Ok(Decided::NotPending);
+    }
     let removed = sqlx::query!(
         "DELETE FROM pages p WHERE p.id = $1 AND p.current_revision_id IS NULL
            AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.page_id = p.id AND r.review_status = 'pending')",
@@ -725,10 +875,10 @@ pub async fn reject(
         > 0;
     tx.commit().await?;
     audit(
-        &state,
-        &ctx,
+        state,
+        ctx,
         "revision.reject",
-        &rev,
+        rev,
         json!({ "path": rev.path(), "note": note, "removed_new_page": removed }),
     )
     .await;
@@ -738,7 +888,7 @@ pub async fn reject(
         let link = if removed {
             String::new()
         } else {
-            crate::notify::history_link(&ctx, &rev.locale, &rev.path())
+            crate::notify::history_link(ctx, &rev.locale, &rev.path())
         };
         let title = rev.title.clone().unwrap_or_else(|| rev.page_title.clone());
         crate::notify::push(
@@ -750,12 +900,127 @@ pub async fn reject(
                 actor_id: ctx.actor.user_id,
                 title: &title,
                 link: &link,
-                note: (!note.is_empty()).then_some(note.as_str()),
+                note: (!note.is_empty()).then_some(note),
             },
         )
         .await;
     }
-    Ok(pages::see_other("/admin/review?done=rejected"))
+    crate::notify::waiting_settled(&state.db, ctx.wiki.id).await;
+    Ok(Decided::Done)
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct DecideForm {
+    #[serde(default)]
+    note: String,
+}
+
+/// One edit's page after a decision: back to the queue, or why not.
+fn after_one(ctx: &Ctx, rev: &Pending, outcome: Decided, done: &str) -> Result<Response, AppError> {
+    let back = format!("/admin/review/{}", rev.id);
+    match outcome.refusal() {
+        Some((status, key)) => refuse(ctx, &back, status, key),
+        None if outcome == Decided::NotPending => Ok(pages::see_other(&back)),
+        None => Ok(pages::see_other(&format!("/admin/review?done={done}"))),
+    }
+}
+
+/// POST /admin/review/{id}/accept, with an optional note for the author.
+pub async fn accept(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Form(form): Form<DecideForm>,
+) -> Result<Response, AppError> {
+    let ctx = or_respond!(
+        crate::admin::gate_for(&state, &headers, user.as_ref(), Capability::RevisionPatrol).await
+    );
+    let Some(rev) = (match pages::parse_uuid(&id) {
+        Some(id) => load(&state.db, ctx.wiki.id, id).await?,
+        None => None,
+    }) else {
+        return Ok(crate::errors::not_found());
+    };
+    let outcome = accept_one(&state, &ctx, &rev, &clean_note(&ctx, &form.note)).await?;
+    after_one(&ctx, &rev, outcome, "accepted")
+}
+
+/// POST /admin/review/{id}/reject: the edit stays in the history as
+/// rejected, with the reviewer's note for its author.
+pub async fn reject(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Form(form): Form<DecideForm>,
+) -> Result<Response, AppError> {
+    let ctx = or_respond!(
+        crate::admin::gate_for(&state, &headers, user.as_ref(), Capability::RevisionPatrol).await
+    );
+    let Some(rev) = (match pages::parse_uuid(&id) {
+        Some(id) => load(&state.db, ctx.wiki.id, id).await?,
+        None => None,
+    }) else {
+        return Ok(crate::errors::not_found());
+    };
+    let outcome = reject_one(&state, &ctx, &rev, &clean_note(&ctx, &form.note)).await?;
+    after_one(&ctx, &rev, outcome, "rejected")
+}
+
+/// Edits one bulk decision takes at most.
+const BULK_MAX: usize = 100;
+
+/// POST /admin/review/bulk: `action` (accept or reject), an optional
+/// `note`, and one `id` per chosen edit. Each edit is decided on its own,
+/// so one that moved on or is somebody else's is skipped, not fatal.
+pub async fn bulk(
+    State(state): State<AppState>,
+    Extension(user): Extension<Option<CurrentUser>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Response, AppError> {
+    let ctx = or_respond!(
+        crate::admin::gate_for(&state, &headers, user.as_ref(), Capability::RevisionPatrol).await
+    );
+    let mut ids = Vec::new();
+    let mut action = String::new();
+    let mut note = String::new();
+    for (key, value) in url::form_urlencoded::parse(&body) {
+        match key.as_ref() {
+            "id" if ids.len() < BULK_MAX => ids.extend(pages::parse_uuid(&value)),
+            "action" => action = value.into_owned(),
+            "note" => note = value.into_owned(),
+            _ => {}
+        }
+    }
+    let accepting = match action.as_str() {
+        "accept" => true,
+        "reject" => false,
+        _ => return Ok(pages::see_other("/admin/review")),
+    };
+    let note = clean_note(&ctx, &note);
+    let (mut done, mut skipped) = (0, 0);
+    for id in ids {
+        let Some(rev) = load(&state.db, ctx.wiki.id, id).await? else {
+            skipped += 1;
+            continue;
+        };
+        let outcome = if accepting {
+            accept_one(&state, &ctx, &rev, &note).await?
+        } else {
+            reject_one(&state, &ctx, &rev, &note).await?
+        };
+        if outcome == Decided::Done {
+            done += 1;
+        } else {
+            skipped += 1;
+        }
+    }
+    let verb = if accepting { "accepted" } else { "rejected" };
+    Ok(pages::see_other(&format!(
+        "/admin/review?done=bulk_{verb}&n={done}&skipped={skipped}"
+    )))
 }
 
 /// Days a turned-down edit stays on its author's list.
@@ -887,6 +1152,7 @@ pub async fn withdraw(
         },
     )
     .await;
+    crate::notify::waiting_settled(&state.db, ctx.wiki.id).await;
     Ok(pages::see_other("/drafts?withdrawn=1"))
 }
 

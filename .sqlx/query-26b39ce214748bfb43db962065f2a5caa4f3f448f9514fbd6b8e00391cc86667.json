@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_capabilities (user_id, wiki_id, capability, allowed, set_by)\n           SELECT $1, $2, 'edit.unreviewed', true, NULL\n           WHERE (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id\n                  WHERE r.author_id = $1 AND p.wiki_id = $2\n                    AND r.review_status = 'accepted' AND r.reviewed_by IS NOT NULL) >= $3\n           ON CONFLICT (user_id, wiki_id, capability) DO NOTHING\n           RETURNING user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_capabilities",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "26b39ce214748bfb43db962065f2a5caa4f3f448f9514fbd6b8e00391cc86667"
+}

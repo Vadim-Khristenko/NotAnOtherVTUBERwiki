@@ -209,6 +209,9 @@ pub struct Rules {
     pub review_edits: bool,
     /// Whose edits a curator checks. From `settings.review.scope`.
     pub review_scope: ReviewScope,
+    /// After this many accepted edits an author gets the pass on their own;
+    /// 0 never. From `settings.review.trust_after`.
+    pub review_trust_after: u32,
 }
 
 /// Whose edits a curator checks in the review queue. Moderators and up check
@@ -256,6 +259,7 @@ impl Default for Rules {
             review_new_pages: false,
             review_edits: false,
             review_scope: ReviewScope::All,
+            review_trust_after: 0,
         }
     }
 }
@@ -278,11 +282,17 @@ impl Rules {
             .and_then(Value::as_str)
             .and_then(ReviewScope::parse)
             .unwrap_or_default();
+        let review_trust_after = settings
+            .get("review")
+            .and_then(|r| r.get("trust_after"))
+            .and_then(Value::as_u64)
+            .map_or(0, |n| n.min(10_000) as u32);
         let Some(block) = settings.get("permissions") else {
             return Self {
                 review_new_pages: review("new_pages"),
                 review_edits: review("edits"),
                 review_scope,
+                review_trust_after,
                 ..d
             };
         };
@@ -297,6 +307,7 @@ impl Rules {
             review_new_pages: review("new_pages"),
             review_edits: review("edits"),
             review_scope,
+            review_trust_after,
         }
     }
 }

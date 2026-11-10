@@ -250,7 +250,11 @@ fn routes(state: AppState) -> Router {
         .route("/admin/blocks/{id}/remove", post(ipblock::remove))
         .route("/admin/review", get(review::queue))
         .route("/admin/review/{id}", get(review::show))
-        .route("/admin/review/{id}/accept", post(review::accept))
+        .route("/admin/review/bulk", post(review::bulk).layer(text_form()))
+        .route(
+            "/admin/review/{id}/accept",
+            post(review::accept).layer(text_form()),
+        )
         .route(
             "/admin/review/{id}/reject",
             post(review::reject).layer(text_form()),

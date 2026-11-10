@@ -945,7 +945,10 @@ html.viewer-open { overflow: hidden; }
 .content .footnote-sep { color: var(--muted); }
 /* The review queue and its single item. */
 .review-actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s4); margin-top: var(--s3); }
-.review-actions .review-reject { margin-top: 0; flex: 1 1 18rem; }
+.review-decide { margin-top: var(--s3); max-width: 36rem; }
+.review-bulk-bar { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin: var(--s3) 0; }
+.review-bulk-bar .field-input { flex: 1 1 16rem; }
+.review-pick { width: 1.15rem; height: 1.15rem; accent-color: var(--accent); margin: 0; }
 .review-preview { padding: var(--s4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
 .tag-review-pending { color: #b45309; border-color: #e0a100; }
 .tag-review-rejected { color: #b91c1c; border-color: #ef4444; }

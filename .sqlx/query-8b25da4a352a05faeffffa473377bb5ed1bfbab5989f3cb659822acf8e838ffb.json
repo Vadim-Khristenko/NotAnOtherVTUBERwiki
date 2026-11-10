@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT r.id, r.created_at, r.summary, r.review_title, r.base_revision_id,\n                  octet_length(r.body_md) AS \"bytes!\",\n                  (SELECT octet_length(b.body_md) FROM revisions b WHERE b.id = r.base_revision_id) AS \"base_bytes?\",\n                  (SELECT u.username FROM users u WHERE u.id = r.author_id) AS \"author?\",\n                  (SELECT cu.username FROM curatorships c JOIN users cu ON cu.id = c.curator_id\n                     WHERE c.wiki_id = p.wiki_id AND c.user_id = r.author_id) AS \"curator?\",\n                  p.slug, p.namespace::text AS \"namespace!\", p.title, COALESCE(p.locale, '') AS \"locale!\",\n                  p.current_revision_id\n           FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND r.review_status = 'pending' AND p.deleted_at IS NULL\n             AND ($3::uuid IS NULL\n                  OR EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id\n                               AND c.user_id = r.author_id AND c.curator_id = $3)\n                  OR ($4 AND NOT EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id\n                                           AND c.user_id = r.author_id)))\n           ORDER BY r.created_at\n           LIMIT $2",
+  "query": "SELECT r.id, r.created_at, r.summary, r.review_title, r.base_revision_id,\n                  octet_length(r.body_md) AS \"bytes!\",\n                  (SELECT octet_length(b.body_md) FROM revisions b WHERE b.id = r.base_revision_id) AS \"base_bytes?\",\n                  (SELECT u.username FROM users u WHERE u.id = r.author_id) AS \"author?\",\n                  (SELECT cu.username FROM curatorships c JOIN users cu ON cu.id = c.curator_id\n                     WHERE c.wiki_id = p.wiki_id AND c.user_id = r.author_id) AS \"curator?\",\n                  p.slug, p.namespace::text AS \"namespace!\", p.title, COALESCE(p.locale, '') AS \"locale!\",\n                  p.current_revision_id\n           FROM revisions r JOIN pages p ON p.id = r.page_id\n           WHERE p.wiki_id = $1 AND r.review_status = 'pending' AND p.deleted_at IS NULL\n             AND ($3::uuid IS NULL\n                  OR EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id\n                               AND c.user_id = r.author_id AND c.curator_id = $3)\n                  OR ($4 AND NOT EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id\n                                           AND c.user_id = r.author_id)))\n             AND CASE $5::text\n                   WHEN 'new' THEN r.base_revision_id IS NULL\n                   WHEN 'edits' THEN r.base_revision_id IS NOT NULL\n                   WHEN 'wards' THEN EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id\n                                               AND c.user_id = r.author_id AND c.curator_id = $6)\n                   ELSE true\n                 END\n           ORDER BY r.created_at\n           LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -133,7 +133,9 @@
         "Uuid",
         "Int8",
         "Uuid",
-        "Bool"
+        "Bool",
+        "Text",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -153,5 +155,5 @@
       true
     ]
   },
-  "hash": "9f0e58606ba7b303986f991c086bed12fd41913a01f9fdd362af1d7385edd57b"
+  "hash": "8b25da4a352a05faeffffa473377bb5ed1bfbab5989f3cb659822acf8e838ffb"
 }

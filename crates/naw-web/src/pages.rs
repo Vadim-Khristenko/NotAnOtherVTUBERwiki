@@ -1782,6 +1782,14 @@ pub async fn create_page(
         )
         .await;
         crate::notify::watch_written(&state.db, &ctx, &slug).await;
+        crate::notify::waiting(
+            &state.db,
+            &ctx,
+            ctx.actor.user_id,
+            &draft.title,
+            draft.summary.as_deref(),
+        )
+        .await;
         if let Some(author) = ctx.actor.user_id {
             crate::drafts::clear(
                 &state.db,
@@ -2062,6 +2070,14 @@ async fn save_own_pending(
         },
     )
     .await;
+    crate::notify::waiting(
+        &state.db,
+        ctx,
+        Some(author),
+        &draft.title,
+        draft.summary.as_deref(),
+    )
+    .await;
     Ok(see_other(&ctx.link(&format!("/{slug}"))))
 }
 
@@ -2269,6 +2285,14 @@ pub async fn save_page(
         )
         .await;
         crate::notify::watch_written(&state.db, &ctx, &slug).await;
+        crate::notify::waiting(
+            &state.db,
+            &ctx,
+            ctx.actor.user_id,
+            &draft.title,
+            draft.summary.as_deref(),
+        )
+        .await;
         clear_draft().await;
         return Ok(see_other(&format!(
             "{}?pending=1",

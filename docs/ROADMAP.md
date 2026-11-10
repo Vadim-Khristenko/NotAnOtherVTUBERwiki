@@ -255,7 +255,10 @@ The part that makes it a wiki rather than a blog.
 - [x] Whose edits a curator checks, as the wiki chooses: everyone's, the people they look
       after plus anyone nobody looks after, or only the people they look after. Authors
       find their waiting edits in the menu with a count and keep editing a new page while
-      it waits
+      it waits. Reviewers hear when edits wait for them (the author's curator, or the
+      staff), see the queue's count in the menu, filter it (new pages, edits, their wards),
+      decide many edits at once, and leave a note with an accept too. A wiki may give the
+      pass on its own after a number of accepted edits
 - [x] Two-step sign-in for every way in: a code from an authenticator app (the key kept
       encrypted under a server secret) or from the wiki's bot on a linked Telegram or
       Discord, with one-time recovery codes, and an admin who can take it off a lost account

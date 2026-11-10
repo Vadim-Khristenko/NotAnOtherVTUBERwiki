@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH assigned AS (\n           SELECT curator_id AS user_id FROM curatorships WHERE wiki_id = $1 AND user_id = $2\n         ), reviewers AS (\n           SELECT user_id FROM assigned\n           UNION\n           SELECT m.user_id FROM wiki_memberships m\n           WHERE m.wiki_id = $1 AND NOT EXISTS (SELECT 1 FROM assigned)\n             AND (m.role::text IN ('moderator', 'admin', 'owner')\n                  OR ($3 AND m.role::text = 'curator'))\n         ), recipients AS (\n           SELECT user_id FROM reviewers WHERE user_id IS DISTINCT FROM $2\n         ), refreshed AS (\n           UPDATE notifications n SET actor_id = $2, title = $4, note = $5, created_at = now()\n           FROM recipients r\n           WHERE n.user_id = r.user_id AND n.wiki_id = $1 AND n.kind = 'edit_waiting'\n             AND n.read_at IS NULL\n           RETURNING n.user_id\n         )\n         INSERT INTO notifications (id, user_id, wiki_id, kind, actor_id, title, link, note)\n         SELECT gen_random_uuid(), r.user_id, $1, 'edit_waiting', $2, $4, $6, $5\n         FROM recipients r\n         WHERE r.user_id NOT IN (SELECT user_id FROM refreshed)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bool",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e5cd2790fa3451ec9b10f7be420229a5bff64312a0c93b1021a9a605e0c5e302"
+}
