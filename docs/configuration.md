@@ -88,6 +88,7 @@ Wiki settings, Limits. The scope column says how:
 | `rate_heavy_per_minute` | 60 | 10 to 10000 | install | Searches, histories, diffs and old revisions one address may open in a minute |
 | `rate_typing_per_minute` | 240 | 20 to 10000 | install | Previews, draft saves and suggestions one address may ask for in a minute |
 | `rate_write_per_minute` | 30 | 5 to 10000 | install | Other forms one address may send in a minute |
+| `rate_api_per_minute` | 120 | 10 to 100000 | install | Calls to the public API (`/api/v1`) one address may make in a minute; its searches and recent changes count against the heavy reads instead |
 
 The four `rate_` limits count per client address, and per /64 network for
 IPv6, since one machine is usually given a whole /64. Each is a bucket that

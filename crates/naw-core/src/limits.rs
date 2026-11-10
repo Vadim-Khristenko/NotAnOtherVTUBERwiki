@@ -210,6 +210,9 @@ limits! {
     rate_typing_per_minute: i64 = 240, 20, 10000, Install;
     /// Other forms one address may send in a minute.
     rate_write_per_minute: i64 = 30, 5, 10000, Install;
+    /// Calls to the public API (`/api/v1`) one address may make in a minute;
+    /// its searches and recent changes count against the heavy reads instead.
+    rate_api_per_minute: i64 = 120, 10, 100000, Install;
 }
 
 static INSTALL: std::sync::OnceLock<Limits> = std::sync::OnceLock::new();

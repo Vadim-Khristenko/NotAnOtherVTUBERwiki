@@ -36,6 +36,8 @@ pub enum Class {
     Heavy,
     Typing,
     Write,
+    /// The public API: its own budget, so a script cannot spend a reader's.
+    Api,
 }
 
 impl Class {
@@ -45,6 +47,7 @@ impl Class {
             Self::Heavy => limits.rate_heavy_per_minute,
             Self::Typing => limits.rate_typing_per_minute,
             Self::Write => limits.rate_write_per_minute,
+            Self::Api => limits.rate_api_per_minute,
         }
     }
 }
@@ -91,6 +94,8 @@ pub fn classify(method: &Method, path: &str) -> Option<Class> {
             Class::Typing
         } else if is_heavy(path) {
             Class::Heavy
+        } else if path.starts_with("/api/v1") {
+            Class::Api
         } else {
             Class::Read
         });
@@ -255,6 +260,9 @@ mod tests {
         assert_eq!(classify(&get, "/filian/rev/42"), Some(Class::Heavy));
         assert_eq!(classify(&get, "/media"), Some(Class::Heavy));
         assert_eq!(classify(&get, "/api/complete"), Some(Class::Typing));
+        assert_eq!(classify(&get, "/api/v1/pages/filian"), Some(Class::Api));
+        assert_eq!(classify(&get, "/api/v1/pages/filian/raw"), Some(Class::Api));
+        assert_eq!(classify(&get, "/api/v1/search"), Some(Class::Heavy));
         assert_eq!(classify(&post, "/preview"), Some(Class::Typing));
         assert_eq!(classify(&post, "/drafts/save"), Some(Class::Typing));
         assert_eq!(classify(&post, "/filian/edit"), Some(Class::Write));

@@ -328,6 +328,7 @@ fn routes(state: AppState) -> Router {
         .route("/api/v1/pages", get(api::list))
         .route("/api/v1/pages/{path}", get(api::page))
         .route("/api/v1/pages/{path}/history", get(api::history))
+        .route("/api/v1/pages/{path}/raw", get(api::raw))
         .route("/api/v1/revisions/{id}", get(api::revision))
         .route("/api/v1/search", get(api::search))
         .route("/api/v1/recent", get(api::recent))

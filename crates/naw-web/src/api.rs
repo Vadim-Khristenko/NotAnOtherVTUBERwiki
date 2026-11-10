@@ -4,8 +4,9 @@
 //! live pages and their accepted revisions. Edits waiting for review, deleted
 //! pages and anything about accounts beyond the public name stay out. No
 //! session is read, so a call never acts as anyone, and any site may call it
-//! (`Access-Control-Allow-Origin: *`). Requests share the per-address rate
-//! budgets of the site (`ratelimit.rs`).
+//! (`Access-Control-Allow-Origin: *`). Each address has its own budget of
+//! API calls a minute (`rate_api_per_minute`, see `ratelimit.rs`); its searches
+//! and recent changes count against the heavy reads instead.
 //!
 //! Lists page with a cursor (`next`), never with offsets that drift.
 
@@ -365,6 +366,68 @@ pub struct PageQuery {
     locale: Option<String>,
     /// `markdown` (the default), `html` or `both`.
     format: Option<String>,
+}
+
+/// GET /api/v1/pages/{path}/raw: the live text as Markdown and nothing else,
+/// for a tool that wants a file rather than JSON. The revision it is comes in
+/// `ETag`, so a second ask with `If-None-Match` costs no body.
+pub async fn raw(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(path): Path<String>,
+    Query(q): Query<PageQuery>,
+) -> Result<Response, AppError> {
+    let Some(ctx) = context(&state, &headers).await? else {
+        return Ok(not_found("no wiki at this address"));
+    };
+    if !pages::slug_is_valid(&path) {
+        return Ok(fail(
+            StatusCode::BAD_REQUEST,
+            "bad_path",
+            "a page path looks like bao-the-whale or template:infobox",
+        ));
+    }
+    let Some(locale) = locale_of(&ctx, q.locale.as_deref()) else {
+        return Ok(fail(
+            StatusCode::BAD_REQUEST,
+            "bad_locale",
+            "locale looks like en or pt-BR",
+        ));
+    };
+    let Some(found) = pages::find_page(&state.db, ctx.wiki.id, &path, &locale).await? else {
+        return Ok(not_found("no such page"));
+    };
+    let etag = format!("\"{}\"", found.revision_id);
+    let fresh = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.split(',').any(|t| t.trim() == etag));
+    let mut res = if fresh {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else {
+        found.body_md.into_response()
+    };
+    let h = res.headers_mut();
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/markdown; charset=utf-8"),
+    );
+    h.insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    h.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=60"),
+    );
+    h.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    if let Ok(value) = HeaderValue::from_str(&etag) {
+        h.insert(header::ETAG, value);
+    }
+    Ok(res)
 }
 
 pub async fn page(
@@ -870,6 +933,8 @@ pub async fn openapi(
             "/pages/{path}": get("A page: its text, rendered HTML, categories and translations", vec![
                 p("path", "path", "string", "bao-the-whale, template:infobox"), locale(),
                 p("format", "query", "string", "markdown (default), html or both")]),
+            "/pages/{path}/raw": get("The live text alone, as text/markdown, with the revision in ETag", vec![
+                p("path", "path", "string", "A page path"), locale()]),
             "/pages/{path}/history": get("Accepted revisions, newest first", vec![
                 p("path", "path", "string", "A page path"), locale(), lim(),
                 p("before", "query", "string", "created_at of the last item of the previous answer (RFC 3339)")]),
