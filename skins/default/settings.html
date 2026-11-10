@@ -249,6 +249,22 @@
     {% endif %}
   </section>
 
+  {% if bot_accounts_beta %}
+  {# A beta the wiki's admins switched on: what a bot account will be. The
+     turning itself is not open yet. #}
+  <section class="settings-card settings-card-wide" aria-labelledby="s-bot" id="bot-account">
+    <h2 id="s-bot"><svg class="icon" aria-hidden="true"><use href="#i-code" /></svg>{{ t("settings.bot_title") }} <span class="tag">{{ t("settings.beta") }}</span></h2>
+    <p>{{ t("settings.bot_lede") }}</p>
+    <ul class="field-note">
+      <li>{{ t("settings.bot_token") }}</li>
+      <li>{{ t("settings.bot_app") }}</li>
+      <li>{{ t("settings.bot_rights") }}</li>
+      <li><strong>{{ t("settings.bot_final") }}</strong></li>
+    </ul>
+    <p><button class="button-preview" type="button" disabled>{{ t("settings.bot_soon") }}</button></p>
+  </section>
+  {% endif %}
+
   {# The end of the account, in the owner's hands when the wiki allows it.
      What goes and what stays is said before, not after (see legal.rs). #}
   <section class="settings-card settings-card-wide danger-zone" id="delete" aria-labelledby="s-delete">

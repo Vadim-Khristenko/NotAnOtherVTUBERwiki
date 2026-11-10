@@ -722,6 +722,12 @@
       </label>
     </fieldset>
 
+    <fieldset class="perm-set">
+      <legend>{{ t("admin.beta") }}</legend>
+      <p class="field-note">{{ t("admin.beta_note") }}</p>
+      <label class="check"><input type="checkbox" name="beta_bot_accounts" {% if beta_bot_accounts %}checked{% endif %} /> {{ t("admin.beta_bot_accounts") }}</label>
+    </fieldset>
+
     <div class="form-actions">
       <button class="button-save" type="submit">{{ t("admin.save_settings") }}</button>
     </div>

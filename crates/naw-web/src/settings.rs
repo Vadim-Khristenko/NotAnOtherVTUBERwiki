@@ -23,6 +23,15 @@ fn sign_in_first() -> Response {
     Redirect::to(&format!("/login?next={}", encode_component("/settings"))).into_response()
 }
 
+/// Whether the wiki's admins switched on the bot accounts beta
+/// (`settings.beta.bot_accounts`, off by default).
+pub(crate) fn bot_accounts_beta(settings: &serde_json::Value) -> bool {
+    settings
+        .pointer("/beta/bot_accounts")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
 /// A short "browser on platform" label for a user agent.
 pub(crate) fn device_label(user_agent: Option<&str>) -> String {
     let ua = user_agent.unwrap_or_default();
@@ -178,6 +187,7 @@ pub async fn page(
                 email_verified => user.email_verified,
                 has_password => account.has_password,
                 two_factor => account.two_factor,
+                bot_accounts_beta => bot_accounts_beta(&ctx.wiki.settings),
                 password_changed => account.password_changed_at.map(|t| t.format("%Y-%m-%d").to_string()),
                 chosen_locale => chosen,
                 my_display_name => user.display_name.clone(),

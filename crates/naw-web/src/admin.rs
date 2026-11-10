@@ -1502,6 +1502,7 @@ pub async fn wiki_settings(
             review_edits => rules.review_edits,
             review_scope => rules.review_scope.as_str(),
             review_trust_after => rules.review_trust_after,
+            beta_bot_accounts => crate::settings::bot_accounts_beta(&ctx.wiki.settings),
             raw_settings => serde_json::to_string_pretty(&ctx.wiki.settings)
                 .unwrap_or_else(|_| "{}".to_string()),
             limits => limit_rows(&state, &ctx),
@@ -1635,6 +1636,8 @@ pub struct WikiForm {
     review_scope: Option<String>,
     #[serde(default)]
     review_trust_after: Option<String>,
+    #[serde(default)]
+    beta_bot_accounts: Option<String>,
 }
 
 /// POST /admin/wiki
@@ -1709,6 +1712,17 @@ pub async fn save_wiki_settings(
                 .map_or(0, |n| n.min(10_000)),
         }),
     );
+    // Beta switches merge, so one this form does not know survives a save.
+    let mut beta = object
+        .get("beta")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    beta.insert(
+        "bot_accounts".into(),
+        json!(form.beta_bot_accounts.is_some()),
+    );
+    object.insert("beta".into(), Value::Object(beta));
 
     let locale_changed = locale != ctx.wiki.default_locale;
     sqlx::query!(
