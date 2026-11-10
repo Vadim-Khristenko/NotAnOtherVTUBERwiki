@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>{{ title }} | {{ wiki_name }}</title>
+<title>{% if seo is defined and seo and seo.document_title %}{{ seo.document_title }}{% else %}{{ title }} | {{ wiki_name }}{% endif %}</title>
 {#
   Search engines keep articles, categories and the front page, which pass
   `seo`; everything else is a tool and says noindex.
@@ -22,6 +22,8 @@
 <meta property="og:image" content="{{ seo.image }}" />
 <meta property="og:locale" content="{{ seo.og_locale }}" />
 <meta name="twitter:card" content="{% if seo.large_image %}summary_large_image{% else %}summary{% endif %}" />
+{% if seo.modified %}<meta property="article:modified_time" content="{{ seo.modified }}" />
+{% endif %}<script type="application/ld+json" nonce="{{ csp_nonce() }}">{{ seo.json_ld|safe }}</script>
 {% else %}
 <meta name="robots" content="noindex" />
 {% endif %}

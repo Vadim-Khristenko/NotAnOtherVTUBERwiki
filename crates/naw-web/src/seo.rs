@@ -263,15 +263,94 @@ pub(crate) struct Card<'a> {
     pub article: bool,
     /// The page's other languages: (code, href), this one included.
     pub languages: Vec<(String, String)>,
+    /// When the article last changed.
+    pub modified: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// The name people type for a wiki branded as one word: "FilianWIKI" is
+/// searched for as "Filian Wiki". None when the name already reads that way.
+pub(crate) fn alternate_name(name: &str) -> Option<String> {
+    let stem = name
+        .strip_suffix("WIKI")
+        .or_else(|| name.strip_suffix("Wiki"))?;
+    let alternate = format!("{} Wiki", stem.trim_end());
+    (!stem.trim().is_empty() && alternate != name).then_some(alternate)
+}
+
+/// The schema.org description of the page and its wiki, as one JSON-LD block.
+/// Search engines read the site name, its search box and the article's dates
+/// from it.
+fn structured_data(
+    ctx: &Ctx,
+    card: &Card<'_>,
+    canonical: &str,
+    description: &str,
+    image: &str,
+) -> String {
+    let root = absolute(ctx, "/");
+    let site_id = format!("{root}#website");
+    let mut site = serde_json::json!({
+        "@type": "WebSite",
+        "@id": site_id,
+        "url": root,
+        "name": ctx.wiki.name,
+        "inLanguage": ctx.content_locale,
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": format!("{}?q={{search_term_string}}", absolute(ctx, "/search")),
+            },
+            "query-input": "required name=search_term_string",
+        },
+    });
+    if let Some(alternate) = alternate_name(&ctx.wiki.name) {
+        site["alternateName"] = serde_json::json!([alternate]);
+    }
+    let mut page = serde_json::json!({
+        "@type": if card.article { "Article" } else { "WebPage" },
+        "@id": format!("{canonical}#page"),
+        "url": canonical,
+        "name": card.title,
+        "description": description,
+        "inLanguage": ctx.content_locale,
+        "isPartOf": { "@id": site_id },
+        "image": image,
+    });
+    if card.article {
+        page["headline"] = serde_json::json!(card.title);
+        page["mainEntityOfPage"] = serde_json::json!(canonical);
+        page["author"] =
+            serde_json::json!({ "@type": "Organization", "name": ctx.wiki.name, "url": root });
+        page["publisher"] = page["author"].clone();
+    }
+    if let Some(modified) = card.modified {
+        page["dateModified"] = serde_json::json!(modified.to_rfc3339());
+    }
+    let graph = serde_json::json!({ "@context": "https://schema.org", "@graph": [site, page] });
+    // A "</script>" inside a string would end the block early.
+    graph.to_string().replace("</", "<\\/")
 }
 
 /// What the layout writes into `<head>` for a page search engines may keep.
 pub(crate) fn head(ctx: &Ctx, card: Card<'_>) -> minijinja::Value {
     let description = card
         .description
+        .clone()
         .filter(|d| !d.is_empty())
         .unwrap_or_else(|| ctx.t_with("seo.fallback", &[("wiki", &ctx.wiki.name)]));
     let picture = card.image.as_deref().map(|src| absolute(ctx, src));
+    let canonical = absolute(ctx, &card.href);
+    let image = picture
+        .clone()
+        .unwrap_or_else(|| absolute(ctx, FALLBACK_IMAGE));
+    let json_ld = structured_data(ctx, &card, &canonical, &description, &image);
+    // The front page is titled with the wiki's name; "X | X" says nothing,
+    // the name people search for says more.
+    let document_title = (card.title == ctx.wiki.name)
+        .then(|| alternate_name(&ctx.wiki.name))
+        .flatten()
+        .map(|alternate| format!("{alternate} | {}", ctx.wiki.name));
     let alternates: Vec<minijinja::Value> = if card.languages.len() > 1 {
         card.languages
             .iter()
@@ -288,18 +367,21 @@ pub(crate) fn head(ctx: &Ctx, card: Card<'_>) -> minijinja::Value {
         .map(|(_, href)| absolute(ctx, href));
     minijinja::context! {
         title => card.title,
+        document_title => document_title,
         description => description,
-        canonical => absolute(ctx, &card.href),
+        canonical => canonical,
         large_image => picture.is_some(),
-        image => picture.unwrap_or_else(|| absolute(ctx, FALLBACK_IMAGE)),
+        image => image,
         og_type => if card.article { "article" } else { "website" },
         og_locale => og_locale(&ctx.content_locale),
         alternates => alternates,
         x_default => x_default,
+        modified => card.modified.map(|m| m.to_rfc3339()),
+        json_ld => json_ld,
     }
 }
 
-/// The card of the article or category at `path` in the reader's language.
+/// The card of the article at `path` in the reader's language.
 pub(crate) async fn card_for(
     state: &AppState,
     ctx: &Ctx,
@@ -307,7 +389,7 @@ pub(crate) async fn card_for(
     title: &str,
     body_html: &str,
     href: String,
-    article: bool,
+    modified: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<minijinja::Value, AppError> {
     let languages = live_languages(&state.db, ctx, path)
         .await?
@@ -324,8 +406,9 @@ pub(crate) async fn card_for(
             description: description(body_html),
             href,
             image: first_image(body_html),
-            article,
+            article: true,
             languages,
+            modified,
         },
     ))
 }
@@ -535,5 +618,17 @@ mod tests {
     fn languages_get_their_region() {
         assert_eq!(og_locale("ru"), "ru_RU");
         assert_eq!(og_locale("de"), "de_DE");
+    }
+
+    #[test]
+    fn a_one_word_wiki_name_is_also_searched_for_as_two() {
+        assert_eq!(alternate_name("FilianWIKI").as_deref(), Some("Filian Wiki"));
+        assert_eq!(
+            alternate_name("SnackersWiki").as_deref(),
+            Some("Snackers Wiki")
+        );
+        assert_eq!(alternate_name("Filian Wiki"), None);
+        assert_eq!(alternate_name("WIKI"), None);
+        assert_eq!(alternate_name("NotAnotherWiki engine demo"), None);
     }
 }

@@ -533,6 +533,7 @@ async fn page(
                     image: body_html.as_deref().and_then(crate::seo::first_image),
                     article: false,
                     languages: Vec::new(),
+                    modified: None,
                 },
             )
         });

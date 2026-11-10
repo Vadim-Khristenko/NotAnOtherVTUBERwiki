@@ -1163,7 +1163,18 @@ pub async fn page(
     // Search engines keep articles; a template's page is a tool.
     let seo = if split_path(&slug).0 == "main" {
         let href = ctx.link_for(&ctx.content_locale, &format!("/{slug}"));
-        Some(crate::seo::card_for(&state, &ctx, &slug, &found.title, &body_html, href, true).await?)
+        Some(
+            crate::seo::card_for(
+                &state,
+                &ctx,
+                &slug,
+                &found.title,
+                &body_html,
+                href,
+                Some(found.updated_at),
+            )
+            .await?,
+        )
     } else {
         None
     };

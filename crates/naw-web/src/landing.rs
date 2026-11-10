@@ -119,6 +119,7 @@ pub(crate) async fn page(
             image: crate::seo::first_image(&home_html),
             article: false,
             languages,
+            modified: None,
         },
     );
 
