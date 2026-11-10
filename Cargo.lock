@@ -1963,6 +1963,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "naw-matrix"
+version = "0.7.0"
+dependencies = [
+ "naw-bots",
+ "reqwest",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "naw-telegram"
 version = "0.7.0"
 dependencies = [
