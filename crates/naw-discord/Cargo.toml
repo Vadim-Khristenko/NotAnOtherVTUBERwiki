@@ -14,3 +14,4 @@ serde_json.workspace = true
 tracing.workspace = true
 hex.workspace = true
 ed25519-dalek = "2"
+naw-bots.workspace = true

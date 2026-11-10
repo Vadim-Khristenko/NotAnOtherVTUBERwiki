@@ -18,11 +18,16 @@
 //! HTML on Telegram but never backslashed on Discord, where that would
 //! break the link.
 
+pub mod card;
+
 /// Where a message goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Platform {
     Telegram,
     Discord,
+    /// Matrix's HTML (`formatted_body`): Telegram's tags where they are
+    /// standard, its own forms for the rest.
+    Matrix,
 }
 
 /// Text for Telegram's HTML: the three characters that matter, and quotes
@@ -111,7 +116,7 @@ fn fill_args(template: &str, args: &[(&str, &str)], platform: Platform) -> Strin
         match name.and_then(|n| args.iter().find(|(k, _)| *k == n).map(|(k, v)| (*k, *v))) {
             Some((key, value)) => {
                 let safe = match platform {
-                    Platform::Telegram => escape_telegram(value),
+                    Platform::Telegram | Platform::Matrix => escape_telegram(value),
                     Platform::Discord if is_url(key) => discord_url(value),
                     Platform::Discord => escape_discord(value),
                 };
@@ -129,7 +134,7 @@ fn fill_args(template: &str, args: &[(&str, &str)], platform: Platform) -> Strin
 }
 
 /// The entities a locale file may write, as characters.
-fn decode_entities(text: &str) -> String {
+pub(crate) fn decode_entities(text: &str) -> String {
     text.replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
@@ -153,9 +158,13 @@ pub fn html_to_discord(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut links: Vec<String> = Vec::new();
     let mut quote = false;
+    // Inside a <tg-time> that became a Discord timestamp: its text is dropped.
+    let mut timed = false;
     let mut rest = html;
     while let Some(open) = rest.find('<') {
-        push_text(&mut out, &rest[..open], quote);
+        if !timed {
+            push_text(&mut out, &rest[..open], quote);
+        }
         let after = &rest[open + 1..];
         let Some(close) = after.find('>') else {
             push_text(&mut out, &rest[open..], quote);
@@ -208,6 +217,14 @@ pub fn html_to_discord(html: &str) -> String {
                 let href = links.pop().unwrap_or_default();
                 out.push_str(&format!("]({href})"));
             }
+            // A moment, shown in each reader's own time zone.
+            ("tg-time", false) => {
+                if let Some(unix) = attribute(tag, "unix") {
+                    out.push_str(&format!("<t:{unix}:f>"));
+                    timed = true;
+                }
+            }
+            ("tg-time", true) => timed = false,
             // Anything else (footer, lists, custom tags) leaves only its text.
             _ => {}
         }
@@ -231,7 +248,18 @@ pub fn render(template: &str, args: &[(&str, &str)], platform: Platform) -> Stri
     match platform {
         Platform::Telegram => fill_args(&with_emoji, args, platform),
         Platform::Discord => fill_args(&html_to_discord(&with_emoji), args, platform),
+        Platform::Matrix => fill_args(&rich_to_matrix_html(&with_emoji), args, platform),
     }
+}
+
+/// Telegram's rich HTML in the forms Matrix clients know: a spoiler is a
+/// `data-mx-spoiler` span, small print a `<sub>`.
+pub fn rich_to_matrix_html(html: &str) -> String {
+    strip_tag(html, "tg-time")
+        .replace("<tg-spoiler>", "<span data-mx-spoiler>")
+        .replace("</tg-spoiler>", "</span>")
+        .replace("<footer>", "<p><sub>")
+        .replace("</footer>", "</sub></p>")
 }
 
 /// Telegram's plain HTML mode (sendMessage) knows fewer tags than its rich
@@ -239,7 +267,7 @@ pub fn render(template: &str, args: &[(&str, &str)], platform: Platform) -> Stri
 pub fn rich_to_basic_html(html: &str) -> String {
     // A custom emoji may be what the rich send was refused for (the bot's
     // owner has no Premium): the basic send keeps only its fallback.
-    let mut out = strip_custom_emoji(html);
+    let mut out = strip_tag(&strip_custom_emoji(html), "tg-time");
     for level in 1..=6 {
         out = out
             .replace(&format!("<h{level}>"), "<b>")
@@ -252,6 +280,25 @@ pub fn rich_to_basic_html(html: &str) -> String {
         .replace("<br />", "\n")
         .replace("<footer>", "<i>")
         .replace("</footer>", "</i>")
+}
+
+/// `html` without the tag `name`, opening or closing, keeping what is inside.
+fn strip_tag(html: &str, name: &str) -> String {
+    let open = format!("<{name}");
+    let close = format!("</{name}>");
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(start) = rest.find(&open) {
+        out.push_str(&rest[..start]);
+        match rest[start..].find('>') {
+            Some(end) => rest = &rest[start + end + 1..],
+            None => {
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    out.replace(&close, "")
 }
 
 /// `<tg-emoji emoji-id="...">👍</tg-emoji>` as just `👍`.
@@ -372,6 +419,25 @@ mod tests {
         assert_eq!(
             rich_to_basic_html("<h1>Hi</h1><p>text</p>"),
             "<b>Hi</b>\ntext\n"
+        );
+    }
+
+    #[test]
+    fn a_moment_is_local_time_on_telegram_and_discord_and_text_elsewhere() {
+        let t = "at <tg-time unix=\"{unix}\" format=\"wDT\">{when}</tg-time>.";
+        let args = [("unix", "1700000000"), ("when", "2023-11-14 22:13 UTC")];
+        assert_eq!(
+            render(t, &args, Platform::Telegram),
+            "at <tg-time unix=\"1700000000\" format=\"wDT\">2023-11-14 22:13 UTC</tg-time>."
+        );
+        assert_eq!(render(t, &args, Platform::Discord), "at <t:1700000000:f>.");
+        assert_eq!(
+            render(t, &args, Platform::Matrix),
+            "at 2023-11-14 22:13 UTC."
+        );
+        assert_eq!(
+            rich_to_basic_html(&render(t, &args, Platform::Telegram)),
+            "at 2023-11-14 22:13 UTC."
         );
     }
 }

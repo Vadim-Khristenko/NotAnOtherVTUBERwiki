@@ -11,7 +11,12 @@
 //!
 //! Every message goes out with mentions turned off, so no text, ours or
 //! anyone's, can ping a person or a role.
+//!
+//! A card goes out as Components V2 (a coloured container, see
+//! `naw_bots::card`). Should Discord refuse that layout, the same card goes
+//! again as Markdown with plain buttons, and the client stays with that.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
@@ -134,6 +139,29 @@ pub fn link_button(label: &str, url: &str) -> Value {
     json!({ "type": 2, "style": 5, "label": label, "url": url })
 }
 
+/// A card as an answer only the asker sees: Components V2.
+pub fn ephemeral_card(card: &naw_bots::card::Card) -> Value {
+    json!({ "type": 4, "data": card_body(card, true) })
+}
+
+/// A message body for `card`: Components V2, or its Markdown and rows.
+fn card_body(card: &naw_bots::card::Card, v2: bool) -> Value {
+    if v2 {
+        json!({
+            "flags": EPHEMERAL | naw_bots::card::DISCORD_COMPONENTS_V2,
+            "components": card.discord_components(),
+            "allowed_mentions": { "parse": [] },
+        })
+    } else {
+        json!({
+            "flags": EPHEMERAL,
+            "content": card.discord_markdown(),
+            "components": card.discord_rows(),
+            "allowed_mentions": { "parse": [] },
+        })
+    }
+}
+
 /// An answer only the asker sees, with link buttons in one row.
 pub fn ephemeral(content: &str, buttons: &[Value]) -> Value {
     let mut data = json!({
@@ -151,6 +179,8 @@ pub struct Client {
     token: String,
     app_id: String,
     http: reqwest::Client,
+    /// Discord refused a Components V2 card once; cards go as Markdown.
+    plain_cards: AtomicBool,
 }
 
 impl Client {
@@ -166,6 +196,7 @@ impl Client {
             token: token.trim().to_string(),
             app_id: app_id.trim().to_string(),
             http,
+            plain_cards: AtomicBool::new(false),
         }
     }
 
@@ -220,6 +251,46 @@ impl Client {
         )
         .await
         .map(|_| ())
+    }
+
+    /// Sends a card as a direct message: Components V2, or Markdown when
+    /// that layout is refused.
+    pub async fn dm_card(&self, user_id: &str, card: &naw_bots::card::Card) -> Result<(), Error> {
+        let channel_id = self.dm_channel(user_id).await?;
+        let path = format!("/channels/{channel_id}/messages");
+        if !self.plain_cards.load(Ordering::Relaxed) {
+            let mut body = card_body(card, true);
+            // A direct message cannot be ephemeral.
+            body["flags"] = json!(naw_bots::card::DISCORD_COMPONENTS_V2);
+            match self.request(reqwest::Method::POST, &path, &body).await {
+                Ok(_) => return Ok(()),
+                Err(Error::Other(detail)) if detail.contains(": 400 ") => {
+                    tracing::warn!(%detail, "Discord refused a Components V2 card; sending cards as Markdown from now on");
+                    self.plain_cards.store(true, Ordering::Relaxed);
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        let mut body = card_body(card, false);
+        body.as_object_mut().map(|o| o.remove("flags"));
+        self.request(reqwest::Method::POST, &path, &body)
+            .await
+            .map(|_| ())
+    }
+
+    async fn dm_channel(&self, user_id: &str) -> Result<String, Error> {
+        let channel = self
+            .request(
+                reqwest::Method::POST,
+                "/users/@me/channels",
+                &json!({ "recipient_id": user_id }),
+            )
+            .await?;
+        channel
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| Error::Other("no DM channel id".to_string()))
     }
 
     /// Sends a direct message, with link buttons in one row.

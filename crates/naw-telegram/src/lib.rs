@@ -186,10 +186,34 @@ impl Client {
             .filter(|row| !row.is_empty())
             .collect();
         let markup = (!keyboard.is_empty()).then(|| json!({ "inline_keyboard": keyboard }));
+        self.send_both(chat_id, html, &naw_bots::rich_to_basic_html(html), markup)
+            .await
+    }
+
+    /// Sends a card: rich where it works, basic HTML where not, its buttons
+    /// in their styles either way.
+    pub async fn send_card(&self, chat_id: i64, card: &naw_bots::card::Card) -> Result<(), Error> {
+        self.send_both(
+            chat_id,
+            &card.telegram_rich(),
+            &card.telegram_basic(),
+            card.telegram_keyboard(),
+        )
+        .await
+    }
+
+    /// The rich text first and, when that is missing or refused, the basic.
+    async fn send_both(
+        &self,
+        chat_id: i64,
+        rich: &str,
+        basic: &str,
+        markup: Option<Value>,
+    ) -> Result<(), Error> {
         if self.rich.load(Ordering::Relaxed) != BASIC {
             let mut body = json!({
                 "chat_id": chat_id,
-                "rich_message": { "html": html, "skip_entity_detection": false },
+                "rich_message": { "html": rich, "skip_entity_detection": false },
             });
             if let Some(markup) = &markup {
                 body["reply_markup"] = markup.clone();
@@ -217,7 +241,7 @@ impl Client {
         }
         let mut body = json!({
             "chat_id": chat_id,
-            "text": naw_bots::rich_to_basic_html(html),
+            "text": basic,
             "parse_mode": "HTML",
             "link_preview_options": { "is_disabled": true },
         });

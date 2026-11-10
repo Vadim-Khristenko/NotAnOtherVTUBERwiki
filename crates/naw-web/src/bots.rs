@@ -12,6 +12,7 @@
 //! a digest.
 
 use naw_bots::Platform;
+use naw_bots::card::{Block, Button, Card, Rich, Style, Tone};
 use naw_core::state::AppState;
 use uuid::Uuid;
 
@@ -26,6 +27,7 @@ pub(crate) fn platform_key(platform: Platform) -> &'static str {
     match platform {
         Platform::Telegram => "telegram",
         Platform::Discord => "discord",
+        Platform::Matrix => "matrix",
     }
 }
 
@@ -338,6 +340,66 @@ pub(crate) async fn send_to_user(
     sent
 }
 
+/// Sends a card to every chat the account linked, each made in that chat's
+/// language by `make`. `true` when it reached at least one.
+pub(crate) async fn send_card_to_user(
+    state: &AppState,
+    user_id: Uuid,
+    kind: &str,
+    make: impl Fn(&str) -> naw_bots::card::Card,
+) -> bool {
+    let reach = reach(state, user_id).await;
+    let mut sent = false;
+    if let (Some(bot), Some((chat, lang))) = (crate::telegram::bot(), reach.telegram) {
+        match bot.client.send_card(chat, &make(&lang)).await {
+            Ok(()) => {
+                sent = true;
+                log(state, user_id, kind, "telegram", None).await;
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, kind, "a telegram card did not go");
+                if matches!(err, naw_telegram::Error::Blocked) {
+                    let _ = sqlx::query!("DELETE FROM telegram_links WHERE user_id = $1", user_id)
+                        .execute(&state.db)
+                        .await;
+                }
+                log(state, user_id, kind, "telegram", Some(err.to_string())).await;
+            }
+        }
+    }
+    if let (Some(bot), Some((discord_id, lang))) = (crate::discord::bot(), reach.discord) {
+        match bot.client.dm_card(&discord_id, &make(&lang)).await {
+            Ok(()) => {
+                sent = true;
+                log(state, user_id, kind, "discord", None).await;
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, kind, "a discord card did not go");
+                log(state, user_id, kind, "discord", Some(err.to_string())).await;
+            }
+        }
+    }
+    sent
+}
+
+/// Bot text `key` in `lang` as a card's rich text, its arguments kept apart.
+pub(crate) fn rich(
+    state: &AppState,
+    lang: &str,
+    key: &str,
+    args: &[(&str, &str)],
+) -> naw_bots::card::Rich {
+    let template = state
+        .skin
+        .current()
+        .messages
+        .render(lang, &format!("bot.{key}"), &[]);
+    args.iter()
+        .fold(naw_bots::card::Rich::new(template), |r, (k, v)| {
+            r.arg(*k, *v)
+        })
+}
+
 /// Whether the account wants security alerts from the bots (on unless off).
 async fn wants_alerts(state: &AppState, user_id: Uuid) -> bool {
     sqlx::query_scalar!(
@@ -376,31 +438,59 @@ pub(crate) fn alert(state: &AppState, user_id: Uuid, what: Alert) {
             .flatten()
             .unwrap_or_default();
         let (wiki, origin) = site(&state).await;
-        let when = chrono::Utc::now().format("%Y-%m-%d %H:%M UTC").to_string();
-        let (kind, key, device) = match &what {
-            Alert::SignIn { device } => ("alert_sign_in", "alert_sign_in", device.clone()),
-            Alert::PasswordChanged => ("alert_password", "alert_password_changed", String::new()),
-            Alert::PasswordReset => ("alert_password", "alert_password_reset", String::new()),
-        };
-        let device = if device.is_empty() {
-            label(&state, &language(&state, None), "device_unknown")
-        } else {
-            device
+        let now = chrono::Utc::now();
+        let when = now.format("%Y-%m-%d %H:%M UTC").to_string();
+        let unix = now.timestamp().to_string();
+        let (kind, key, tone, device) = match &what {
+            Alert::SignIn { device } => (
+                "alert_sign_in",
+                "sign_in",
+                Tone::Warning,
+                Some(device.clone()),
+            ),
+            Alert::PasswordChanged => ("alert_password", "password_changed", Tone::Danger, None),
+            Alert::PasswordReset => ("alert_password", "password_reset", Tone::Danger, None),
         };
         let settings_url = format!("{origin}/settings");
-        send_to_user(
-            &state,
-            user_id,
-            kind,
-            key,
-            &[
-                ("wiki", &wiki),
-                ("user", &username),
-                ("device", &device),
-                ("when", &when),
-            ],
-            Some(("open_settings", &settings_url)),
-        )
+        send_card_to_user(&state, user_id, kind, |lang| {
+            let mut fields = Vec::new();
+            if let Some(device) = &device {
+                let device = if device.is_empty() {
+                    label(&state, lang, "device_unknown")
+                } else {
+                    device.clone()
+                };
+                fields.push((rich(&state, lang, "card_device", &[]), Rich::plain(device)));
+            }
+            fields.push((
+                rich(&state, lang, "card_when", &[]),
+                rich(
+                    &state,
+                    lang,
+                    "card_moment",
+                    &[("unix", &unix), ("when", &when)],
+                ),
+            ));
+            Card::new(tone)
+                .heading(rich(
+                    &state,
+                    lang,
+                    &format!("card_{key}_title"),
+                    &[("wiki", &wiki)],
+                ))
+                .text(rich(
+                    &state,
+                    lang,
+                    &format!("card_{key}_text"),
+                    &[("user", &username)],
+                ))
+                .block(Block::Fields(fields))
+                .footer(rich(&state, lang, &format!("card_{key}_footer"), &[]))
+                .row(vec![
+                    Button::url(label(&state, lang, "open_settings"), settings_url.clone())
+                        .styled(Style::Primary),
+                ])
+        })
         .await;
     });
 }
@@ -462,97 +552,33 @@ async fn forward_once(state: &AppState) -> Result<(), sqlx::Error> {
         } else {
             format!("{origin}/notifications")
         };
-        let reach = reach(state, row.user_id).await;
-        for (platform, lang) in [
-            (
-                Platform::Telegram,
-                reach.telegram.as_ref().map(|(_, l)| l.clone()),
-            ),
-            (
-                Platform::Discord,
-                reach.discord.as_ref().map(|(_, l)| l.clone()),
-            ),
-        ] {
-            let Some(lang) = lang else { continue };
-            let messages = state.skin.current().messages.clone();
+        let messages = state.skin.current().messages.clone();
+        let tone = match row.kind.as_str() {
+            "edit_accepted" | "edit_trusted" => Tone::Success,
+            "edit_rejected" => Tone::Danger,
+            "edit_waiting" => Tone::Warning,
+            _ => Tone::Info,
+        };
+        let kind = format!("notify_{}", row.kind);
+        send_card_to_user(state, row.user_id, &kind, |lang| {
             let who = row
                 .actor
                 .clone()
-                .unwrap_or_else(|| messages.render(&lang, "history.anonymous", &[]));
-            let line_template = messages.render(&lang, &format!("notify.kind_{}", row.kind), &[]);
-            let line = naw_bots::render(
-                &line_template,
-                &[("who", &who), ("title", &row.title)],
-                platform,
+                .unwrap_or_else(|| messages.render(lang, "history.anonymous", &[]));
+            let line = messages.render(lang, &format!("notify.kind_{}", row.kind), &[]);
+            let mut card = Card::new(tone).heading(Rich::plain(row.wiki.clone())).text(
+                Rich::new(line)
+                    .arg("who", who)
+                    .arg("title", row.title.clone()),
             );
-            let body = match platform {
-                Platform::Telegram => {
-                    let mut b = format!("<b>{}</b>\n{line}", naw_bots::escape_telegram(&row.wiki));
-                    if let Some(note) = row.note.as_deref().filter(|n| !n.trim().is_empty()) {
-                        b.push_str(&format!("\n<i>{}</i>", naw_bots::escape_telegram(note)));
-                    }
-                    b
-                }
-                Platform::Discord => {
-                    let mut b = format!("**{}**\n{line}", naw_bots::escape_discord(&row.wiki));
-                    if let Some(note) = row.note.as_deref().filter(|n| !n.trim().is_empty()) {
-                        b.push_str(&format!("\n*{}*", naw_bots::escape_discord(note)));
-                    }
-                    b
-                }
-            };
-            let open = label(state, &lang, "open");
-            let outcome = match (platform, &reach) {
-                (
-                    Platform::Telegram,
-                    Reach {
-                        telegram: Some((chat, _)),
-                        ..
-                    },
-                ) => match crate::telegram::bot() {
-                    Some(bot) => bot
-                        .client
-                        .send(
-                            *chat,
-                            &body,
-                            &[vec![naw_telegram::Button::Url {
-                                label: open,
-                                url: url.clone(),
-                            }]],
-                        )
-                        .await
-                        .map_err(|e| e.to_string()),
-                    None => continue,
-                },
-                (
-                    Platform::Discord,
-                    Reach {
-                        discord: Some((id, _)),
-                        ..
-                    },
-                ) => match crate::discord::bot() {
-                    Some(bot) => bot
-                        .client
-                        .dm(id, &body, &[naw_discord::link_button(&open, &url)])
-                        .await
-                        .map_err(|e| e.to_string()),
-                    None => continue,
-                },
-                _ => continue,
-            };
-            let channel = platform_key(platform);
-            if let Err(err) = &outcome {
-                tracing::warn!(error = %err, channel, "a notification did not reach a chat");
+            if let Some(note) = row.note.as_deref().filter(|n| !n.trim().is_empty()) {
+                card = card.block(Block::Quote(Rich::plain(note)));
             }
-            log(
-                state,
-                row.user_id,
-                &format!("notify_{}", row.kind),
-                channel,
-                outcome.err(),
-            )
-            .await;
-        }
+            card.row(vec![
+                Button::url(label(state, lang, "open"), url.clone()).styled(Style::Primary),
+            ])
+        })
+        .await;
     }
     Ok(())
 }

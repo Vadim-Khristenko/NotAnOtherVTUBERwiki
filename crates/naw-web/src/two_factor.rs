@@ -201,14 +201,29 @@ async fn send_bot_code(state: &AppState, user_id: Uuid, session_id: Uuid) -> boo
     }
     let (wiki, _) = crate::bots::site(state).await;
     let minutes = BOT_CODE_MINUTES.to_string();
-    crate::bots::send_to_user(
-        state,
-        user_id,
-        "second_factor_code",
-        "second_factor_code",
-        &[("wiki", &wiki), ("code", &code), ("minutes", &minutes)],
-        None,
-    )
+    crate::bots::send_card_to_user(state, user_id, "second_factor_code", |lang| {
+        use naw_bots::card::{Card, Tone};
+        Card::new(Tone::Info)
+            .heading(crate::bots::rich(
+                state,
+                lang,
+                "card_code_title",
+                &[("wiki", &wiki)],
+            ))
+            .text(crate::bots::rich(
+                state,
+                lang,
+                "card_code_text",
+                &[("code", &code)],
+            ))
+            .text(crate::bots::rich(
+                state,
+                lang,
+                "card_code_note",
+                &[("minutes", &minutes)],
+            ))
+            .footer(crate::bots::rich(state, lang, "card_code_footer", &[]))
+    })
     .await
 }
 
