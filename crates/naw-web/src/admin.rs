@@ -1500,6 +1500,7 @@ pub async fn wiki_settings(
             require_verified_email => rules.require_verified_email,
             review_new_pages => rules.review_new_pages,
             review_edits => rules.review_edits,
+            review_scope => rules.review_scope.as_str(),
             raw_settings => serde_json::to_string_pretty(&ctx.wiki.settings)
                 .unwrap_or_else(|_| "{}".to_string()),
             limits => limit_rows(&state, &ctx),
@@ -1629,6 +1630,8 @@ pub struct WikiForm {
     review_new_pages: Option<String>,
     #[serde(default)]
     review_edits: Option<String>,
+    #[serde(default)]
+    review_scope: Option<String>,
 }
 
 /// POST /admin/wiki
@@ -1690,6 +1693,12 @@ pub async fn save_wiki_settings(
         json!({
             "new_pages": form.review_new_pages.is_some(),
             "edits": form.review_edits.is_some(),
+            "scope": form
+                .review_scope
+                .as_deref()
+                .and_then(crate::perm::ReviewScope::parse)
+                .unwrap_or_default()
+                .as_str(),
         }),
     );
 

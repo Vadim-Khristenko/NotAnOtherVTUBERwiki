@@ -133,6 +133,85 @@ pub(crate) async fn pending_new_page(
     }))
 }
 
+/// The reader's own new page at `path` that waits for review, with its
+/// newest waiting version, so its author can keep working on it.
+pub(crate) struct OwnPending {
+    pub page_id: Uuid,
+    pub title: String,
+    pub summary: Option<String>,
+    pub body_md: String,
+}
+
+pub(crate) async fn own_pending_page(
+    db: &sqlx::PgPool,
+    ctx: &Ctx,
+    path: &str,
+) -> Result<Option<OwnPending>, AppError> {
+    let Some(me) = ctx.actor.user_id else {
+        return Ok(None);
+    };
+    let (namespace, slug) = pages::split_path(path);
+    let row = sqlx::query!(
+        r#"SELECT p.id, p.title, r.review_title, r.summary, r.body_md
+           FROM pages p JOIN revisions r ON r.page_id = p.id
+           WHERE p.wiki_id = $1 AND p.namespace = ($2::text)::page_namespace AND p.slug = $3
+             AND COALESCE(p.locale, '') = $4 AND p.current_revision_id IS NULL
+             AND p.deleted_at IS NULL AND r.review_status = 'pending' AND r.author_id = $5
+           ORDER BY r.created_at DESC LIMIT 1"#,
+        ctx.wiki.id,
+        namespace,
+        slug,
+        ctx.content_locale,
+        me
+    )
+    .fetch_optional(db)
+    .await?;
+    Ok(row.map(|r| OwnPending {
+        page_id: r.id,
+        title: r.review_title.unwrap_or(r.title),
+        summary: r.summary,
+        body_md: r.body_md,
+    }))
+}
+
+/// Replaces the author's waiting versions of their new page with a fresh
+/// one, inside the caller's transaction: the old ones stay in the history as
+/// set aside by their author, and the queue holds only the newest.
+pub(crate) async fn replace_own_pending(
+    conn: &mut sqlx::PgConnection,
+    page_id: Uuid,
+    author: Uuid,
+    note: &str,
+    title: &str,
+    summary: Option<&str>,
+    body_md: &str,
+) -> Result<Uuid, AppError> {
+    sqlx::query!(
+        "UPDATE revisions SET review_status = 'rejected', reviewed_by = $2, reviewed_at = now(),
+                              review_note = $3
+         WHERE page_id = $1 AND author_id = $2 AND review_status = 'pending'",
+        page_id,
+        author,
+        note
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!("UPDATE pages SET title = $2 WHERE id = $1", page_id, title)
+        .execute(&mut *conn)
+        .await?;
+    save_pending(
+        conn,
+        page_id,
+        None,
+        Some(author),
+        title,
+        summary,
+        body_md,
+        false,
+    )
+    .await
+}
+
 #[derive(Debug, serde::Deserialize, Default)]
 pub struct QueueQuery {
     #[serde(default)]
@@ -192,20 +271,73 @@ fn page_link(ctx: &Ctx, namespace: &str, slug: &str, locale: &str) -> (String, S
     (path, href)
 }
 
+/// Whether this reviewer checks edits by `author` (`None` for a guest), as
+/// the wiki's review scope says: see [`crate::perm::ReviewScope`].
+pub(crate) async fn checks(
+    db: &sqlx::PgPool,
+    ctx: &Ctx,
+    author: Option<Uuid>,
+) -> Result<bool, AppError> {
+    checks_on(db, ctx.wiki.id, ctx.actor.review_bound(), author).await
+}
+
+/// [`checks`] for a reviewer bound as [`crate::perm::Actor::review_bound`] says.
+async fn checks_on(
+    db: &sqlx::PgPool,
+    wiki_id: Uuid,
+    bound: Option<(Uuid, bool)>,
+    author: Option<Uuid>,
+) -> Result<bool, AppError> {
+    let Some((me, unassigned)) = bound else {
+        return Ok(true);
+    };
+    let curator = match author {
+        Some(author) => {
+            sqlx::query_scalar!(
+                "SELECT curator_id FROM curatorships WHERE wiki_id = $1 AND user_id = $2",
+                wiki_id,
+                author
+            )
+            .fetch_optional(db)
+            .await?
+        }
+        None => None,
+    };
+    Ok(curator.map_or(unassigned, |c| c == me))
+}
+
+/// The queue filter's parameters: the curator whose wards a bound reviewer
+/// sees (`None` for everyone's) and whether people nobody looks after count.
+fn bound_params(ctx: &Ctx) -> (Option<Uuid>, bool) {
+    ctx.actor
+        .review_bound()
+        .map_or((None, true), |(me, unassigned)| (Some(me), unassigned))
+}
+
 async fn pending_rows(state: &AppState, ctx: &Ctx) -> Result<Vec<minijinja::Value>, AppError> {
+    let (bound, unassigned) = bound_params(ctx);
     let rows = sqlx::query!(
         r#"SELECT r.id, r.created_at, r.summary, r.review_title, r.base_revision_id,
                   octet_length(r.body_md) AS "bytes!",
                   (SELECT octet_length(b.body_md) FROM revisions b WHERE b.id = r.base_revision_id) AS "base_bytes?",
                   (SELECT u.username FROM users u WHERE u.id = r.author_id) AS "author?",
+                  (SELECT cu.username FROM curatorships c JOIN users cu ON cu.id = c.curator_id
+                     WHERE c.wiki_id = p.wiki_id AND c.user_id = r.author_id) AS "curator?",
                   p.slug, p.namespace::text AS "namespace!", p.title, COALESCE(p.locale, '') AS "locale!",
                   p.current_revision_id
            FROM revisions r JOIN pages p ON p.id = r.page_id
            WHERE p.wiki_id = $1 AND r.review_status = 'pending' AND p.deleted_at IS NULL
+             AND ($3::uuid IS NULL
+                  OR EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id
+                               AND c.user_id = r.author_id AND c.curator_id = $3)
+                  OR ($4 AND NOT EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id
+                                           AND c.user_id = r.author_id)))
            ORDER BY r.created_at
            LIMIT $2"#,
         ctx.wiki.id,
-        QUEUE_SHOWN
+        QUEUE_SHOWN,
+        bound,
+        unassigned
     )
     .fetch_all(&state.db)
     .await?;
@@ -222,6 +354,7 @@ async fn pending_rows(state: &AppState, ctx: &Ctx) -> Result<Vec<minijinja::Valu
                 path => path,
                 href => (!is_new).then_some(href),
                 author => r.author,
+                curator => r.curator,
                 summary => r.summary,
                 at => ctx.day(r.created_at),
                 time => r.created_at.format("%H:%M").to_string(),
@@ -236,6 +369,7 @@ async fn pending_rows(state: &AppState, ctx: &Ctx) -> Result<Vec<minijinja::Valu
 }
 
 async fn patrol_rows(state: &AppState, ctx: &Ctx) -> Result<Vec<minijinja::Value>, AppError> {
+    let (bound, unassigned) = bound_params(ctx);
     let rows = sqlx::query!(
         r#"SELECT r.id, r.created_at, r.summary,
                   (SELECT u.username FROM users u WHERE u.id = r.author_id) AS "author?",
@@ -246,11 +380,18 @@ async fn patrol_rows(state: &AppState, ctx: &Ctx) -> Result<Vec<minijinja::Value
            FROM revisions r JOIN pages p ON p.id = r.page_id
            WHERE p.wiki_id = $1 AND r.review_status = 'accepted' AND NOT r.is_patrolled
              AND p.deleted_at IS NULL AND r.created_at > now() - make_interval(days => $3)
+             AND ($4::uuid IS NULL
+                  OR EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id
+                               AND c.user_id = r.author_id AND c.curator_id = $4)
+                  OR ($5 AND NOT EXISTS (SELECT 1 FROM curatorships c WHERE c.wiki_id = p.wiki_id
+                                           AND c.user_id = r.author_id)))
            ORDER BY r.created_at DESC
            LIMIT $2"#,
         ctx.wiki.id,
         QUEUE_SHOWN,
-        PATROL_DAYS
+        PATROL_DAYS,
+        bound,
+        unassigned
     )
     .fetch_all(&state.db)
     .await?;
@@ -380,6 +521,7 @@ pub async fn show(
         .map(crate::history::row_value)
         .collect();
     let (_, href) = page_link(&ctx, &rev.namespace, &rev.slug, &rev.locale);
+    let ward = checks(&state.db, &ctx, rev.author_id).await?;
     crate::admin::render(
         &ctx,
         "review_item",
@@ -397,7 +539,8 @@ pub async fn show(
             status_label => ctx.t(&format!("review.status_{}", rev.status)),
             is_new => rev.base.is_none(),
             outdated => rev.outdated(),
-            may_decide => rev.status == "pending" && rev.reviewer_may_edit(&ctx),
+            may_decide => rev.status == "pending" && rev.reviewer_may_edit(&ctx) && ward,
+            not_ward => rev.status == "pending" && !ward,
             preview => preview,
             rows => rows,
             added => computed.added,
@@ -429,6 +572,9 @@ pub async fn accept(
     }
     if !rev.reviewer_may_edit(&ctx) {
         return refuse(&ctx, &back, StatusCode::FORBIDDEN, "review.not_yours");
+    }
+    if !checks(&state.db, &ctx, rev.author_id).await? {
+        return refuse(&ctx, &back, StatusCode::FORBIDDEN, "review.not_ward");
     }
     if rev.outdated() {
         return refuse(&ctx, &back, StatusCode::CONFLICT, "review.outdated");
@@ -547,6 +693,9 @@ pub async fn reject(
     if !rev.reviewer_may_edit(&ctx) {
         return refuse(&ctx, &back, StatusCode::FORBIDDEN, "review.not_yours");
     }
+    if !checks(&state.db, &ctx, rev.author_id).await? {
+        return refuse(&ctx, &back, StatusCode::FORBIDDEN, "review.not_ward");
+    }
     let note: String = form
         .note
         .trim()
@@ -648,7 +797,7 @@ pub(crate) async fn mine(
             minijinja::context! {
                 title => r.review_title.unwrap_or(r.title),
                 path => path.clone(),
-                href => href,
+                href => href.clone(),
                 history_href => crate::notify::history_link(ctx, &r.locale, &path),
                 is_new => r.base_revision_id.is_none(),
                 status => r.review_status.clone(),
@@ -656,6 +805,7 @@ pub(crate) async fn mine(
                 note => r.review_note.filter(|n| !n.trim().is_empty()),
                 summary => r.summary.filter(|s| !s.trim().is_empty()),
                 at => format!("{}, {} UTC", ctx.day(r.created_at), r.created_at.format("%H:%M")),
+                edit_href => (pending && r.base_revision_id.is_none()).then(|| format!("{href}/edit")),
                 withdraw_action => pending.then(|| format!("/drafts/review/{}/withdraw", r.id)),
             }
         })
@@ -990,6 +1140,49 @@ mod db_tests {
         .await
         .expect("user");
         id
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_bound_curator_checks_their_wards_and_maybe_nobodys(db: PgPool) {
+        let (wiki, _, _) = page_with_text(&db, "x").await;
+        let (curator, other, ward, theirs, loose) = (
+            user(&db, "cur").await,
+            user(&db, "cur2").await,
+            user(&db, "ward").await,
+            user(&db, "theirs").await,
+            user(&db, "loose").await,
+        );
+        for (person, by) in [(ward, curator), (theirs, other)] {
+            sqlx::query(
+                "INSERT INTO curatorships (wiki_id, user_id, curator_id) VALUES ($1, $2, $3)",
+            )
+            .bind(wiki)
+            .bind(person)
+            .bind(by)
+            .execute(&db)
+            .await
+            .expect("curatorship");
+        }
+        let check = |bound, author| checks_on(&db, wiki, bound, author);
+        assert!(
+            check(None, Some(theirs)).await.expect("all"),
+            "unbound sees all"
+        );
+        let assigned = Some((curator, true));
+        assert!(check(assigned, Some(ward)).await.expect("ward"));
+        assert!(!check(assigned, Some(theirs)).await.expect("theirs"));
+        assert!(
+            check(assigned, Some(loose)).await.expect("loose"),
+            "nobody's"
+        );
+        assert!(
+            check(assigned, None).await.expect("guest"),
+            "a guest is nobody's"
+        );
+        let only = Some((curator, false));
+        assert!(check(only, Some(ward)).await.expect("ward"));
+        assert!(!check(only, Some(loose)).await.expect("loose"));
+        assert!(!check(only, None).await.expect("guest"));
     }
 
     #[sqlx::test(migrations = "../../migrations")]

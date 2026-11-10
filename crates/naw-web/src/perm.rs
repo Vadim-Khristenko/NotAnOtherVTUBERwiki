@@ -207,6 +207,42 @@ pub struct Rules {
     /// An edit by someone without the pass waits for review; readers keep
     /// the last accepted text. From `settings.review.edits`.
     pub review_edits: bool,
+    /// Whose edits a curator checks. From `settings.review.scope`.
+    pub review_scope: ReviewScope,
+}
+
+/// Whose edits a curator checks in the review queue. Moderators and up check
+/// every edit whatever the wiki chose.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ReviewScope {
+    /// Every curator checks every edit.
+    #[default]
+    All,
+    /// A curator checks the people they look after, and anyone nobody looks
+    /// after, so a newcomer without a curator is still checked.
+    Assigned,
+    /// A curator checks only the people they look after; edits by anyone
+    /// else wait for a moderator.
+    AssignedOnly,
+}
+
+impl ReviewScope {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "all" => Some(Self::All),
+            "assigned" => Some(Self::Assigned),
+            "assigned_only" => Some(Self::AssignedOnly),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Assigned => "assigned",
+            Self::AssignedOnly => "assigned_only",
+        }
+    }
 }
 
 impl Default for Rules {
@@ -219,6 +255,7 @@ impl Default for Rules {
             require_verified_email: false,
             review_new_pages: false,
             review_edits: false,
+            review_scope: ReviewScope::All,
         }
     }
 }
@@ -235,10 +272,17 @@ impl Rules {
                 .and_then(Value::as_bool)
                 .unwrap_or(false)
         };
+        let review_scope = settings
+            .get("review")
+            .and_then(|r| r.get("scope"))
+            .and_then(Value::as_str)
+            .and_then(ReviewScope::parse)
+            .unwrap_or_default();
         let Some(block) = settings.get("permissions") else {
             return Self {
                 review_new_pages: review("new_pages"),
                 review_edits: review("edits"),
+                review_scope,
                 ..d
             };
         };
@@ -252,6 +296,7 @@ impl Rules {
             require_verified_email: flag("require_verified_email", d.require_verified_email),
             review_new_pages: review("new_pages"),
             review_edits: review("edits"),
+            review_scope,
         }
     }
 }
@@ -379,6 +424,21 @@ impl Actor {
             self.rules.review_edits
         };
         reviewed && !self.can(Capability::EditUnreviewed)
+    }
+
+    /// Whose edits this reviewer checks: `None` for everyone's, or the
+    /// curator whose wards they are and whether people nobody looks after
+    /// count too. Moderators and up check everyone's.
+    pub fn review_bound(&self) -> Option<(Uuid, bool)> {
+        let me = self.user_id?;
+        if self.at_least(WikiRole::Moderator) {
+            return None;
+        }
+        match self.rules.review_scope {
+            ReviewScope::All => None,
+            ReviewScope::Assigned => Some((me, true)),
+            ReviewScope::AssignedOnly => Some((me, false)),
+        }
     }
 
     /// Editing one page: the capability, plus its protection level or above.
@@ -647,6 +707,21 @@ mod tests {
         assert!(guest.can(Capability::PageEdit));
         assert!(!guest.can(Capability::PageCreate));
         assert!(!guest.can(Capability::PageDelete));
+    }
+
+    #[test]
+    fn a_curator_checks_their_wards_where_the_wiki_says_so_and_moderators_check_all() {
+        let mut curator = actor(GlobalRole::Registered, Some(WikiRole::Curator));
+        assert_eq!(curator.review_bound(), None, "everyone's by default");
+        curator.rules = Rules::from_settings(&json!({ "review": { "scope": "assigned" } }));
+        assert_eq!(curator.review_bound(), Some((Uuid::nil(), true)));
+        curator.rules = Rules::from_settings(&json!({ "review": { "scope": "assigned_only" } }));
+        assert_eq!(curator.review_bound(), Some((Uuid::nil(), false)));
+        let mut moderator = actor(GlobalRole::Registered, Some(WikiRole::Moderator));
+        moderator.rules = curator.rules;
+        assert_eq!(moderator.review_bound(), None, "a moderator checks all");
+        let odd = Rules::from_settings(&json!({ "review": { "scope": "nobody" } }));
+        assert_eq!(odd.review_scope, ReviewScope::All, "unknown reads as all");
     }
 
     #[test]

@@ -450,6 +450,7 @@
       {% if r.summary %}<p class="report-card-message">{{ r.summary }}</p>{% endif %}
       <p class="report-card-foot">
         {% if r.author %}<span>{{ t("report.from") }} <a href="/user/{{ r.author }}"><bdi>{{ r.author }}</bdi></a></span>{% endif %}
+        {% if r.curator %}<span class="muted-cell">{{ t("review.curator_of", name=r.curator) }}</span>{% endif %}
         <a class="button-save report-open" href="{{ r.open }}">{{ t("review.open") }}</a>
       </p>
     </li>
@@ -493,6 +494,7 @@
       {% if renamed %}<span class="muted-cell">{{ t("review.renamed", old=renamed) }}</span>{% endif %}</p>
     <p class="report-card-foot">{% if author %}<span>{{ t("report.from") }} <a href="/user/{{ author }}"><bdi>{{ author }}</bdi></a></span>{% endif %}{% if summary %} · {{ summary }}{% endif %}</p>
     {% if outdated %}<p class="notice notice-warn">{{ t("review.outdated") }}</p>{% endif %}
+    {% if not_ward %}<p class="notice">{{ t("review.not_ward") }}</p>{% endif %}
     {% if may_decide %}
     <div class="review-actions">
       <form method="post" action="/admin/review/{{ id }}/accept" class="inline-form">
@@ -697,6 +699,10 @@
       <p class="field-note">{{ t("review.settings_note") }}</p>
       <label class="check"><input type="checkbox" name="review_new_pages" {% if review_new_pages %}checked{% endif %} /> {{ t("review.settings_new_pages") }}</label>
       <label class="check"><input type="checkbox" name="review_edits" {% if review_edits %}checked{% endif %} /> {{ t("review.settings_edits") }}</label>
+      <p class="field-note">{{ t("review.scope_note") }}</p>
+      {% for s in ["all", "assigned", "assigned_only"] %}
+      <label class="check"><input type="radio" name="review_scope" value="{{ s }}" {% if review_scope == s %}checked{% endif %} /> {{ t("review.scope_" ~ s) }}</label>
+      {% endfor %}
     </fieldset>
 
     <div class="form-actions">

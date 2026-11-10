@@ -667,6 +667,18 @@ pub async fn patrol(
     let Some(revision_id) = pages::parse_uuid(&form.revision) else {
         return Ok((StatusCode::UNPROCESSABLE_ENTITY, "revision: expected an id").into_response());
     };
+    // A curator bound to their wards checks only theirs.
+    let author = sqlx::query_scalar!(
+        "SELECT author_id FROM revisions WHERE id = $1 AND page_id = $2",
+        revision_id,
+        found.id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .flatten();
+    if !crate::review::checks(&state.db, &ctx, author).await? {
+        return Ok((StatusCode::FORBIDDEN, ctx.t("review.not_ward")).into_response());
+    }
     // `page_id` is the tenancy check for the posted revision id.
     let updated = sqlx::query!(
         "UPDATE revisions SET is_patrolled = true

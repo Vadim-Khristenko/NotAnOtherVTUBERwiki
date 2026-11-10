@@ -78,6 +78,8 @@ pub struct Ctx {
     pub limits: naw_core::limits::Limits,
     /// The signed-in reader's unread notifications here, for the header bell.
     pub unread: i64,
+    /// The signed-in reader's own edits here that wait for review.
+    pub waiting: i64,
     /// `https://wiki.example`: the wiki's own domain, else the host asked.
     /// Links that leave the page (canonical, share cards, the sitemap) use it.
     pub origin: String,
@@ -356,6 +358,7 @@ impl Ctx {
             can_admin => self.actor.can(Capability::AdminPanel),
             can_reports => self.actor.can(Capability::ReportHandle),
             unread_notifications => self.unread,
+            waiting_review => self.waiting,
             policy_notice => self.policy_notice,
             terms_href => self.link("/terms"),
             privacy_href => self.link("/privacy"),
@@ -412,9 +415,9 @@ pub async fn context(
         .unwrap_or("/")
         .to_string();
     let limits = state.config.limits.for_wiki(&wiki.settings);
-    let unread = match user {
-        Some(user) => crate::notify::unread_count(&state.db, user.id, wiki.id).await?,
-        None => 0,
+    let (unread, waiting) = match user {
+        Some(user) => crate::notify::header_counts(&state.db, user.id, wiki.id).await?,
+        None => (0, 0),
     };
     let origin = origin_of(wiki.domain.as_deref(), request_host(headers));
     let policy_notice = crate::legal::notice_due(
@@ -434,6 +437,7 @@ pub async fn context(
         upload_max_bytes: state.config.upload_max_bytes,
         limits,
         unread,
+        waiting,
         origin,
         policy_notice,
         sign_in: state.config.auth.enabled,

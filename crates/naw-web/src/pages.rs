@@ -960,6 +960,16 @@ pub async fn page(
             crate::review::pending_new_page(&state.db, &ctx, namespace, bare).await?
         {
             let reviewer = ctx.actor.can(Capability::RevisionPatrol);
+            // Its author goes on working on it.
+            if mine {
+                return notice_ok(
+                    &ctx,
+                    &ctx.t("review.page_waits_title"),
+                    &ctx.t_with("review.page_waits_mine", &[("title", &title)]),
+                    &ctx.link(&format!("/{slug}/edit")),
+                    &ctx.t("review.edit_mine"),
+                );
+            }
             return notice_ok(
                 &ctx,
                 &ctx.t("review.page_waits_title"),
@@ -1884,6 +1894,29 @@ pub async fn edit_page(
     let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
+        // The author's own new page that waits for review: they keep working
+        // on it, and the newest version replaces the one in the queue.
+        if let Some(own) = crate::review::own_pending_page(&state.db, &ctx, &slug).await? {
+            let edit_href = ctx.link(&format!("/{slug}/edit"));
+            return render_form(
+                &ctx,
+                &FormView {
+                    heading: &ctx.t_with("editor.editing", &[("page", &own.title)]),
+                    action: &edit_href,
+                    show_slug: false,
+                    slug: &slug,
+                    title_value: &own.title,
+                    summary_value: own.summary.as_deref().unwrap_or(""),
+                    body_md: &own.body_md,
+                    base_revision: "",
+                    locked: false,
+                    fixed_title: false,
+                    back_href: None,
+                    translation_of: None,
+                    form_locale: None,
+                },
+            );
+        }
         return Ok(crate::errors::not_found());
     };
     if !ctx.actor.can_edit_page(found.protection) {
@@ -1967,6 +2000,71 @@ pub async fn edit_page(
     )
 }
 
+/// Saves the author's newer version of their own new page that waits for
+/// review; any other missing page is a 404.
+async fn save_own_pending(
+    state: &AppState,
+    ctx: &Ctx,
+    slug: &str,
+    form: &EditForm,
+) -> Result<Response, AppError> {
+    let (Some(author), Some(own)) = (
+        ctx.actor.user_id,
+        crate::review::own_pending_page(&state.db, ctx, slug).await?,
+    ) else {
+        return Ok(crate::errors::not_found());
+    };
+    if !ctx.actor.can(Capability::PageCreate) {
+        return refuse(
+            ctx,
+            &ctx.link(&format!("/{slug}/edit")),
+            Capability::PageCreate,
+            &ctx.t("error.no_edit"),
+        );
+    }
+    let mut draft = match validate(&ctx.limits, &form.title, &form.summary, &form.body_md) {
+        Ok(draft) => draft,
+        Err(reason) => return Ok(bad_request(reason)),
+    };
+    draft.body_md = crate::media::localize(state, ctx, draft.body_md).await;
+    if let Some(message) = crate::newcomer::refusal(
+        state,
+        ctx,
+        crate::newcomer::Change::Create {
+            body: &draft.body_md,
+        },
+    )
+    .await?
+    {
+        return edit_form_again(ctx, form, slug, &own.title, &message);
+    }
+    let mut tx = state.db.begin().await?;
+    let revision_id = crate::review::replace_own_pending(
+        &mut tx,
+        own.page_id,
+        author,
+        &ctx.t("review.replaced_note"),
+        &draft.title,
+        draft.summary.as_deref(),
+        &draft.body_md,
+    )
+    .await?;
+    tx.commit().await?;
+    audit::record_or_log(
+        &state.db,
+        audit::Entry {
+            wiki_id: Some(ctx.wiki.id),
+            user_id: Some(author),
+            action: "page.create_pending",
+            entity_type: "page",
+            entity_id: Some(own.page_id),
+            meta: json!({ "slug": slug, "revision": revision_id, "replaces_own": true }),
+        },
+    )
+    .await;
+    Ok(see_other(&ctx.link(&format!("/{slug}"))))
+}
+
 /// Saves a new revision over an existing page.
 #[instrument(skip(state, user, headers, form))]
 pub async fn save_page(
@@ -1983,7 +2081,7 @@ pub async fn save_page(
     let ctx = or_respond!(crate::resolve::required(&state, &headers, user.as_ref()).await?);
     let locale = ctx.content_locale.clone();
     let Some(found) = find_page(&state.db, ctx.wiki.id, &slug, &locale).await? else {
-        return Ok(crate::errors::not_found());
+        return save_own_pending(&state, &ctx, &slug, &form).await;
     };
     if !ctx.actor.can_edit_page(found.protection) {
         let explanation = ctx.t(if found.locked {

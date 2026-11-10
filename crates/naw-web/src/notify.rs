@@ -33,21 +33,27 @@ const SHOWN: i64 = 100;
 /// Read notifications older than this go when their owner opens the list.
 const KEEP_READ_DAYS: i32 = 90;
 
-/// The reader's unread notifications in this wiki. Asked on every page a
-/// signed-in reader opens, and nearly always zero.
-pub(crate) async fn unread_count(
+/// The header's two counts in one round trip, asked on every page a
+/// signed-in reader opens and nearly always zero: unread notifications, and the
+/// reader's own edits here that still wait for review.
+pub(crate) async fn header_counts(
     db: &sqlx::PgPool,
     user_id: Uuid,
     wiki_id: Uuid,
-) -> Result<i64, AppError> {
-    Ok(sqlx::query_scalar!(
-        r#"SELECT count(*) AS "n!" FROM notifications
-           WHERE user_id = $1 AND wiki_id = $2 AND read_at IS NULL"#,
+) -> Result<(i64, i64), AppError> {
+    let row = sqlx::query!(
+        r#"SELECT
+             (SELECT count(*) FROM notifications
+              WHERE user_id = $1 AND wiki_id = $2 AND read_at IS NULL) AS "unread!",
+             (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id
+              WHERE r.author_id = $1 AND r.review_status = 'pending'
+                AND p.wiki_id = $2 AND p.deleted_at IS NULL) AS "waiting!""#,
         user_id,
         wiki_id
     )
     .fetch_one(db)
-    .await?)
+    .await?;
+    Ok((row.unread, row.waiting))
 }
 
 /// Whether the reader watches the page at `path`.
@@ -515,7 +521,7 @@ mod db_tests {
     async fn nothing_unread_reads_as_zero(db: PgPool) {
         let w = wiki(&db, "w").await;
         let alice = user(&db, "alice").await;
-        assert_eq!(unread_count(&db, alice, w).await.expect("count"), 0);
+        assert_eq!(header_counts(&db, alice, w).await.expect("count").0, 0);
     }
 
     #[sqlx::test(migrations = "../../migrations")]
@@ -573,7 +579,7 @@ mod db_tests {
             notes(&db, alice).await,
             [("page_edited".to_string(), Some("second".to_string()))]
         );
-        assert_eq!(unread_count(&db, alice, w).await.expect("count"), 1);
+        assert_eq!(header_counts(&db, alice, w).await.expect("count").0, 1);
 
         // Once read, the next edit is news again.
         sqlx::query("UPDATE notifications SET read_at = now() WHERE user_id = $1")
@@ -595,7 +601,7 @@ mod db_tests {
         assert_eq!(notes(&db, alice).await.len(), 1, "skipped: she accepted it");
         page_edited(&db, w, "lore", None, None, "Lore", "/lore/history", None).await;
         assert_eq!(notes(&db, alice).await.len(), 2);
-        assert_eq!(unread_count(&db, alice, w).await.expect("count"), 1);
+        assert_eq!(header_counts(&db, alice, w).await.expect("count").0, 1);
 
         set_watch(&db, alice, w, "lore", false)
             .await

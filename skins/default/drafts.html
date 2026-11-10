@@ -52,6 +52,7 @@
     <div class="report-card-foot">
       <span class="muted-cell">{{ w.at }}</span>
       {% if not w.is_new %}<a href="{{ w.history_href }}">{{ t("nav.history") }}</a>{% endif %}
+      {% if w.edit_href %}<a href="{{ w.edit_href }}">{{ t("review.edit_mine") }}</a>{% endif %}
       {% if w.withdraw_action %}
       <form method="post" action="{{ w.withdraw_action }}" class="inline-form">
         <button class="link-button" type="submit">{{ t("review.withdraw") }}</button>

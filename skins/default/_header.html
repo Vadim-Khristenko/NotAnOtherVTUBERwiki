@@ -181,6 +181,9 @@
         <a class="menu-link" href="{{ base }}/notifications"><svg class="icon" aria-hidden="true"><use href="#i-bell" /></svg>{{ t("notify.title") }}{% if unread_notifications is defined and unread_notifications %} <b class="menu-count">{{ unread_notifications }}</b>{% endif %}</a>
         <a class="menu-link" href="{{ base }}/watchlist"><svg class="icon" aria-hidden="true"><use href="#i-star" /></svg>{{ t("notify.watchlist_title") }}</a>
         <a class="menu-link" href="{{ base }}/drafts"><svg class="icon" aria-hidden="true"><use href="#i-file-text" /></svg>{{ t("nav.drafts") }}</a>
+        {% if waiting_review is defined and waiting_review %}
+        <a class="menu-link" href="{{ base }}/drafts#review"><svg class="icon" aria-hidden="true"><use href="#i-clipboard-check" /></svg>{{ t("nav.waiting_review") }} <b class="menu-count">{{ waiting_review }}</b></a>
+        {% endif %}
         <a class="menu-link" href="{{ base }}/settings"><svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg>{{ t("settings.title") }}</a>
         {% if can_admin is defined and can_admin %}
         <a class="menu-link" href="{{ base }}/admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-lock" /></svg>{{ t("nav.admin") }}</a>
